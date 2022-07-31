@@ -3,7 +3,7 @@ mod item;
 use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use std::error::Error;
-use crate::item::Item;
+use crate::item::{Item, generate_id, write_items, read_items};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -62,6 +62,24 @@ pub enum Commands {
     },
 }
 
+fn split_comma(s: String) -> Vec<String> {
+    // return empty vector if input is ""
+    if s == "" {
+        return vec![];
+    }
+    // TODO improvement!!!
+    let ca: Vec<&str> = s.split(",").collect();
+    let mut vec: Vec<String> = Vec::new();
+    ca.into_iter().for_each(|ll| {
+        vec.push(ll.to_string());
+    });
+    return vec;
+}
+
+fn remove_comma(s: String) -> String {
+    s.replace(",", "")
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
@@ -81,12 +99,17 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     // matches just as you would the top level cmd
     match &cli.command {
         Some(Commands::Add { message, linked_items, id, tags }) => {
-            println!("todo: {:?} linked_items {:?} id: {:?} tags: {:?}", message, linked_items, id, tags);
-            let item = Item{id: String::from("123"), linked_items: vec!["-w".to_string()], tags: vec!["-w".to_string()], content: String::from("...")};
-            let serialized = serde_json::to_string_pretty(&item).unwrap();
-            let _ditem: Item = serde_json::from_str(&serialized).unwrap();
-            println!("todo: {:?} linked_items {:?} id: {:?} tags: {:?}", _ditem.content, _ditem.linked_items, _ditem.id, _ditem.tags);
-            std::fs::write("./test.json", serialized).unwrap();
+            let item = Item{
+                id: remove_comma(id.to_owned().unwrap_or(generate_id())),
+                linked_items: split_comma(linked_items.to_owned().unwrap_or("".to_string())),
+                tags: split_comma(tags.to_owned().unwrap_or("".to_string())),
+                content: message.to_owned().unwrap_or("".to_string())
+            };
+            println!("Added new Todo with following Id: {:?}", item.id);
+            println!("\"{}\"", item.content);
+            let mut items = read_items();
+            items.push(item);
+            write_items(&items)
         }
         Some(Commands::Remove { id, recursive }) => {
             println!("id: {:?} recursive: {:?}", id, recursive);
