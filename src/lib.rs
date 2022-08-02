@@ -1,16 +1,19 @@
+mod store;
 mod item;
+mod util;
 
-use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use std::error::Error;
-use crate::item::{Item, generate_id, write_items, read_items};
+use crate::item::{Item, generate_id};
+use crate::util::*;
+use crate::store::Store;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 pub struct Cli {
     /// Sets a custom config file
     #[clap(short, long, value_parser, value_name = "FILE")]
-    pub config: Option<PathBuf>,
+    pub config: Option<String>,
 
     /// Turn debugging information on
     #[clap(short, long, action = clap::ArgAction::Count)]
@@ -62,30 +65,8 @@ pub enum Commands {
     },
 }
 
-fn split_comma(s: String) -> Vec<String> {
-    // return empty vector if input is ""
-    if s == "" {
-        return vec![];
-    }
-    // TODO improvement!!!
-    let ca: Vec<&str> = s.split(",").collect();
-    let mut vec: Vec<String> = Vec::new();
-    ca.into_iter().for_each(|ll| {
-        vec.push(ll.to_string());
-    });
-    return vec;
-}
-
-fn remove_comma(s: String) -> String {
-    s.replace(",", "")
-}
-
 pub fn run() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
-
-    if let Some(config_path) = cli.config.as_deref() {
-        println!("Value for config: {}", config_path.display());
-    }
 
     // You can see how many times a particular flag or argument occurred
     // Note, only flags can have multiple occurrences
@@ -99,17 +80,18 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     // matches just as you would the top level cmd
     match &cli.command {
         Some(Commands::Add { message, linked_items, id, tags }) => {
-            let item = Item{
-                id: remove_comma(id.to_owned().unwrap_or(generate_id())),
-                linked_items: split_comma(linked_items.to_owned().unwrap_or("".to_string())),
-                tags: split_comma(tags.to_owned().unwrap_or("".to_string())),
-                content: message.to_owned().unwrap_or("".to_string())
-            };
+            let item = Item::new(
+                remove_comma(id.to_owned().unwrap_or(generate_id())),
+                split_comma(linked_items.to_owned().unwrap_or("".to_string())),
+                split_comma(tags.to_owned().unwrap_or("".to_string())),
+                message.to_owned().unwrap_or("".to_string())
+            );
             println!("Added new Todo with following Id: {:?}", item.id);
             println!("\"{}\"", item.content);
-            let mut items = read_items();
-            items.push(item);
-            write_items(&items)
+            let file = cli.config.unwrap_or("./cake.json".to_string());
+            let mut store = Store::new(&file);
+            store.add(item);
+            store.write(&file);
         }
         Some(Commands::Remove { id, recursive }) => {
             println!("id: {:?} recursive: {:?}", id, recursive);

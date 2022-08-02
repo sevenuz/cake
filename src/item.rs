@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
 use nanoid::nanoid;
+use crate::timestamp;
 
 #[derive(Serialize, Deserialize)]
 pub struct Item {
     pub id: String,
     pub linked_items: Vec<String>,
     pub tags: Vec<String>,
-    pub content: String
+    pub content: String,
+    pub timestamp: u64
 }
 
 pub fn generate_id() -> String {
@@ -17,19 +19,14 @@ pub fn generate_id() -> String {
     nanoid!(3, &alphabet)
 }
 
-pub fn write_items(items: &Vec<Item>) {
-    // TODO configure file
-    let serialized = serde_json::to_string_pretty(&items).unwrap();
-    std::fs::write("./cake.json", serialized).unwrap();
-}
-
-pub fn read_items() -> Vec<Item> {
-    // TODO configure file
-    // TODO return empty Vec directly instead of parsing []...
-    let serialized = std::fs::read_to_string("./cake.json").unwrap_or("[]".to_string());
-    let _items: Vec<Item> = serde_json::from_str(&serialized).unwrap();
-    _items
-}
-
 impl Item {
+    pub fn new(id: String, linked_items: Vec<String>, tags: Vec<String>, content: String) -> Item {
+        Item{
+            id,
+            linked_items,
+            tags,
+            content,
+            timestamp: timestamp().as_secs()
+        }
+    }
 }
