@@ -106,8 +106,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 split_comma(tags.to_owned().unwrap_or("".to_string())),
                 message.to_owned().unwrap_or("".to_string())
             );
-            println!("Added new Todo with following Id: {:?}", item.id);
-            println!("\"{}\"", item.content);
+            println!("{}", item); // TODO does not show the right timestamp after edit
             store.add(item, *edit).unwrap_or_else(|err|{
                 println!("{}", err);
             });
@@ -131,7 +130,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             let max_depth = if *recursive { 10 /*std::usize::MAX*/ } else { 1 };
 
             fn prl(item: &Item, depth: usize) {
-                println!("{:indent$}{}", "", item.print_long(), indent=depth);
+                println!("{:indent$}{}", "", item, indent=depth);
             }
             fn prs(item: &Item, depth: usize) {
                 println!("{:indent$}{}", "", item.print(), indent=depth);
@@ -139,9 +138,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
             if _id.is_empty() {
                 let mut _keys = _items.keys().cloned().collect::<Vec<String>>();
+                // sort output from old to new
                 _keys.sort_by(|a, b| {
                     _items.get(a).unwrap().timestamp.cmp(&_items.get(b).unwrap().timestamp)
                 });
+                // sort output by amount of parents. Zero parents first
                 _keys.sort_by(|a, b| {
                     _items.get(a).unwrap().parents.len().cmp(&_items.get(b).unwrap().parents.len())
                 });

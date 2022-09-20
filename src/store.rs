@@ -64,16 +64,21 @@ pub mod inner {
             std::fs::write(file, serialized).unwrap();
         }
 
-        pub fn add(&mut self, item: Item, edit: bool) -> Result<(), String> {
+        pub fn add(&mut self, mut item: Item, edit: bool) -> Result<(), String> {
             if !edit && self.items.contains_key(&item.id) {
                 return Err(
                     "Key is already used. Set the \"edit\" flag if you want to update the item."
                         .to_string(),
                 );
             }
-            if edit && !self.items.contains_key(&item.id) {
-                return Err("Key could not be found. Item was not updated.".to_string());
+            if edit {
+                if !self.items.contains_key(&item.id) {
+                    return Err("Key could not be found. Item was not updated.".to_string());
+                }
+                // keep creation timestamp, override the rest...
+                item.timestamp = self.items.get(&item.id).unwrap().timestamp;
             }
+            // TODO check if all ids exist (parents, children) ?
             self.edit_child_of_parents(&item.id, &item.parents, true);
             self.edit_parent_of_children(&item.id, &item.children, true);
             self.items.insert(item.id.to_owned(), item);
@@ -99,6 +104,7 @@ pub mod inner {
             return &self.items;
         }
 
+        // executes passed fn for every element in items, executing children recursively
         pub fn recursive_execute(
             &self,
             items: &Vec<String>,
