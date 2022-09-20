@@ -42,6 +42,10 @@ pub enum Commands {
         /// a custom unique id for the item
         #[clap(short, long)]
         id: Option<String>,
+
+        /// updates the item with the provided id if found
+        #[clap(short, long, action)]
+        edit: bool,
     },
     /// remove items
     Remove {
@@ -62,14 +66,22 @@ pub enum Commands {
         /// recursive removing all linked items
         #[clap(short, long, action)]
         recursive: bool,
+
+        /// detailed presentation of the items
+        #[clap(short, long, action)]
+        long: bool,
     },
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
+    let file = cli.config.unwrap_or("./cake.json".to_string());
+    let mut store = Store::new(&file);
+
     // You can see how many times a particular flag or argument occurred
     // Note, only flags can have multiple occurrences
+    let _debug: bool = cli.debug > 0;
     match cli.debug {
         0 => print!(""),
         1 => println!("Debug mode is on"),
@@ -79,7 +91,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
     match &cli.command {
-        Some(Commands::Add { message, linked_items, id, tags }) => {
+        Some(Commands::Add { message, linked_items, id, tags, edit }) => {
             let item = Item::new(
                 remove_comma(id.to_owned().unwrap_or(generate_id())),
                 split_comma(linked_items.to_owned().unwrap_or("".to_string())),
@@ -88,16 +100,42 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             );
             println!("Added new Todo with following Id: {:?}", item.id);
             println!("\"{}\"", item.content);
-            let file = cli.config.unwrap_or("./cake.json".to_string());
-            let mut store = Store::new(&file);
-            store.add(item);
+            store.add(item, *edit).unwrap_or_else(|err|{
+                println!("{}", err);
+            });
             store.write(&file);
         }
         Some(Commands::Remove { id, recursive }) => {
-            println!("id: {:?} recursive: {:?}", id, recursive);
+            if _debug {
+                println!("id: {:?} recursive: {:?}", id, recursive);
+            }
+            store.remove(id, *recursive);
+            store.write(&file);
+            println!("{:?} removed.", id); // TODO print count of deleted items
         }
-        Some(Commands::List { id, recursive }) => {
-            println!("id: {:?} recursive: {:?}", id, recursive);
+        Some(Commands::List { id, recursive, long }) => {
+            if _debug {
+                println!("id: {:?} recursive: {:?} long: {:?}", id, recursive, long);
+            }
+            let _id = &id.to_owned().unwrap_or("".to_string());
+            let _items = store.get();
+            let mut _cycle: Vec<String> = vec![];
+            let max_depth = if *recursive { 10 /*std::usize::MAX*/ } else { 1 };
+
+            fn prl(item: &Item, depth: usize) {
+                println!("{:indent$}{}", "", item.print_long(), indent=depth);
+            }
+            fn prs(item: &Item, depth: usize) {
+                println!("{:indent$}{}", "", item.print(), indent=depth);
+            }
+
+            if _id.is_empty() {
+                let _keys = _items.keys().cloned().collect::<Vec<String>>();
+                store.recursive_execute(&_keys, &mut _cycle, if *long { prl } else { prs }, 0, max_depth);
+            } else {
+                let _keys = vec![_id.to_owned()];
+                store.recursive_execute(&_keys, &mut _cycle, if *long { prl } else { prs }, 0, max_depth);
+            }
         }
         None => {
             println!("Nothing happed o.0");
@@ -106,4 +144,3 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-

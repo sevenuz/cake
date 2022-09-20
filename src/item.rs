@@ -29,4 +29,12 @@ impl Item {
             timestamp: timestamp().as_secs()
         }
     }
+
+    pub fn print(&self) -> String {
+        return format!("|{:?}| {:?}", self.id, self.content);
+    }
+
+    pub fn print_long(&self) -> String {
+        return format!("|{:?}| {:?}", self.id, self.content); // TODO long form
+    }
 }
