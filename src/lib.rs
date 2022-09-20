@@ -25,7 +25,8 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// add items
+    /// add or edit items
+    #[clap(alias("edit"))]
     Add {
         /// the todo item, if non, editor is opened
         #[clap(value_parser)]
@@ -48,6 +49,7 @@ pub enum Commands {
         edit: bool,
     },
     /// remove items
+    #[clap(alias("rm"))]
     Remove {
         /// the item which should be removed
         #[clap(value_parser)]
@@ -58,6 +60,7 @@ pub enum Commands {
         recursive: bool,
     },
     /// list items
+    #[clap(alias("ls"))]
     List {
         /// the item which should be listed
         #[clap(value_parser)]
