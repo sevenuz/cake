@@ -5,7 +5,8 @@ use crate::timestamp;
 #[derive(Serialize, Deserialize)]
 pub struct Item {
     pub id: String,
-    pub linked_items: Vec<String>,
+    pub children: Vec<String>,
+    pub parents: Vec<String>,
     pub tags: Vec<String>,
     pub content: String,
     pub timestamp: u64
@@ -20,10 +21,11 @@ pub fn generate_id() -> String {
 }
 
 impl Item {
-    pub fn new(id: String, linked_items: Vec<String>, tags: Vec<String>, content: String) -> Item {
+    pub fn new(id: String, children: Vec<String>, parents: Vec<String>, tags: Vec<String>, content: String) -> Item {
         Item{
             id,
-            linked_items,
+            children,
+            parents,
             tags,
             content,
             timestamp: timestamp().as_secs()

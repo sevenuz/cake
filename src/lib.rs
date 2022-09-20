@@ -32,9 +32,13 @@ pub enum Commands {
         #[clap(value_parser)]
         message: Option<String>,
 
-        /// the item the new one is linked to
-        #[clap(value_parser)]
-        linked_items: Option<String>,
+        /// the children items wich the new one is linked to
+        #[clap(short, long)]
+        children: Option<String>,
+
+        /// the parent items the new one is linked to
+        #[clap(short, long)]
+        parents: Option<String>,
 
         /// Optional tags seperated by colon
         #[clap(short, long)]
@@ -94,10 +98,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
     match &cli.command {
-        Some(Commands::Add { message, linked_items, id, tags, edit }) => {
+        Some(Commands::Add { message, children, parents, id, tags, edit }) => {
             let item = Item::new(
                 remove_comma(id.to_owned().unwrap_or(generate_id())),
-                split_comma(linked_items.to_owned().unwrap_or("".to_string())),
+                split_comma(children.to_owned().unwrap_or("".to_string())),
+                split_comma(parents.to_owned().unwrap_or("".to_string())),
                 split_comma(tags.to_owned().unwrap_or("".to_string())),
                 message.to_owned().unwrap_or("".to_string())
             );
@@ -133,7 +138,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             }
 
             if _id.is_empty() {
-                let _keys = _items.keys().cloned().collect::<Vec<String>>();
+                let mut _keys = _items.keys().cloned().collect::<Vec<String>>();
+                _keys.sort_by(|a, b| {
+                    _items.get(a).unwrap().timestamp.cmp(&_items.get(b).unwrap().timestamp)
+                });
+                _keys.sort_by(|a, b| {
+                    _items.get(a).unwrap().parents.len().cmp(&_items.get(b).unwrap().parents.len())
+                });
                 store.recursive_execute(&_keys, &mut _cycle, if *long { prl } else { prs }, 0, max_depth);
             } else {
                 let _keys = vec![_id.to_owned()];
