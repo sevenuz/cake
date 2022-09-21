@@ -7,6 +7,8 @@ pub mod inner {
     use crate::{item::Item, util::timestamp};
     use serde::{Deserialize, Serialize};
 
+    use crate::util::*;
+
     #[derive(Serialize, Deserialize)]
     pub struct Store {
         items: HashMap<String, Item>,
@@ -15,6 +17,7 @@ pub mod inner {
 
     impl Store {
         fn edit_parent_of_children(&mut self, id: &String, children: &Vec<String>, add: bool) {
+            // TODO check if all ids exist (children) ?
             for s in children {
                 match self.items.get_mut(s) {
                     Some(item) => {
@@ -30,6 +33,7 @@ pub mod inner {
         }
 
         fn edit_child_of_parents(&mut self, id: &String, parents: &Vec<String>, add: bool) {
+            // TODO check if all ids exist (parents) ?
             for s in parents {
                 match self.items.get_mut(s) {
                     Some(item) => {
@@ -64,21 +68,39 @@ pub mod inner {
             std::fs::write(file, serialized).unwrap();
         }
 
-        pub fn add(&mut self, mut item: Item, edit: bool) -> Result<(), String> {
-            if !edit && self.items.contains_key(&item.id) {
+        pub fn edit(&mut self, id: &String, message: &Option<String>, children: &Option<String>, parents: &Option<String>, tags: &Option<String>) -> Result<(), String> {
+            if !self.items.contains_key(id) {
+                return Err("Key could not be found. Item was not updated.".to_string());
+            }
+
+            let mut _item = self.items.get_mut(id).unwrap();
+            if let Some(m) = message {
+                _item.content = m.to_string();
+            }
+            if let Some(c) = children {
+                _item.children = split_comma(c.to_owned());
+            }
+            if let Some(p) = parents {
+                _item.parents = split_comma(p.to_owned());
+            }
+            if let Some(t) = tags {
+                _item.tags = split_comma(t.to_owned());
+            }
+            if let Some(m) = message {
+                _item.content = m.to_string();
+            }
+            _item.last_update = timestamp().as_secs();
+            // TODO update children and parents
+            Ok(())
+        }
+
+        pub fn add(&mut self,  item: Item) -> Result<(), String> {
+            if self.items.contains_key(&item.id) {
                 return Err(
                     "Key is already used. Set the \"edit\" flag if you want to update the item."
-                        .to_string(),
+                    .to_string(),
                 );
             }
-            if edit {
-                if !self.items.contains_key(&item.id) {
-                    return Err("Key could not be found. Item was not updated.".to_string());
-                }
-                // keep creation timestamp, override the rest...
-                item.timestamp = self.items.get(&item.id).unwrap().timestamp;
-            }
-            // TODO check if all ids exist (parents, children) ?
             self.edit_child_of_parents(&item.id, &item.parents, true);
             self.edit_parent_of_children(&item.id, &item.children, true);
             self.items.insert(item.id.to_owned(), item);
@@ -98,6 +120,10 @@ pub mod inner {
                 }
                 None => (),
             }
+        }
+
+        pub fn get_mut_item(&mut self, id: &String) -> Option<&mut Item> {
+            return self.items.get_mut(id);
         }
 
         pub fn get(&self) -> &HashMap<String, Item> {

@@ -99,17 +99,24 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     // matches just as you would the top level cmd
     match &cli.command {
         Some(Commands::Add { message, children, parents, id, tags, edit }) => {
-            let item = Item::new(
-                remove_comma(id.to_owned().unwrap_or(generate_id())),
-                split_comma(children.to_owned().unwrap_or("".to_string())),
-                split_comma(parents.to_owned().unwrap_or("".to_string())),
-                split_comma(tags.to_owned().unwrap_or("".to_string())),
-                message.to_owned().unwrap_or("".to_string())
-            );
-            println!("{}", item); // TODO does not show the right timestamp after edit
-            store.add(item, *edit).unwrap_or_else(|err|{
-                println!("{}", err);
-            });
+            let _id = &id.to_owned().unwrap_or("".to_string());
+            if *edit {
+                store.edit(_id, message, children, parents, tags).unwrap_or_else(|err| {
+                    println!("{}", err);
+                });
+            } else {
+                let item = Item::new(
+                    remove_comma(if _id.is_empty() { generate_id() } else { _id.to_string() }),
+                    split_comma(children.to_owned().unwrap_or("".to_string())),
+                    split_comma(parents.to_owned().unwrap_or("".to_string())),
+                    split_comma(tags.to_owned().unwrap_or("".to_string())),
+                    message.to_owned().unwrap_or("".to_string())
+                );
+                store.add(item).unwrap_or_else(|err| {
+                    println!("{}", err);
+                });
+            }
+            println!("{}", store.get_mut_item(_id).unwrap());
             store.write(&file);
         }
         Some(Commands::Remove { id, recursive }) => {
