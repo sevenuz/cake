@@ -191,10 +191,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             edit,
         }) => {
             let _id = &id.to_owned().unwrap_or(generate_id());
-            let _message = &message
-                .to_owned()
-                .unwrap_or(input_from_external_editor("vim").unwrap());
-            debug(format!("File content:\n{}", _message), Debug::Normal);
             if *edit {
                 store
                     .edit(_id, message, children, parents, tags)
@@ -202,6 +198,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                         println!("{}", err);
                     });
             } else {
+                let _message = &message
+                    .to_owned()
+                    .unwrap_or(input_from_external_editor("vim").unwrap());
+                debug(format!("File content:\n{}", _message), Debug::Normal);
                 let item = Item::new(
                     remove_comma(_id.to_string()),
                     split_comma(children.to_owned().unwrap_or("".to_string())),
