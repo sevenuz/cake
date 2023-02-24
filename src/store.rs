@@ -122,7 +122,7 @@ pub mod inner {
             }
         }
 
-        pub fn get_mut_item(&mut self, id: &String) -> Option<&mut Item> {
+        pub fn get_item_mut(&mut self, id: &str) -> Option<&mut Item> {
             return self.items.get_mut(id);
         }
 

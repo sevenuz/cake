@@ -8,9 +8,14 @@ use crate::util::*;
 use clap::{Parser, Subcommand};
 use colored::*;
 use platform_dirs::AppDirs;
-use std::error::Error;
-use std::path::PathBuf;
-use std::{env, fs};
+use std::{
+    env::{current_dir, temp_dir},
+    error::Error,
+    fs::{read_dir, File},
+    io::Read,
+    path::PathBuf,
+    process::Command,
+};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -67,6 +72,18 @@ pub enum Commands {
         #[clap(short, long, action)]
         recursive: bool,
     },
+    /// start timetracking for item
+    Start {
+        /// the item which should be removed
+        #[clap(value_parser)]
+        id: String,
+    },
+    /// stop timetracking for item
+    Stop {
+        /// the item which should be removed
+        #[clap(value_parser)]
+        id: String,
+    },
     /// list items
     #[clap(alias("ls"))]
     List {
@@ -84,12 +101,30 @@ pub enum Commands {
     },
 }
 
+const NAME: &str = env!("CARGO_PKG_NAME");
+const SAVE_FILE: &str = "cake.json";
+
+fn input_from_external_editor(editor: &str) -> Result<String, Box<dyn Error>> {
+    let mut file_path = temp_dir();
+    file_path.push("editable");
+    File::create(&file_path).expect("Could not create file");
+
+    Command::new(editor)
+        .arg(&file_path)
+        .status()
+        .expect("Something went wrong");
+
+    let mut editable = String::new();
+    File::open(file_path)
+        .expect("Could not open file")
+        .read_to_string(&mut editable)?;
+    Ok(editable)
+}
+
 // find next cake save file in current or upper dirs, fallback is data_dir
 fn find_save_file(path: &mut PathBuf) -> Result<String, Box<dyn Error>> {
-    const SAVE_FILE: &str = "cake.json";
-
     if path.is_dir() {
-        for entry in fs::read_dir(path.as_path())? {
+        for entry in read_dir(path.as_path())? {
             let path = entry?.path();
             let name = path.file_name().ok_or("No filename")?;
 
@@ -102,7 +137,6 @@ fn find_save_file(path: &mut PathBuf) -> Result<String, Box<dyn Error>> {
     if path.pop() {
         return find_save_file(path);
     } else {
-        const NAME: &str = env!("CARGO_PKG_NAME");
         let app_dirs = AppDirs::new(Some(NAME), false).unwrap();
         return Ok(app_dirs
             .data_dir
@@ -118,14 +152,15 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
     // You can see how many times a particular flag or argument occurred
     // Note, only flags can have multiple occurrences
-    enum Debug { Important, Normal }
-    let debug = |s: String, level: Debug| {
-        match cli.debug {
-            0 => (),
-            1 if matches!(level, Debug::Important) => println!("{}", s.red()),
-            _ if matches!(level, Debug::Normal) => println!("{}", s.yellow()),
-            _ => ()
-        }
+    enum Debug {
+        Important,
+        Normal,
+    }
+    let debug = |s: String, level: Debug| match cli.debug {
+        0 => (),
+        1 if matches!(level, Debug::Important) => println!("{}", s.red()),
+        _ if matches!(level, Debug::Normal) => println!("{}", s.yellow()),
+        _ => (),
     };
     debug(format!("debug mode is on."), Debug::Normal);
 
@@ -138,7 +173,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 f
             }
         }
-        None => find_save_file(&mut env::current_dir()?).unwrap(),
+        None => find_save_file(&mut current_dir()?).unwrap(),
     };
     debug(format!("File: {}", file), Debug::Normal);
 
@@ -155,7 +190,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             tags,
             edit,
         }) => {
-            let _id = &id.to_owned().unwrap_or("".to_string());
+            let _id = &id.to_owned().unwrap_or(generate_id());
+            let _message = &message
+                .to_owned()
+                .unwrap_or(input_from_external_editor("vim").unwrap());
+            debug(format!("File content:\n{}", _message), Debug::Normal);
             if *edit {
                 store
                     .edit(_id, message, children, parents, tags)
@@ -164,35 +203,55 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                     });
             } else {
                 let item = Item::new(
-                    remove_comma(if _id.is_empty() {
-                        generate_id()
-                    } else {
-                        _id.to_string()
-                    }),
+                    remove_comma(_id.to_string()),
                     split_comma(children.to_owned().unwrap_or("".to_string())),
                     split_comma(parents.to_owned().unwrap_or("".to_string())),
                     split_comma(tags.to_owned().unwrap_or("".to_string())),
-                    message.to_owned().unwrap_or("".to_string()),
+                    _message.to_string(),
                 );
                 store.add(item).unwrap_or_else(|err| {
                     println!("{}", err);
                 });
             }
-            println!("{}", store.get_mut_item(_id).unwrap());
+            println!("{}", store.get_item_mut(_id).unwrap());
             store.write(&file);
         }
         Some(Commands::Remove { id, recursive }) => {
-            debug(format!("id: {:?} recursive: {:?}", id, recursive), Debug::Normal);
+            debug(
+                format!("id: {:?} recursive: {:?}", id, recursive),
+                Debug::Normal,
+            );
             store.remove(id, *recursive);
             store.write(&file);
             println!("{:?} removed.", id); // TODO print count of deleted items
+        }
+        Some(Commands::Start { id }) => {
+            match store.get_item_mut(id).expect("Could not found id").start() {
+                Ok(_) => {
+                    println!("{:?} started.", id); // TODO print count of deleted items
+                    store.write(&file);
+                }
+                Err(err) => println!("{}", err),
+            }
+        }
+        Some(Commands::Stop { id }) => {
+            match store.get_item_mut(id).expect("Could not found id").stop() {
+                Ok(_) => {
+                    println!("{:?} stoped.", id); // TODO print count of deleted items
+                    store.write(&file);
+                }
+                Err(err) => println!("{}", err),
+            }
         }
         Some(Commands::List {
             id,
             recursive,
             long,
         }) => {
-            debug(format!("id: {:?} recursive: {:?} long: {:?}", id, recursive, long), Debug::Normal);
+            debug(
+                format!("id: {:?} recursive: {:?} long: {:?}", id, recursive, long),
+                Debug::Important,
+            );
             let _id = &id.to_owned().unwrap_or("".to_string());
             let _items = store.get();
             let mut _cycle: Vec<String> = vec![];

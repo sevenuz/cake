@@ -12,7 +12,7 @@ pub struct Item {
     pub tags: Vec<String>,
     pub timetrack: Vec<u64>,
     pub content: String,
-    pub timestamp: u64, // creation timestamp
+    pub timestamp: u64,   // creation timestamp
     pub last_update: u64, // last update timestamp
 }
 
@@ -28,8 +28,8 @@ impl fmt::Display for Item {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "{}\ntimestamp: {}, updated: {}\ntags: {:?}\nparents: {:?}\nchildren: {:?}",
-            self.print(), self.timestamp, self.last_update, self.tags, self.parents, self.children
+            "| id: {} | timestamp: {} | updated: {} \n| tags: {:?} \n| timetrack: {:?} \n| parents: {:?} \n| children: {:?} \n\n {}",
+            self.id, self.timestamp, self.last_update, self.tags, self.timetrack, self.parents, self.children, self.content
         )
     }
 }
@@ -56,6 +56,29 @@ impl Item {
 
     // short form of fmt
     pub fn print(&self) -> String {
-        return format!("|{:?}| {:?}", self.id, self.content);
+        // prints only first line of the content
+        return format!("|{}| {}", self.id, self.content.split("\n").next().unwrap());
+    }
+
+    pub fn start(&mut self) -> Result<(), String> {
+        if self.timetrack.len() % 2 == 0 {
+            self.timetrack.push(timestamp().as_secs());
+            Ok(())
+        } else {
+            Err(format!(
+                "{} runs already since {:?}",
+                self.id.to_owned(),
+                self.timetrack.last().unwrap()
+            ))
+        }
+    }
+
+    pub fn stop(&mut self) -> Result<(), String> {
+        if self.timetrack.len() % 2 == 1 {
+            self.timetrack.push(timestamp().as_secs());
+            Ok(())
+        } else {
+            Err(format!("{} is not running.", self.id.to_owned()))
+        }
     }
 }
