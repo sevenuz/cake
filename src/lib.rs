@@ -1,12 +1,16 @@
-mod store;
 mod item;
+mod store;
 mod util;
 
-use clap::{Parser, Subcommand};
-use std::error::Error;
-use crate::item::{Item, generate_id};
-use crate::util::*;
+use crate::item::{generate_id, Item};
 use crate::store::Store;
+use crate::util::*;
+use clap::{Parser, Subcommand};
+use colored::*;
+use platform_dirs::AppDirs;
+use std::error::Error;
+use std::path::PathBuf;
+use std::{env, fs};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -80,37 +84,95 @@ pub enum Commands {
     },
 }
 
+// find next cake save file in current or upper dirs, fallback is data_dir
+fn find_save_file(path: &mut PathBuf) -> Result<String, Box<dyn Error>> {
+    const SAVE_FILE: &str = "cake.json";
+
+    if path.is_dir() {
+        for entry in fs::read_dir(path.as_path())? {
+            let path = entry?.path();
+            let name = path.file_name().ok_or("No filename")?;
+
+            if name == SAVE_FILE {
+                return Ok(path.into_os_string().into_string().unwrap());
+            }
+        }
+    }
+
+    if path.pop() {
+        return find_save_file(path);
+    } else {
+        const NAME: &str = env!("CARGO_PKG_NAME");
+        let app_dirs = AppDirs::new(Some(NAME), false).unwrap();
+        return Ok(app_dirs
+            .data_dir
+            .join(SAVE_FILE)
+            .into_os_string()
+            .into_string()
+            .unwrap());
+    }
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
-    let file = cli.config.unwrap_or("./cake.json".to_string());
-    let mut store = Store::new(&file);
-
     // You can see how many times a particular flag or argument occurred
     // Note, only flags can have multiple occurrences
-    let _debug: bool = cli.debug > 0;
-    match cli.debug {
-        0 => print!(""),
-        1 => println!("Debug mode is on"),
-        _ => println!("Don't be crazy"),
-    }
+    enum Debug { Important, Normal }
+    let debug = |s: String, level: Debug| {
+        match cli.debug {
+            0 => (),
+            1 if matches!(level, Debug::Important) => println!("{}", s.red()),
+            _ if matches!(level, Debug::Normal) => println!("{}", s.yellow()),
+            _ => ()
+        }
+    };
+    debug(format!("debug mode is on."), Debug::Normal);
+
+    // use empty config path to write to global save file
+    let file = match cli.config {
+        Some(f) => {
+            if f.is_empty() {
+                find_save_file(&mut PathBuf::new()).unwrap()
+            } else {
+                f
+            }
+        }
+        None => find_save_file(&mut env::current_dir()?).unwrap(),
+    };
+    debug(format!("File: {}", file), Debug::Normal);
+
+    let mut store = Store::new(&file);
 
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
     match &cli.command {
-        Some(Commands::Add { message, children, parents, id, tags, edit }) => {
+        Some(Commands::Add {
+            message,
+            children,
+            parents,
+            id,
+            tags,
+            edit,
+        }) => {
             let _id = &id.to_owned().unwrap_or("".to_string());
             if *edit {
-                store.edit(_id, message, children, parents, tags).unwrap_or_else(|err| {
-                    println!("{}", err);
-                });
+                store
+                    .edit(_id, message, children, parents, tags)
+                    .unwrap_or_else(|err| {
+                        println!("{}", err);
+                    });
             } else {
                 let item = Item::new(
-                    remove_comma(if _id.is_empty() { generate_id() } else { _id.to_string() }),
+                    remove_comma(if _id.is_empty() {
+                        generate_id()
+                    } else {
+                        _id.to_string()
+                    }),
                     split_comma(children.to_owned().unwrap_or("".to_string())),
                     split_comma(parents.to_owned().unwrap_or("".to_string())),
                     split_comma(tags.to_owned().unwrap_or("".to_string())),
-                    message.to_owned().unwrap_or("".to_string())
+                    message.to_owned().unwrap_or("".to_string()),
                 );
                 store.add(item).unwrap_or_else(|err| {
                     println!("{}", err);
@@ -120,43 +182,68 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             store.write(&file);
         }
         Some(Commands::Remove { id, recursive }) => {
-            if _debug {
-                println!("id: {:?} recursive: {:?}", id, recursive);
-            }
+            debug(format!("id: {:?} recursive: {:?}", id, recursive), Debug::Normal);
             store.remove(id, *recursive);
             store.write(&file);
             println!("{:?} removed.", id); // TODO print count of deleted items
         }
-        Some(Commands::List { id, recursive, long }) => {
-            if _debug {
-                println!("id: {:?} recursive: {:?} long: {:?}", id, recursive, long);
-            }
+        Some(Commands::List {
+            id,
+            recursive,
+            long,
+        }) => {
+            debug(format!("id: {:?} recursive: {:?} long: {:?}", id, recursive, long), Debug::Normal);
             let _id = &id.to_owned().unwrap_or("".to_string());
             let _items = store.get();
             let mut _cycle: Vec<String> = vec![];
-            let max_depth = if *recursive { 10 /*std::usize::MAX*/ } else { 1 };
+            let max_depth = if *recursive {
+                10 /*std::usize::MAX*/
+            } else {
+                1
+            };
 
             fn prl(item: &Item, depth: usize) {
-                println!("{:indent$}{}", "", item, indent=depth);
+                println!("{:indent$}{}", "", item, indent = depth);
             }
             fn prs(item: &Item, depth: usize) {
-                println!("{:indent$}{}", "", item.print(), indent=depth);
+                println!("{:indent$}{}", "", item.print(), indent = depth);
             }
 
             if _id.is_empty() {
                 let mut _keys = _items.keys().cloned().collect::<Vec<String>>();
                 // sort output from old to new
                 _keys.sort_by(|a, b| {
-                    _items.get(a).unwrap().timestamp.cmp(&_items.get(b).unwrap().timestamp)
+                    _items
+                        .get(a)
+                        .unwrap()
+                        .timestamp
+                        .cmp(&_items.get(b).unwrap().timestamp)
                 });
                 // sort output by amount of parents. Zero parents first
                 _keys.sort_by(|a, b| {
-                    _items.get(a).unwrap().parents.len().cmp(&_items.get(b).unwrap().parents.len())
+                    _items
+                        .get(a)
+                        .unwrap()
+                        .parents
+                        .len()
+                        .cmp(&_items.get(b).unwrap().parents.len())
                 });
-                store.recursive_execute(&_keys, &mut _cycle, if *long { prl } else { prs }, 0, max_depth);
+                store.recursive_execute(
+                    &_keys,
+                    &mut _cycle,
+                    if *long { prl } else { prs },
+                    0,
+                    max_depth,
+                );
             } else {
                 let _keys = vec![_id.to_owned()];
-                store.recursive_execute(&_keys, &mut _cycle, if *long { prl } else { prs }, 0, max_depth);
+                store.recursive_execute(
+                    &_keys,
+                    &mut _cycle,
+                    if *long { prl } else { prs },
+                    0,
+                    max_depth,
+                );
             }
         }
         None => {

@@ -10,6 +10,7 @@ pub struct Item {
     pub children: Vec<String>,
     pub parents: Vec<String>,
     pub tags: Vec<String>,
+    pub timetrack: Vec<u64>,
     pub content: String,
     pub timestamp: u64, // creation timestamp
     pub last_update: u64, // last update timestamp
@@ -47,6 +48,7 @@ impl Item {
             parents,
             tags,
             content,
+            timetrack: vec![],
             timestamp: timestamp().as_secs(),
             last_update: timestamp().as_secs(),
         }
