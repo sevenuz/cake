@@ -3,15 +3,16 @@ mod store;
 mod util;
 
 use crate::item::{generate_id, Item};
+use crate::store::inner::RecState;
 use crate::store::Store;
 use crate::util::*;
 use clap::{Parser, Subcommand};
 use colored::*;
 use platform_dirs::AppDirs;
 use std::{
-    env::{current_dir, temp_dir},
+    env::{args, current_dir, temp_dir},
     error::Error,
-    fs::{read_dir, File},
+    fs::{read_dir, write, File},
     io::Read,
     path::PathBuf,
     process::Command,
@@ -37,9 +38,9 @@ pub enum Commands {
     /// add or edit items
     #[clap(alias("edit"))]
     Add {
-        /// the todo item, if non, editor is opened
+        /// a custom unique id for the item
         #[clap(value_parser)]
-        message: Option<String>,
+        id: Option<String>,
 
         /// the children items wich the new one is linked to
         #[clap(short, long)]
@@ -53,13 +54,17 @@ pub enum Commands {
         #[clap(short, long)]
         tags: Option<String>,
 
-        /// a custom unique id for the item
+        /// the todo content, if non, editor is opened
         #[clap(short, long)]
-        id: Option<String>,
+        message: Option<String>,
 
         /// updates the item with the provided id if found
         #[clap(short, long, action)]
         edit: bool,
+
+        /// overwrites the item with the provided id if found, edit flag is required
+        #[clap(short, long, action)]
+        overwrite: bool,
     },
     /// remove items
     #[clap(alias("rm"))]
@@ -68,7 +73,7 @@ pub enum Commands {
         #[clap(value_parser)]
         id: String,
 
-        /// recursive removing all linged items
+        /// recursive removing all linked items
         #[clap(short, long, action)]
         recursive: bool,
     },
@@ -91,7 +96,7 @@ pub enum Commands {
         #[clap(value_parser)]
         id: Option<String>,
 
-        /// recursive removing all linked items
+        /// recursive show all linked items
         #[clap(short, long, action)]
         recursive: bool,
 
@@ -104,10 +109,20 @@ pub enum Commands {
 const NAME: &str = env!("CARGO_PKG_NAME");
 const SAVE_FILE: &str = "cake.json";
 
-fn input_from_external_editor(editor: &str) -> Result<String, Box<dyn Error>> {
+fn input_from_external_editor(
+    editor: &str,
+    text: Option<&String>,
+) -> Result<String, Box<dyn Error>> {
     let mut file_path = temp_dir();
     file_path.push("editable");
-    File::create(&file_path).expect("Could not create file");
+    File::create(&file_path).expect("Could not create file.");
+
+    match text {
+        Some(t) => {
+            write(&file_path, t).expect("Could not write to file.");
+        }
+        None => (),
+    }
 
     Command::new(editor)
         .arg(&file_path)
@@ -183,24 +198,44 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     // matches just as you would the top level cmd
     match &cli.command {
         Some(Commands::Add {
-            message,
+            id,
             children,
             parents,
-            id,
+            message,
             tags,
             edit,
+            overwrite,
         }) => {
+            // TODO editor from settings
+            let editor = "vim";
+            let args: Vec<String> = args().collect();
+            let cmd_edit = args[1] == "edit";
+            debug(format!("{:?}", args), Debug::Normal);
             let _id = &id.to_owned().unwrap_or(generate_id());
-            if *edit {
-                store
-                    .edit(_id, message, children, parents, tags)
-                    .unwrap_or_else(|err| {
-                        println!("{}", err);
-                    });
+            if *edit || cmd_edit {
+                let _message = match &message {
+                    Some(m) => m.to_string(),
+                    None => input_from_external_editor(
+                        editor,
+                        Some(&store.get_item(&_id.to_string()).unwrap().content),
+                    )
+                    .unwrap(),
+                };
+                let item = Item::new(
+                    remove_comma(_id.to_string()),
+                    split_comma(children.to_owned().unwrap_or("".to_string())),
+                    split_comma(parents.to_owned().unwrap_or("".to_string())),
+                    split_comma(tags.to_owned().unwrap_or("".to_string())),
+                    _message.to_string(),
+                );
+                store.edit(item, *overwrite).unwrap_or_else(|err| {
+                    println!("{}", err);
+                });
             } else {
-                let _message = &message
-                    .to_owned()
-                    .unwrap_or(input_from_external_editor("vim").unwrap());
+                let _message = match &message {
+                    Some(m) => m.to_string(),
+                    None => input_from_external_editor(editor, None).unwrap(),
+                };
                 debug(format!("File content:\n{}", _message), Debug::Normal);
                 let item = Item::new(
                     remove_comma(_id.to_string()),
@@ -261,11 +296,30 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 1
             };
 
-            fn prl(item: &Item, depth: usize) {
-                println!("{:indent$}{}", "", item, indent = depth);
+            fn prl(item: &Item, depth: usize, state: RecState) {
+                println!(
+                    "{:indent$}{}",
+                    "",
+                    match state {
+                        RecState::Normal => item.to_string().bold(),
+                        RecState::Cycle => (item.to_string() + " (cycle)").purple(),
+                        RecState::Reappearence =>
+                            (item.to_string() + " (reappearence)").bright_green(),
+                    },
+                    indent = depth
+                );
             }
-            fn prs(item: &Item, depth: usize) {
-                println!("{:indent$}{}", "", item.print(), indent = depth);
+            fn prs(item: &Item, depth: usize, state: RecState) {
+                println!(
+                    "{:indent$}{}",
+                    "",
+                    match state {
+                        RecState::Normal => item.print().bold(),
+                        RecState::Cycle => (item.print() + " (cycle)").purple(),
+                        RecState::Reappearence => (item.print() + " (reappearence)").bright_green(),
+                    },
+                    indent = depth
+                );
             }
 
             if _id.is_empty() {
@@ -287,6 +341,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                         .len()
                         .cmp(&_items.get(b).unwrap().parents.len())
                 });
+                // TODO
+                // run separatly per key
+                // remove from keys entries from cycle
                 store.recursive_execute(
                     &_keys,
                     &mut _cycle,

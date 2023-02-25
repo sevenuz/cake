@@ -4,7 +4,7 @@ use crate::timestamp;
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Item {
     pub id: String,
     pub children: Vec<String>,
@@ -80,5 +80,17 @@ impl Item {
         } else {
             Err(format!("{} is not running.", self.id.to_owned()))
         }
+    }
+
+    pub fn set(&mut self, item: Item) {
+        *self = item;
+        self.last_update = timestamp().as_secs();
+    }
+
+    pub fn merge(&mut self, item: &mut Item) {
+        self.content = item.content.to_string();
+        self.tags.append(&mut item.tags);
+        self.children.append(&mut item.children);
+        self.parents.append(&mut item.parents);
     }
 }

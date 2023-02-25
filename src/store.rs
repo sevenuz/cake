@@ -7,7 +7,11 @@ pub mod inner {
     use crate::{item::Item, util::timestamp};
     use serde::{Deserialize, Serialize};
 
-    use crate::util::*;
+    pub enum RecState {
+        Normal,
+        Cycle,
+        Reappearence,
+    }
 
     #[derive(Serialize, Deserialize)]
     pub struct Store {
@@ -16,36 +20,45 @@ pub mod inner {
     }
 
     impl Store {
-        fn edit_parent_of_children(&mut self, id: &String, children: &Vec<String>, add: bool) {
-            // TODO check if all ids exist (children) ?
-            for s in children {
-                match self.items.get_mut(s) {
-                    Some(item) => {
-                        if add {
-                            item.parents.push(id.to_string());
-                        } else {
-                            item.parents.retain(|s|!s.eq(id))
-                        }
-                    }
-                    None => (),
+        // TODO better impl?
+        fn check_existence(&self, ids: &Vec<String>) -> bool {
+            for id in ids {
+                if !self.items.contains_key(id) {
+                    return false;
                 }
             }
+            true
         }
 
-        fn edit_child_of_parents(&mut self, id: &String, parents: &Vec<String>, add: bool) {
-            // TODO check if all ids exist (parents) ?
-            for s in parents {
-                match self.items.get_mut(s) {
-                    Some(item) => {
+        fn set_relations(&mut self, item: &Item, add: bool) -> Result<(), &str> {
+            if !self.check_existence(&item.parents) && !self.check_existence(&item.children) {
+                return Err("Not all children or parents exist.");
+            }
+            for s in &item.parents {
+                match self.get_item_mut(s) {
+                    Some(i) => {
                         if add {
-                            item.children.push(id.to_string());
+                            i.children.push(item.id.to_string());
                         } else {
-                            item.children.retain(|s|!s.eq(id))
+                            i.children.retain(|s| !s.eq(&item.id))
                         }
                     }
                     None => (),
                 }
             }
+            for s in &item.children {
+                match self.get_item_mut(s) {
+                    Some(i) => {
+                        if add {
+                            i.parents.push(item.id.to_string());
+                        } else {
+                            i.parents.retain(|s| !s.eq(&item.id))
+                        }
+                    }
+                    None => (),
+                }
+            }
+            Ok(())
         }
 
         pub fn new(file: &str) -> Store {
@@ -68,58 +81,48 @@ pub mod inner {
             std::fs::write(file, serialized).unwrap();
         }
 
-        pub fn edit(&mut self, id: &String, message: &Option<String>, children: &Option<String>, parents: &Option<String>, tags: &Option<String>) -> Result<(), String> {
-            if !self.items.contains_key(id) {
-                return Err("Key could not be found. Item was not updated.".to_string());
+        pub fn edit(&mut self, mut item: Item, overwrite: bool) -> Result<(), &str> {
+            if !self.items.contains_key(&item.id) {
+                return Err("Key could not be found. Item was not updated.");
             }
-
-            let mut _item = self.items.get_mut(id).unwrap();
-            if let Some(m) = message {
-                _item.content = m.to_string();
+            let id = item.id.clone();
+            self.set_relations(&self.get_item(&item.id).unwrap().clone(), false); // delete old relations
+            if overwrite {
+                self.get_item_mut(&id).unwrap().set(item);
+            } else {
+                self.get_item_mut(&id).unwrap().merge(&mut item);
             }
-            if let Some(c) = children {
-                _item.children = split_comma(c.to_owned());
-            }
-            if let Some(p) = parents {
-                _item.parents = split_comma(p.to_owned());
-            }
-            if let Some(t) = tags {
-                _item.tags = split_comma(t.to_owned());
-            }
-            if let Some(m) = message {
-                _item.content = m.to_string();
-            }
-            _item.last_update = timestamp().as_secs();
-            // TODO update children and parents
+            self.set_relations(&self.get_item(&id).unwrap().clone(), true)?; // set new relations
             Ok(())
         }
 
-        pub fn add(&mut self,  item: Item) -> Result<(), String> {
+        pub fn add(&mut self, item: Item) -> Result<(), &str> {
             if self.items.contains_key(&item.id) {
                 return Err(
-                    "Key is already used. Set the \"edit\" flag if you want to update the item."
-                    .to_string(),
+                    "Key is already used. Set the \"edit\" flag if you want to update the item.",
                 );
             }
-            self.edit_child_of_parents(&item.id, &item.parents, true);
-            self.edit_parent_of_children(&item.id, &item.children, true);
+            self.set_relations(&item, true);
             self.items.insert(item.id.to_owned(), item);
             Ok(())
         }
 
         pub fn remove(&mut self, id: &str, recursive: bool) {
             match self.items.remove(id) {
-                Some(v) => {
-                    self.edit_child_of_parents(&v.id, &v.parents, false);
-                    self.edit_parent_of_children(&v.id, &v.children, false);
+                Some(item) => {
+                    self.set_relations(&item, false);
                     if recursive {
-                        for rid in v.children {
+                        for rid in item.children {
                             self.remove(&rid, recursive);
                         }
                     }
                 }
                 None => (),
             }
+        }
+
+        pub fn get_item(&self, id: &str) -> Option<&Item> {
+            return self.items.get(id);
         }
 
         pub fn get_item_mut(&mut self, id: &str) -> Option<&mut Item> {
@@ -135,7 +138,7 @@ pub mod inner {
             &self,
             items: &Vec<String>,
             ids: &mut Vec<String>,
-            f: fn(&Item, usize) -> (),
+            f: fn(&Item, usize, RecState) -> (),
             depth: usize,
             max_depth: usize,
         ) {
@@ -143,11 +146,21 @@ pub mod inner {
                 return;
             }
             for s in items.iter() {
-                if !ids.contains(&s) && self.items.contains_key(s) {
-                    let _item = self.items.get(s).unwrap();
+                let _item = self.items.get(s).unwrap();
+                if !ids.contains(&s) {
                     ids.push(s.to_string());
-                    f(_item, depth);
+                    f(_item, depth, RecState::Normal);
                     self.recursive_execute(&_item.children, ids, f, depth + 1, max_depth);
+                } else {
+                    f(
+                        _item,
+                        depth,
+                        if ids.first().unwrap() == s {
+                            RecState::Cycle
+                        } else {
+                            RecState::Reappearence
+                        },
+                    );
                 }
             }
         }
