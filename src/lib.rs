@@ -173,11 +173,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     }
     let debug = |s: String, level: Debug| match cli.debug {
         0 => (),
-        1 if matches!(level, Debug::Important) => println!("{}", s.red()),
-        _ if matches!(level, Debug::Normal) => println!("{}", s.yellow()),
+        _ if matches!(level, Debug::Important) => println!("{}", s.red()),
+        2 if matches!(level, Debug::Normal) => println!("{}", s.yellow()),
         _ => (),
     };
     debug(format!("debug mode is on."), Debug::Normal);
+
+    let args: Vec<String> = args().collect();
+    debug(format!("{:?}", args), Debug::Normal);
 
     // use empty config path to write to global save file
     let file = match cli.config {
@@ -192,7 +195,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     };
     debug(format!("File: {}", file), Debug::Normal);
 
-    let mut store = Store::new(&file);
+    let mut store = Store::new(&file)?;
 
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
@@ -208,75 +211,64 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }) => {
             // TODO editor from settings
             let editor = "vim";
-            let args: Vec<String> = args().collect();
-            // only works if no flags are used before...
-            let cmd_edit = args[1] == "edit";
-            debug(format!("{:?}", args), Debug::Normal);
+            // auto edit flag only works if no flags are used before...
+            let _edit = args[1] == "edit" || *edit;
             let _id = &id.to_owned().unwrap_or(generate_id());
-            if *edit || cmd_edit {
-                let _message = match &message {
-                    Some(m) => m.to_string(),
-                    None => input_from_external_editor(
-                        editor,
-                        Some(&store.get_item(&_id.to_string()).unwrap().content),
-                    )
-                    .unwrap(),
-                };
-                let item = Item::new(
-                    remove_comma(_id.to_string()),
-                    split_comma(children.to_owned().unwrap_or("".to_string())),
-                    split_comma(parents.to_owned().unwrap_or("".to_string())),
-                    split_comma(tags.to_owned().unwrap_or("".to_string())),
-                    _message.to_string(),
-                );
-                store.edit(item, *overwrite).unwrap_or_else(|err| {
-                    println!("{}", err);
-                });
+            let mut item = Item::new(
+                remove_comma(_id.to_string()),
+                split_comma(children.to_owned().unwrap_or("".to_string())),
+                split_comma(parents.to_owned().unwrap_or("".to_string())),
+                split_comma(tags.to_owned().unwrap_or("".to_string())),
+                "".to_string()
+            );
+            store.check_existence(&item, _edit)?;
+            item.content = match &message {
+                Some(m) => m.to_string(),
+                None => input_from_external_editor(
+                    editor,
+                    if _edit {
+                        Some(&store.get_item(&_id.to_string()).unwrap().content)
+                    } else {
+                        None
+                    },
+                )
+                .unwrap(),
+            };
+            debug(format!("File content:\n{}", item.content), Debug::Normal);
+
+            if _edit {
+                store.edit(item, *overwrite)?;
             } else {
-                let _message = match &message {
-                    Some(m) => m.to_string(),
-                    None => input_from_external_editor(editor, None).unwrap(),
-                };
-                debug(format!("File content:\n{}", _message), Debug::Normal);
-                let item = Item::new(
-                    remove_comma(_id.to_string()),
-                    split_comma(children.to_owned().unwrap_or("".to_string())),
-                    split_comma(parents.to_owned().unwrap_or("".to_string())),
-                    split_comma(tags.to_owned().unwrap_or("".to_string())),
-                    _message.to_string(),
-                );
-                store.add(item).unwrap_or_else(|err| {
-                    println!("{}", err);
-                });
+                store.add(item)?;
             }
-            println!("{}", store.get_item_mut(_id).unwrap());
-            store.write(&file);
+            println!("{}", store.get_item(_id).unwrap());
+            store.write(&file)?;
         }
         Some(Commands::Remove { id, recursive }) => {
             debug(
                 format!("id: {:?} recursive: {:?}", id, recursive),
                 Debug::Normal,
             );
-            store.remove(id, *recursive);
-            store.write(&file);
+            store.remove(id, *recursive)?;
+            store.write(&file)?;
             println!("{:?} removed.", id); // TODO print count of deleted items
         }
         Some(Commands::Start { id }) => {
             match store.get_item_mut(id).expect("Could not found id").start() {
                 Ok(_) => {
                     println!("{:?} started.", id); // TODO print count of deleted items
-                    store.write(&file);
+                    store.write(&file)?;
                 }
-                Err(err) => println!("{}", err),
+                Err(err) => return Err(err.into()),
             }
         }
         Some(Commands::Stop { id }) => {
             match store.get_item_mut(id).expect("Could not found id").stop() {
                 Ok(_) => {
                     println!("{:?} stoped.", id); // TODO print count of deleted items
-                    store.write(&file);
+                    store.write(&file)?;
                 }
-                Err(err) => println!("{}", err),
+                Err(err) => return Err(err.into()),
             }
         }
         Some(Commands::List {
@@ -309,14 +301,18 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
             fn prl(item: &Item, depth: usize, state: RecState) {
                 // double indention for visuality reasons
-                let indent = 10*depth;
+                let indent = 10 * depth;
                 for line in item.to_string().split("\n") {
                     print_line(line.to_string(), indent, &state);
                 }
                 if !(matches!(state, RecState::Reappearence) && depth == 0) {
-                    println!("{}", "=====================================================".red());
+                    println!(
+                        "{}",
+                        "=====================================================".red()
+                    );
                 }
             }
+
             fn prs(item: &Item, depth: usize, state: RecState) {
                 print_line(item.print(), depth, &state);
             }
@@ -340,9 +336,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                         .len()
                         .cmp(&_items.get(b).unwrap().parents.len())
                 });
-                // TODO
-                // run separatly per key
-                // remove from keys entries from cycle
                 store.recursive_execute(
                     &_keys,
                     &mut _cycle,
@@ -351,6 +344,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                     max_depth,
                 );
             } else {
+                store.check_id(_id, true)?;
                 let _keys = vec![_id.to_owned()];
                 store.recursive_execute(
                     &_keys,
