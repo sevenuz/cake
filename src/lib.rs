@@ -114,7 +114,7 @@ fn input_from_external_editor(
     text: Option<&String>,
 ) -> Result<String, Box<dyn Error>> {
     let mut file_path = temp_dir();
-    file_path.push("editable");
+    file_path.push("editable.md");
     File::create(&file_path).expect("Could not create file.");
 
     match text {
