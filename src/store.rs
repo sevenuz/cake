@@ -9,7 +9,6 @@ pub mod inner {
 
     pub enum RecState {
         Normal,
-        Cycle,
         Reappearence,
     }
 
@@ -31,7 +30,7 @@ pub mod inner {
         }
 
         fn set_relations(&mut self, item: &Item, add: bool) -> Result<(), &str> {
-            if !self.check_existence(&item.parents) && !self.check_existence(&item.children) {
+            if !self.check_existence(&item.parents) || !self.check_existence(&item.children) {
                 return Err("Not all children or parents exist.");
             }
             for s in &item.parents {
@@ -86,7 +85,11 @@ pub mod inner {
                 return Err("Key could not be found. Item was not updated.");
             }
             let id = item.id.clone();
-            self.set_relations(&self.get_item(&item.id).unwrap().clone(), false); // delete old relations
+            // delete old relations
+            match self.set_relations(&self.get_item(&item.id).unwrap().clone(), false) {
+                Ok(_) => (),
+                Err(err) => panic!("{}", err),
+            }
             if overwrite {
                 self.get_item_mut(&id).unwrap().set(item);
             } else {
@@ -102,7 +105,10 @@ pub mod inner {
                     "Key is already used. Set the \"edit\" flag if you want to update the item.",
                 );
             }
-            self.set_relations(&item, true);
+            match self.set_relations(&item, true) {
+                Ok(_) => (),
+                Err(err) => panic!("{}", err),
+            }
             self.items.insert(item.id.to_owned(), item);
             Ok(())
         }
@@ -110,7 +116,10 @@ pub mod inner {
         pub fn remove(&mut self, id: &str, recursive: bool) {
             match self.items.remove(id) {
                 Some(item) => {
-                    self.set_relations(&item, false);
+                    match self.set_relations(&item, false) {
+                        Ok(_) => (),
+                        Err(err) => panic!("{}", err),
+                    }
                     if recursive {
                         for rid in item.children {
                             self.remove(&rid, recursive);
@@ -152,15 +161,7 @@ pub mod inner {
                     f(_item, depth, RecState::Normal);
                     self.recursive_execute(&_item.children, ids, f, depth + 1, max_depth);
                 } else {
-                    f(
-                        _item,
-                        depth,
-                        if ids.first().unwrap() == s {
-                            RecState::Cycle
-                        } else {
-                            RecState::Reappearence
-                        },
-                    );
+                    f(_item, depth, RecState::Reappearence);
                 }
             }
         }

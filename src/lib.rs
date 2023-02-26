@@ -209,6 +209,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             // TODO editor from settings
             let editor = "vim";
             let args: Vec<String> = args().collect();
+            // only works if no flags are used before...
             let cmd_edit = args[1] == "edit";
             debug(format!("{:?}", args), Debug::Normal);
             let _id = &id.to_owned().unwrap_or(generate_id());
@@ -296,30 +297,28 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 1
             };
 
+            fn print_line(line: String, depth: usize, state: &RecState) {
+                match state {
+                    RecState::Normal => println!("{:indent$}{}", "", line, indent = depth),
+                    RecState::Reappearence if depth > 0 => {
+                        println!("{:indent$}{}", "", line.bright_green(), indent = depth)
+                    }
+                    _ => (),
+                }
+            }
+
             fn prl(item: &Item, depth: usize, state: RecState) {
-                println!(
-                    "{:indent$}{}",
-                    "",
-                    match state {
-                        RecState::Normal => item.to_string().bold(),
-                        RecState::Cycle => (item.to_string() + " (cycle)").purple(),
-                        RecState::Reappearence =>
-                            (item.to_string() + " (reappearence)").bright_green(),
-                    },
-                    indent = depth
-                );
+                // double indention for visuality reasons
+                let indent = 10*depth;
+                for line in item.to_string().split("\n") {
+                    print_line(line.to_string(), indent, &state);
+                }
+                if !(matches!(state, RecState::Reappearence) && depth == 0) {
+                    println!("{}", "=====================================================".red());
+                }
             }
             fn prs(item: &Item, depth: usize, state: RecState) {
-                println!(
-                    "{:indent$}{}",
-                    "",
-                    match state {
-                        RecState::Normal => item.print().bold(),
-                        RecState::Cycle => (item.print() + " (cycle)").purple(),
-                        RecState::Reappearence => (item.print() + " (reappearence)").bright_green(),
-                    },
-                    indent = depth
-                );
+                print_line(item.print(), depth, &state);
             }
 
             if _id.is_empty() {
