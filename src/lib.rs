@@ -1,21 +1,17 @@
+mod commands;
 mod item;
 mod store;
 mod util;
 
-use crate::item::{generate_id, Item};
+use crate::item::Item;
 use crate::store::inner::RecState;
 use crate::store::Store;
-use crate::util::*;
 use clap::{Parser, Subcommand};
 use colored::*;
-use platform_dirs::AppDirs;
 use std::{
-    env::{args, current_dir, temp_dir},
+    env::{args, current_dir},
     error::Error,
-    fs::{read_dir, write, File},
-    io::Read,
     path::PathBuf,
-    process::Command,
 };
 
 #[derive(Parser)]
@@ -106,94 +102,32 @@ pub enum Commands {
     },
 }
 
-const NAME: &str = env!("CARGO_PKG_NAME");
-const SAVE_FILE: &str = "cake.json";
-
-fn input_from_external_editor(
-    editor: &str,
-    text: Option<&String>,
-) -> Result<String, Box<dyn Error>> {
-    let mut file_path = temp_dir();
-    file_path.push("editable.md");
-    File::create(&file_path).expect("Could not create file.");
-
-    match text {
-        Some(t) => {
-            write(&file_path, t).expect("Could not write to file.");
-        }
-        None => (),
-    }
-
-    Command::new(editor)
-        .arg(&file_path)
-        .status()
-        .expect("Something went wrong");
-
-    let mut editable = String::new();
-    File::open(file_path)
-        .expect("Could not open file")
-        .read_to_string(&mut editable)?;
-    Ok(editable)
-}
-
-// find next cake save file in current or upper dirs, fallback is data_dir
-fn find_save_file(path: &mut PathBuf) -> Result<String, Box<dyn Error>> {
-    if path.is_dir() {
-        for entry in read_dir(path.as_path())? {
-            let path = entry?.path();
-            let name = path.file_name().ok_or("No filename")?;
-
-            if name == SAVE_FILE {
-                return Ok(path.into_os_string().into_string().unwrap());
-            }
-        }
-    }
-
-    if path.pop() {
-        return find_save_file(path);
-    } else {
-        let app_dirs = AppDirs::new(Some(NAME), false).unwrap();
-        return Ok(app_dirs
-            .data_dir
-            .join(SAVE_FILE)
-            .into_os_string()
-            .into_string()
-            .unwrap());
-    }
-}
-
 pub fn run() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
     // You can see how many times a particular flag or argument occurred
     // Note, only flags can have multiple occurrences
-    enum Debug {
-        Important,
-        Normal,
-    }
-    let debug = |s: String, level: Debug| match cli.debug {
+    let debug = |s: &str| match cli.debug {
         0 => (),
-        _ if matches!(level, Debug::Important) => println!("{}", s.red()),
-        2 if matches!(level, Debug::Normal) => println!("{}", s.yellow()),
-        _ => (),
+        _ => println!("{}", s.yellow()),
     };
-    debug(format!("debug mode is on."), Debug::Normal);
+    debug(&format!("debug mode is on."));
 
     let args: Vec<String> = args().collect();
-    debug(format!("{:?}", args), Debug::Normal);
+    debug(&format!("{:?}", args));
 
     // use empty config path to write to global save file
     let file = match cli.config {
         Some(f) => {
             if f.is_empty() {
-                find_save_file(&mut PathBuf::new()).unwrap()
+                util::find_save_file(&mut PathBuf::new()).unwrap()
             } else {
                 f
             }
         }
-        None => find_save_file(&mut current_dir()?).unwrap(),
+        None => util::find_save_file(&mut current_dir()?).unwrap(),
     };
-    debug(format!("File: {}", file), Debug::Normal);
+    debug(&format!("File: {}", file));
 
     let mut store = Store::new(&file)?;
 
@@ -209,48 +143,31 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             edit,
             overwrite,
         }) => {
-            // TODO editor from settings
-            let editor = "vim";
             // auto edit flag only works if no flags are used before...
             let _edit = args[1] == "edit" || *edit;
-            let _id = &id.to_owned().unwrap_or(generate_id());
-            let mut item = Item::new(
-                remove_comma(_id.to_string()),
-                split_comma(children.to_owned().unwrap_or("".to_string())),
-                split_comma(parents.to_owned().unwrap_or("".to_string())),
-                split_comma(tags.to_owned().unwrap_or("".to_string())),
-                "".to_string()
-            );
-            store.check_existence(&item, _edit)?;
-            item.content = match &message {
-                Some(m) => m.to_string(),
-                None => input_from_external_editor(
-                    editor,
-                    if _edit {
-                        Some(&store.get_item(&_id.to_string()).unwrap().content)
-                    } else {
-                        None
-                    },
-                )
-                .unwrap(),
-            };
-            debug(format!("File content:\n{}", item.content), Debug::Normal);
-
-            if _edit {
-                store.edit(item, *overwrite)?;
-            } else {
-                store.add(item)?;
-            }
-            println!("{}", store.get_item(_id).unwrap());
-            store.write(&file)?;
+            commands::add(
+                &debug,
+                &mut store,
+                util::split_comma(util::remove_illegal_characters(
+                    id.to_owned().unwrap_or("".to_string()),
+                )),
+                util::split_comma(util::remove_illegal_characters(
+                    children.to_owned().unwrap_or("".to_string()),
+                )),
+                util::split_comma(util::remove_illegal_characters(
+                    parents.to_owned().unwrap_or("".to_string()),
+                )),
+                util::split_comma(util::remove_illegal_characters(
+                    tags.to_owned().unwrap_or("".to_string()),
+                )),
+                message.to_owned().unwrap_or("".to_string()),
+                _edit,
+                *overwrite,
+            )?;
         }
         Some(Commands::Remove { id, recursive }) => {
-            debug(
-                format!("id: {:?} recursive: {:?}", id, recursive),
-                Debug::Normal,
-            );
+            debug(&format!("id: {:?} recursive: {:?}", id, recursive));
             store.remove(id, *recursive)?;
-            store.write(&file)?;
             println!("{:?} removed.", id); // TODO print count of deleted items
         }
         Some(Commands::Start { id }) => {
@@ -266,7 +183,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             match store.get_item_mut(id).expect("Could not found id").stop() {
                 Ok(_) => {
                     println!("{:?} stoped.", id); // TODO print count of deleted items
-                    store.write(&file)?;
                 }
                 Err(err) => return Err(err.into()),
             }
@@ -276,10 +192,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             recursive,
             long,
         }) => {
-            debug(
-                format!("id: {:?} recursive: {:?} long: {:?}", id, recursive, long),
-                Debug::Important,
-            );
+            debug(&format!(
+                "id: {:?} recursive: {:?} long: {:?}",
+                id, recursive, long
+            ));
             let _id = &id.to_owned().unwrap_or("".to_string());
             let _items = store.get();
             let mut _cycle: Vec<String> = vec![];
@@ -360,5 +276,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    store.write(&file)?;
     Ok(())
 }
