@@ -53,21 +53,29 @@ impl Item {
         return format!("|{}| {}", self.id, self.content.split("\n").next().unwrap());
     }
 
+    pub fn is_started(&self) -> bool {
+        return self.timetrack.len() % 2 == 1;
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        return self.timetrack.len() % 2 == 0;
+    }
+
     pub fn start(&mut self) -> Result<(), String> {
-        if self.timetrack.len() % 2 == 0 {
+        if self.is_stopped() {
             self.timetrack.push(util::timestamp().as_secs());
             Ok(())
         } else {
             Err(format!(
                 "{} runs already since {:?}",
                 self.id.to_owned(),
-                self.timetrack.last().unwrap()
+                ft(*self.timetrack.last().unwrap())
             ))
         }
     }
 
     pub fn stop(&mut self) -> Result<(), String> {
-        if self.timetrack.len() % 2 == 1 {
+        if self.is_started() {
             self.timetrack.push(util::timestamp().as_secs());
             Ok(())
         } else {
@@ -85,5 +93,6 @@ impl Item {
         self.tags.append(&mut item.tags);
         self.children.append(&mut item.children);
         self.parents.append(&mut item.parents);
+        self.last_update = util::timestamp().as_secs();
     }
 }
