@@ -1,4 +1,6 @@
+use nanoid::nanoid;
 use platform_dirs::AppDirs;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{
     env::temp_dir,
     error::Error,
@@ -7,8 +9,6 @@ use std::{
     path::PathBuf,
     process::Command,
 };
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
-use nanoid::nanoid;
 
 pub fn generate_id() -> String {
     let alphabet: [char; 16] = [
@@ -18,29 +18,40 @@ pub fn generate_id() -> String {
     nanoid!(3, &alphabet)
 }
 
+pub fn parse_time(t: &str) -> Option<u64> {
+    if t.is_empty() {
+        return None;
+    }
+    let t = SystemTime::now();
+    Some(t.duration_since(UNIX_EPOCH).unwrap().as_secs())
+}
+
 pub fn timestamp() -> Duration {
     let t = SystemTime::now();
     t.duration_since(UNIX_EPOCH).unwrap()
 }
 
-pub fn split_comma(s: String) -> Vec<String> {
-    // return empty vector if input is ""
-    if s == "" {
+// return empty vector if input is empty
+// removes illegal characters
+pub fn split_comma_cleanup(s: String) -> Vec<String> {
+    if s.is_empty() {
         return vec![];
     }
-    // TODO improvement!!!
-    let ca: Vec<&str> = s.split(",").collect();
-    let mut vec: Vec<String> = Vec::new();
-    ca.into_iter().for_each(|ll| {
-        vec.push(ll.to_string());
-    });
-    return vec;
+    s.split(",")
+        .into_iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| remove_illegal_characters(s.to_string()))
+        .collect()
 }
 
-pub fn remove_illegal_characters(mut s: String) -> String {
-    s = s.replace("<", "");
-    s = s.replace(">", "");
-    s.replace("!", "")
+fn remove_illegal_characters(mut s: String) -> String {
+    // remove ~ when on start of str
+    // because it is used as exclude sign
+    if s.chars().next().unwrap() == '~' {
+        s = s.replacen("~", "", 1);
+    }
+    s
 }
 
 const NAME: &str = env!("CARGO_PKG_NAME");

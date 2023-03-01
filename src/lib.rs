@@ -3,11 +3,10 @@ mod item;
 mod store;
 mod util;
 
-use crate::item::Item;
-use crate::store::inner::RecState;
 use crate::store::Store;
 use clap::{Parser, Subcommand};
 use colored::*;
+use commands::Selector;
 use std::{
     env::{args, current_dir},
     error::Error,
@@ -36,7 +35,7 @@ pub enum Commands {
     Add {
         /// a custom unique id for the item
         #[clap(value_parser)]
-        id: Option<String>,
+        ids: Option<String>,
 
         /// the children items wich the new one is linked to
         #[clap(short, long)]
@@ -65,36 +64,158 @@ pub enum Commands {
     /// remove items
     #[clap(alias("rm"))]
     Remove {
-        /// the item which should be removed
+        /// Select by ids
         #[clap(value_parser)]
-        id: String,
+        ids: Option<String>,
 
-        /// recursive removing all linked items
-        #[clap(short, long, action)]
-        recursive: bool,
+        /// Select by children
+        #[clap(short, long)]
+        children: Option<String>,
+
+        /// Select by parents
+        #[clap(short, long)]
+        parents: Option<String>,
+
+        /// Select by tags
+        /// use ~ to exclude tag e.g. -t ~some_tag
+        #[clap(short, long)]
+        tags: Option<String>,
+
+        /// Select by time before this duration from now
+        #[clap(short, long)]
+        before: Option<String>,
+
+        /// Select by time after this duration from now
+        #[clap(short, long)]
+        after: Option<String>,
+
+        /// Select started items
+        #[clap(long, action)]
+        started: bool,
+
+        /// Select stopped items
+        #[clap(long, action)]
+        stopped: bool,
+
+        /// recursive execution of the command.
+        /// e.g. -r: children, -rr parents, -rrr both
+        #[clap(short, long, action = clap::ArgAction::Count)]
+        recursive: u8,
     },
     /// start timetracking for item
     Start {
-        /// the item which should be removed
+        /// Select by ids
         #[clap(value_parser)]
-        id: String,
+        ids: Option<String>,
+
+        /// Select by children
+        #[clap(short, long)]
+        children: Option<String>,
+
+        /// Select by parents
+        #[clap(short, long)]
+        parents: Option<String>,
+
+        /// Select by tags, use ~ to exclude tag e.g. -t ~some_tag
+        #[clap(short, long)]
+        tags: Option<String>,
+
+        /// Select by time before this duration from now
+        #[clap(short, long)]
+        before: Option<String>,
+
+        /// Select by time after this duration from now
+        #[clap(short, long)]
+        after: Option<String>,
+
+        /// Select started items
+        #[clap(long, action)]
+        started: bool,
+
+        /// Select stopped items
+        #[clap(long, action)]
+        stopped: bool,
+
+        /// recursive execution of the command. -r: children, -rr parents, -rrr both
+        #[clap(short, long, action = clap::ArgAction::Count)]
+        recursive: u8,
     },
     /// stop timetracking for item
     Stop {
-        /// the item which should be removed
+        /// Select by ids
         #[clap(value_parser)]
-        id: String,
+        ids: Option<String>,
+
+        /// Select by children
+        #[clap(short, long)]
+        children: Option<String>,
+
+        /// Select by parents
+        #[clap(short, long)]
+        parents: Option<String>,
+
+        /// Select by tags, use ~ to exclude tag e.g. -t ~some_tag
+        #[clap(short, long)]
+        tags: Option<String>,
+
+        /// Select by time before this duration from now
+        #[clap(short, long)]
+        before: Option<String>,
+
+        /// Select by time after this duration from now
+        #[clap(short, long)]
+        after: Option<String>,
+
+        /// Select started items
+        #[clap(long, action)]
+        started: bool,
+
+        /// Select stopped items
+        #[clap(long, action)]
+        stopped: bool,
+
+        /// recursive execution of the command. -r: children, -rr parents, -rrr both
+        #[clap(short, long, action = clap::ArgAction::Count)]
+        recursive: u8,
     },
     /// list items
     #[clap(alias("ls"))]
     List {
-        /// the item which should be listed
+        /// Select by ids
         #[clap(value_parser)]
-        id: Option<String>,
+        ids: Option<String>,
 
-        /// recursive show all linked items
-        #[clap(short, long, action)]
-        recursive: bool,
+        /// Select by children
+        #[clap(short, long)]
+        children: Option<String>,
+
+        /// Select by parents
+        #[clap(short, long)]
+        parents: Option<String>,
+
+        /// Select by tags, use ~ to exclude tag e.g. -t ~some_tag
+        #[clap(short, long)]
+        tags: Option<String>,
+
+        /// Select by time before this duration from now
+        #[clap(short, long)]
+        before: Option<String>,
+
+        /// Select by time after this duration from now
+        #[clap(short, long)]
+        after: Option<String>,
+
+        /// Select started items
+        #[clap(long, action)]
+        started: bool,
+
+        /// Select stopped items
+        #[clap(long, action)]
+        stopped: bool,
+
+        /// recursive execution of the command. -r: children, -rr parents, -rrr both
+        #[clap(short, long, action = clap::ArgAction::Count)]
+        recursive: u8,
 
         /// detailed presentation of the items
         #[clap(short, long, action)]
@@ -135,142 +256,93 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     // matches just as you would the top level cmd
     match &cli.command {
         Some(Commands::Add {
-            id,
+            ids,
             children,
             parents,
             message,
             tags,
             edit,
             overwrite,
-        }) => {
-            // auto edit flag only works if no flags are used before...
-            let _edit = args[1] == "edit" || *edit;
-            commands::add(
-                &debug,
-                &mut store,
-                util::split_comma(util::remove_illegal_characters(
-                    id.to_owned().unwrap_or("".to_string()),
-                )),
-                util::split_comma(util::remove_illegal_characters(
-                    children.to_owned().unwrap_or("".to_string()),
-                )),
-                util::split_comma(util::remove_illegal_characters(
-                    parents.to_owned().unwrap_or("".to_string()),
-                )),
-                util::split_comma(util::remove_illegal_characters(
-                    tags.to_owned().unwrap_or("".to_string()),
-                )),
-                message.to_owned().unwrap_or("".to_string()),
-                _edit,
-                *overwrite,
-            )?;
-        }
-        Some(Commands::Remove { id, recursive }) => {
-            debug(&format!("id: {:?} recursive: {:?}", id, recursive));
-            store.remove(id, *recursive)?;
-            println!("{:?} removed.", id); // TODO print count of deleted items
-        }
-        Some(Commands::Start { id }) => {
-            match store.get_item_mut(id).expect("Could not found id").start() {
-                Ok(_) => {
-                    println!("{:?} started.", id); // TODO print count of deleted items
-                    store.write(&file)?;
-                }
-                Err(err) => return Err(err.into()),
-            }
-        }
-        Some(Commands::Stop { id }) => {
-            match store.get_item_mut(id).expect("Could not found id").stop() {
-                Ok(_) => {
-                    println!("{:?} stoped.", id); // TODO print count of deleted items
-                }
-                Err(err) => return Err(err.into()),
-            }
-        }
+        }) => commands::add(
+            &debug,
+            &mut store,
+            Selector::new(
+                ids, children, parents, tags, &None, &None, &false, &false, &0
+            ),
+            message.to_owned().unwrap_or("".to_string()),
+            args[1] == "edit" || *edit, // auto edit flag only works if no flags are used before...
+            *overwrite,
+        )?,
+        Some(Commands::Remove {
+            ids,
+            children,
+            parents,
+            tags,
+            before,
+            after,
+            started,
+            stopped,
+            recursive
+        }) => commands::remove(
+            debug,
+            &mut &mut store,
+            Selector::new(
+                ids, children, parents, tags, before, after, started, stopped, recursive
+            ),
+        )?,
+        Some(Commands::Start {
+            ids,
+            children,
+            parents,
+            tags,
+            before,
+            after,
+            started,
+            stopped,
+            recursive
+        }) => commands::start(
+            debug,
+            &mut &mut store,
+            Selector::new(
+                ids, children, parents, tags, before, after, started, stopped, recursive
+            ),
+        )?,
+        Some(Commands::Stop {
+            ids,
+            children,
+            parents,
+            tags,
+            before,
+            after,
+            started,
+            stopped,
+            recursive
+        }) => commands::stop(
+            debug,
+            &mut &mut store,
+            Selector::new(
+                ids, children, parents, tags, before, after, started, stopped, recursive
+            ),
+        )?,
         Some(Commands::List {
-            id,
+            ids,
+            children,
+            parents,
+            tags,
+            before,
+            after,
+            started,
+            stopped,
             recursive,
             long,
-        }) => {
-            debug(&format!(
-                "id: {:?} recursive: {:?} long: {:?}",
-                id, recursive, long
-            ));
-            let _id = &id.to_owned().unwrap_or("".to_string());
-            let _items = store.get();
-            let mut _cycle: Vec<String> = vec![];
-            let max_depth = if *recursive {
-                10 /*std::usize::MAX*/
-            } else {
-                1
-            };
-
-            fn print_line(line: String, depth: usize, state: &RecState) {
-                match state {
-                    RecState::Normal => println!("{:indent$}{}", "", line, indent = depth),
-                    RecState::Reappearence if depth > 0 => {
-                        println!("{:indent$}{}", "", line.bright_green(), indent = depth)
-                    }
-                    _ => (),
-                }
-            }
-
-            fn prl(item: &Item, depth: usize, state: RecState) {
-                // double indention for visuality reasons
-                let indent = 10 * depth;
-                for line in item.to_string().split("\n") {
-                    print_line(line.to_string(), indent, &state);
-                }
-                if !(matches!(state, RecState::Reappearence) && depth == 0) {
-                    println!(
-                        "{}",
-                        "=====================================================".red()
-                    );
-                }
-            }
-
-            fn prs(item: &Item, depth: usize, state: RecState) {
-                print_line(item.print(), depth, &state);
-            }
-
-            if _id.is_empty() {
-                let mut _keys = _items.keys().cloned().collect::<Vec<String>>();
-                // sort output from old to new
-                _keys.sort_by(|a, b| {
-                    _items
-                        .get(a)
-                        .unwrap()
-                        .timestamp
-                        .cmp(&_items.get(b).unwrap().timestamp)
-                });
-                // sort output by amount of parents. Zero parents first
-                _keys.sort_by(|a, b| {
-                    _items
-                        .get(a)
-                        .unwrap()
-                        .parents
-                        .len()
-                        .cmp(&_items.get(b).unwrap().parents.len())
-                });
-                store.recursive_execute(
-                    &_keys,
-                    &mut _cycle,
-                    if *long { prl } else { prs },
-                    0,
-                    max_depth,
-                );
-            } else {
-                store.check_id(_id, true)?;
-                let _keys = vec![_id.to_owned()];
-                store.recursive_execute(
-                    &_keys,
-                    &mut _cycle,
-                    if *long { prl } else { prs },
-                    0,
-                    max_depth,
-                );
-            }
-        }
+        }) => commands::list(
+            debug,
+            &mut store,
+            Selector::new(
+                ids, children, parents, tags, before, after, started, stopped, recursive
+            ),
+            *long,
+        )?,
         None => {
             println!("Nothing happed o.0");
         }

@@ -1,4 +1,5 @@
 pub use self::inner::Store;
+pub use self::inner::RecState;
 
 pub mod inner {
 
