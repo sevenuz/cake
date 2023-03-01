@@ -30,19 +30,19 @@ impl Selector {
         started: &bool,
         stopped: &bool,
         recursive: &u8,
-    ) -> Selector {
-        Selector {
+    ) -> Result<Selector, Box<dyn Error>> {
+        Ok(Selector {
             ids: util::split_comma_cleanup(ids.to_owned().unwrap_or("".to_string())),
             children: util::split_comma_cleanup(children.to_owned().unwrap_or("".to_string())),
             parents: util::split_comma_cleanup(parents.to_owned().unwrap_or("".to_string())),
             tags: util::split_comma_cleanup(tags.to_owned().unwrap_or("".to_string())),
-            before: util::parse_time(&before.to_owned().unwrap_or("".to_string())),
-            after: util::parse_time(&after.to_owned().unwrap_or("".to_string())),
+            before: util::parse_time(&before.to_owned().unwrap_or("".to_string()))?,
+            after: util::parse_time(&after.to_owned().unwrap_or("".to_string()))?,
             started: *started,
             stopped: *stopped,
             rparents: *recursive > 1, // -rr only parents, -rrr both
             rchildren: *recursive == 1 || *recursive > 2, // -r only children, -rrr both
-        }
+        })
     }
 }
 

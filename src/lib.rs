@@ -268,7 +268,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             &mut store,
             Selector::new(
                 ids, children, parents, tags, &None, &None, &false, &false, &0
-            ),
+            )?,
             message.to_owned().unwrap_or("".to_string()),
             args[1] == "edit" || *edit, // auto edit flag only works if no flags are used before...
             *overwrite,
@@ -288,7 +288,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             &mut &mut store,
             Selector::new(
                 ids, children, parents, tags, before, after, started, stopped, recursive
-            ),
+            )?,
         )?,
         Some(Commands::Start {
             ids,
@@ -305,7 +305,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             &mut &mut store,
             Selector::new(
                 ids, children, parents, tags, before, after, started, stopped, recursive
-            ),
+            )?,
         )?,
         Some(Commands::Stop {
             ids,
@@ -322,7 +322,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             &mut &mut store,
             Selector::new(
                 ids, children, parents, tags, before, after, started, stopped, recursive
-            ),
+            )?,
         )?,
         Some(Commands::List {
             ids,
@@ -340,7 +340,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             &mut store,
             Selector::new(
                 ids, children, parents, tags, before, after, started, stopped, recursive
-            ),
+            )?,
             *long,
         )?,
         None => {

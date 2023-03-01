@@ -10,6 +10,39 @@ use std::{
     process::Command,
 };
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    //#[should_panic]
+    #[test]
+    fn test_parse_time() {
+        assert_eq!(
+            parse_time("3s").unwrap().unwrap(),
+            timestamp().as_secs() - 3
+        );
+        assert_eq!(
+            parse_time("1h").unwrap().unwrap(),
+            timestamp().as_secs() - 60 * 60
+        );
+        assert_eq!(
+            parse_time("30m").unwrap().unwrap(),
+            timestamp().as_secs() - 30 * 60
+        );
+        assert_eq!(
+            parse_time("30m1s4M").unwrap().unwrap(),
+            timestamp().as_secs() - (30 * 60 + 1 + 4 * 30 * 24 * 60 * 60)
+        );
+        assert_eq!(
+            parse_time("1Y1d").unwrap().unwrap(),
+            timestamp().as_secs() - (365 * 24 * 60 * 60 + 24 * 60 * 60)
+        );
+        assert!(parse_time("100sc1hwac3h1sinn").is_err());
+        assert!(parse_time("1T").is_err());
+        assert!(parse_time("0.5Y").is_err());
+    }
+}
+
 pub fn generate_id() -> String {
     let alphabet: [char; 16] = [
         '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'a', 'b', 'c', 'd', 'e', 'f',
@@ -18,12 +51,38 @@ pub fn generate_id() -> String {
     nanoid!(3, &alphabet)
 }
 
-pub fn parse_time(t: &str) -> Option<u64> {
+// parse e.g. 1Y1M1d1h1m1s and subtracts it from now
+pub fn parse_time(t: &str) -> Result<Option<u64>, Box<dyn Error>> {
     if t.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let t = SystemTime::now();
-    Some(t.duration_since(UNIX_EPOCH).unwrap().as_secs())
+
+    const NUMBERS: [char; 10] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    const UNIT: [char; 6] = ['Y', 'M', 'd', 'h', 'm', 's'];
+    let mut values: [u64; 6] = [0, 0, 0, 0, 0, 0];
+
+    let mut last_pos = 0;
+    for (i, c) in t.chars().enumerate() {
+        if UNIT.contains(&c) {
+            match t[last_pos..i].parse::<u64>() {
+                Err(err) => return Err(Box::new(err)),
+                Ok(n) => {
+                    values[UNIT.iter().position(|e| *e == c).unwrap()] = n;
+                }
+            }
+            last_pos = i + 1;
+        } else if !NUMBERS.contains(&c) {
+            return Err("Wrong time format".into());
+        }
+    }
+    let t = 365 * 24 * 60 * 60 * values[0] // years
+        + 30 * 24 * 60 * 60 * values[1] // month are measured with 30 days
+        + 24 * 60 * 60 * values[2] // days
+        + 60 * 60 * values[3] // hours
+        + 60 * values[4] // minutes
+        + values[5]; // seconds
+    let now = timestamp().as_secs();
+    Ok(Some(now - t))
 }
 
 pub fn timestamp() -> Duration {
