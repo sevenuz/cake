@@ -1,5 +1,5 @@
-pub use self::inner::Store;
 pub use self::inner::RecState;
+pub use self::inner::Store;
 
 pub mod inner {
 
@@ -25,19 +25,21 @@ pub mod inner {
             if itself && !self.items.contains_key(id) {
                 return Err("Item does not exist.");
             } else if !itself && self.items.contains_key(id) {
-                return Err("Item already exists. Set the \"edit\" flag if you want to update the item.");
+                return Err(
+                    "Item already exists. Set the \"edit\" flag if you want to update the item.",
+                );
             }
             Ok(())
         }
 
         pub fn check_existence(&self, item: &Item, itself: bool) -> Result<(), &'static str> {
-            self.check_id(&item.id, itself)?;
-            for id in &item.children {
+            self.check_id(&item.id(), itself)?;
+            for id in item.children() {
                 if !self.items.contains_key(id) {
                     return Err("Not all children exist.");
                 }
             }
-            for id in &item.parents {
+            for id in item.parents() {
                 if !self.items.contains_key(id) {
                     return Err("Not all parents exist.");
                 }
@@ -46,28 +48,22 @@ pub mod inner {
         }
 
         fn set_relations(&mut self, item: &Item, add: bool) -> Result<(), Box<dyn Error>> {
-            for s in &item.parents {
-                match self.get_item_mut(s) {
-                    Some(i) => {
-                        if add {
-                            i.children.push(item.id.to_string());
-                        } else {
-                            i.children.retain(|s| !s.eq(&item.id))
-                        }
+            for s in item.parents() {
+                if let Some(i) = self.get_item_mut(s) {
+                    if add {
+                        i.add_child(item);
+                    } else {
+                        i.retain_child(item);
                     }
-                    None => (),
                 }
             }
-            for s in &item.children {
-                match self.get_item_mut(s) {
-                    Some(i) => {
-                        if add {
-                            i.parents.push(item.id.to_string());
-                        } else {
-                            i.parents.retain(|s| !s.eq(&item.id))
-                        }
+            for s in item.children() {
+                if let Some(i) = self.get_item_mut(s) {
+                    if add {
+                        i.add_parent(item);
+                    } else {
+                        i.retain_parent(item);
                     }
-                    None => (),
                 }
             }
             Ok(())
@@ -97,21 +93,21 @@ pub mod inner {
         // existence is checked in command
         pub fn edit(&mut self, mut item: Item, overwrite: bool) -> Result<(), Box<dyn Error>> {
             // delete old relations
-            self.set_relations(&self.get_item(&item.id).unwrap().clone(), false)?;
+            self.set_relations(&self.get_item(item.id()).unwrap().clone(), false)?;
             if overwrite {
-                self.get_item_mut(&item.id).unwrap().set(item.clone());
+                self.get_item_mut(item.id()).unwrap().set(item.clone());
             } else {
-                self.get_item_mut(&item.id).unwrap().merge(&mut item);
+                self.get_item_mut(item.id()).unwrap().merge(&mut item);
             }
             // set new relations
-            self.set_relations(&self.get_item(&item.id).unwrap().clone(), true)?;
+            self.set_relations(&self.get_item(item.id()).unwrap().clone(), true)?;
             Ok(())
         }
 
         // existence is checked in command
         pub fn add(&mut self, item: Item) -> Result<(), Box<dyn Error>> {
             self.set_relations(&item, true)?;
-            self.items.insert(item.id.to_owned(), item);
+            self.items.insert(item.id().to_owned(), item);
             Ok(())
         }
 
@@ -120,7 +116,7 @@ pub mod inner {
                 Some(item) => {
                     self.set_relations(&item, false)?;
                     if recursive {
-                        for rid in item.children {
+                        for rid in item.children() {
                             self.remove(&rid, recursive)?;
                         }
                     }
@@ -160,7 +156,7 @@ pub mod inner {
                 if !ids.contains(&s) {
                     ids.push(s.to_string());
                     f(_item, depth, RecState::Normal);
-                    self.recursive_execute(&_item.children, ids, f, depth + 1, max_depth);
+                    self.recursive_execute(&_item.children(), ids, f, depth + 1, max_depth);
                 } else {
                     f(_item, depth, RecState::Reappearence);
                 }

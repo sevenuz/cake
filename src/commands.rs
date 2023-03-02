@@ -75,11 +75,11 @@ where
         selector.tags,
     );
     store.check_existence(&item, edit)?;
-    item.content = if content.is_empty() {
+    item.set_content(if content.is_empty() {
         util::input_from_external_editor(
             editor,
             if edit {
-                Some(&store.get_item(&_id.to_string()).unwrap().content)
+                Some(&store.get_item(&_id.to_string()).unwrap().content())
             } else {
                 None
             },
@@ -87,8 +87,8 @@ where
         .unwrap()
     } else {
         content
-    };
-    debug(&item.content);
+    });
+    debug(&item.content());
 
     if edit {
         store.edit(item, overwrite)?;
@@ -214,17 +214,17 @@ where
                 items
                     .get(a)
                     .unwrap()
-                    .timestamp
-                    .cmp(&items.get(b).unwrap().timestamp)
+                    .timestamp()
+                    .cmp(&items.get(b).unwrap().timestamp())
             });
             // sort output by amount of parents. Zero parents first
             keys.sort_by(|a, b| {
                 items
                     .get(a)
                     .unwrap()
-                    .parents
+                    .parents()
                     .len()
-                    .cmp(&items.get(b).unwrap().parents.len())
+                    .cmp(&items.get(b).unwrap().parents().len())
             });
             store.recursive_execute(
                 &keys,
