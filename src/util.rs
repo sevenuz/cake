@@ -30,11 +30,11 @@ mod tests {
             timestamp().as_secs() - 30 * 60
         );
         assert_eq!(
-            parse_time("30m1s4M").unwrap().unwrap(),
-            timestamp().as_secs() - (30 * 60 + 1 + 4 * 30 * 24 * 60 * 60)
+            parse_time("30m1s4w").unwrap().unwrap(),
+            timestamp().as_secs() - (30 * 60 + 1 + 4 * 7 * 24 * 60 * 60)
         );
         assert_eq!(
-            parse_time("1Y1d").unwrap().unwrap(),
+            parse_time("1y1d").unwrap().unwrap(),
             timestamp().as_secs() - (365 * 24 * 60 * 60 + 24 * 60 * 60)
         );
         assert!(parse_time("100sc1hwac3h1sinn").is_err());
@@ -51,14 +51,14 @@ pub fn generate_id() -> String {
     nanoid!(3, &alphabet)
 }
 
-// parse e.g. 1Y1M1d1h1m1s and subtracts it from now
+// parse e.g. 1y1w1d1h1m1s and subtracts it from now
 pub fn parse_time(t: &str) -> Result<Option<u64>, Box<dyn Error>> {
     if t.is_empty() {
         return Ok(None);
     }
 
     const NUMBERS: [char; 10] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-    const UNIT: [char; 6] = ['Y', 'M', 'd', 'h', 'm', 's'];
+    const UNIT: [char; 6] = ['y', 'w', 'd', 'h', 'm', 's'];
     let mut values: [u64; 6] = [0, 0, 0, 0, 0, 0];
 
     let mut last_pos = 0;
@@ -76,7 +76,7 @@ pub fn parse_time(t: &str) -> Result<Option<u64>, Box<dyn Error>> {
         }
     }
     let t = 365 * 24 * 60 * 60 * values[0] // years
-        + 30 * 24 * 60 * 60 * values[1] // month are measured with 30 days
+        + 7 * 24 * 60 * 60 * values[1] // week
         + 24 * 60 * 60 * values[2] // days
         + 60 * 60 * values[3] // hours
         + 60 * values[4] // minutes

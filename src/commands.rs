@@ -55,7 +55,7 @@ pub fn add<F>(
     overwrite: bool,
 ) -> Result<(), Box<dyn Error>>
 where
-    F: FnOnce(&str),
+    F: Fn(&str),
 {
     debug(&format!(
         "add {:?}, content: {:?}, edit: {:?}, overwrite: {:?}",
@@ -88,6 +88,7 @@ where
     } else {
         content
     };
+    debug(&item.content);
 
     if edit {
         store.edit(item, overwrite)?;
@@ -100,7 +101,7 @@ where
 
 pub fn remove<F>(debug: F, store: &mut Store, selector: Selector) -> Result<(), Box<dyn Error>>
 where
-    F: FnOnce(&str),
+    F: Fn(&str),
 {
     debug(&format!("remove {:?}", selector));
     match selector.ids.first() {
@@ -115,7 +116,7 @@ where
 
 pub fn start<F>(debug: F, store: &mut Store, selector: Selector) -> Result<(), Box<dyn Error>>
 where
-    F: FnOnce(&str),
+    F: Fn(&str),
 {
     debug(&format!("start {:?}", selector));
     match selector.ids.first() {
@@ -133,7 +134,7 @@ where
 
 pub fn stop<F>(debug: F, store: &mut Store, selector: Selector) -> Result<(), Box<dyn Error>>
 where
-    F: FnOnce(&str),
+    F: Fn(&str),
 {
     debug(&format!("stop {:?}", selector));
     match selector.ids.first() {
@@ -153,7 +154,7 @@ pub fn list<F>(
     long: bool,
 ) -> Result<(), Box<dyn Error>>
 where
-    F: FnOnce(&str),
+    F: Fn(&str),
 {
     debug(&format!("list {:?} long: {:?}", selector, long));
 
