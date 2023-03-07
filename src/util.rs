@@ -165,3 +165,15 @@ pub fn find_save_file(path: &mut PathBuf) -> Result<String, Box<dyn Error>> {
             .unwrap());
     }
 }
+
+pub fn is_subset<T>(vec1: &Vec<T>, vec2: &Vec<T>) -> bool
+where
+    T: PartialEq
+{
+    for i in vec1 {
+        if !vec2.contains(i) {
+            return false;
+        }
+    }
+    true
+}

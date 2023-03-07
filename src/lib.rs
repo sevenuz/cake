@@ -2,15 +2,17 @@ mod commands;
 mod item;
 mod store;
 mod util;
+mod selector;
 
 use crate::store::Store;
 use clap::{Parser, Subcommand};
 use colored::*;
-use commands::Selector;
+use selector::Selector;
 use std::{
     env::{args, current_dir},
     error::Error,
     path::PathBuf,
+    process::exit,
 };
 
 #[derive(Parser)]
@@ -28,6 +30,7 @@ pub struct Cli {
     pub command: Option<Commands>,
 }
 
+// TODO https://docs.rs/clap/latest/clap/builder/struct.Arg.html#method.value_delimiter
 #[derive(Subcommand)]
 pub enum Commands {
     /// add or edit items
@@ -101,6 +104,58 @@ pub enum Commands {
         /// e.g. -r: children, -rr parents, -rrr both
         #[clap(short, long, action = clap::ArgAction::Count)]
         recursive: u8,
+
+        /// Concatinate selectors with or instead of and
+        #[clap(long, action)]
+        or: bool,
+    },
+    /// tag items with selectors
+    Tag {
+        /// Select by ids
+        #[clap(value_parser)]
+        ids: Option<String>,
+
+        /// comma separated tags which will be assigned
+        #[clap(value_parser)]
+        new_tags: Option<String>,
+
+        /// Select by children
+        #[clap(short, long)]
+        children: Option<String>,
+
+        /// Select by parents
+        #[clap(short, long)]
+        parents: Option<String>,
+
+        /// Select by tags
+        /// use ~ to exclude tag e.g. -t ~some_tag
+        #[clap(short, long)]
+        tags: Option<String>,
+
+        /// Select by time before this duration from now
+        #[clap(short, long)]
+        before: Option<String>,
+
+        /// Select by time after this duration from now
+        #[clap(short, long)]
+        after: Option<String>,
+
+        /// Select started items
+        #[clap(long, action)]
+        started: bool,
+
+        /// Select stopped items
+        #[clap(long, action)]
+        stopped: bool,
+
+        /// recursive execution of the command.
+        /// e.g. -r: children, -rr parents, -rrr both
+        #[clap(short, long, action = clap::ArgAction::Count)]
+        recursive: u8,
+
+        /// Concatinate selectors with or instead of and
+        #[clap(long, action)]
+        or: bool,
     },
     /// start timetracking for item
     Start {
@@ -139,6 +194,10 @@ pub enum Commands {
         /// recursive execution of the command. -r: children, -rr parents, -rrr both
         #[clap(short, long, action = clap::ArgAction::Count)]
         recursive: u8,
+
+        /// Concatinate selectors with or instead of and
+        #[clap(long, action)]
+        or: bool,
     },
     /// stop timetracking for item
     Stop {
@@ -177,6 +236,10 @@ pub enum Commands {
         /// recursive execution of the command. -r: children, -rr parents, -rrr both
         #[clap(short, long, action = clap::ArgAction::Count)]
         recursive: u8,
+
+        /// Concatinate selectors with or instead of and
+        #[clap(long, action)]
+        or: bool,
     },
     /// list items
     #[clap(alias("ls"))]
@@ -220,11 +283,23 @@ pub enum Commands {
         /// detailed presentation of the items
         #[clap(short, long, action)]
         long: bool,
+
+        /// Concatinate selectors with or instead of and
+        #[clap(long, action)]
+        or: bool,
     },
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::parse();
+    let cli = Cli::try_parse();
+
+    if let Err(err) = cli {
+        // TODO search for commands in settings
+        println!("Sheesh, an {}", err);
+        exit(1);
+    }
+
+    let cli = cli.unwrap();
 
     // You can see how many times a particular flag or argument occurred
     // Note, only flags can have multiple occurrences
@@ -267,7 +342,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             &debug,
             &mut store,
             Selector::new(
-                ids, children, parents, tags, &None, &None, &false, &false, &0
+                ids, children, parents, tags, &None, &None, &false, &false, &0, &false,
             )?,
             message.to_owned().unwrap_or("".to_string()),
             args[1] == "edit" || *edit, // auto edit flag only works if no flags are used before...
@@ -282,14 +357,46 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             after,
             started,
             stopped,
-            recursive
+            recursive,
+            or,
         }) => commands::remove(
             debug,
             &mut &mut store,
             Selector::new(
-                ids, children, parents, tags, before, after, started, stopped, recursive
+                ids, children, parents, tags, before, after, started, stopped, recursive, or,
             )?,
         )?,
+        Some(Commands::Tag {
+            ids,
+            new_tags,
+            children,
+            parents,
+            tags,
+            before,
+            after,
+            started,
+            stopped,
+            recursive,
+            or,
+        }) => {
+            let mut i = ids;
+            let mut nt = new_tags;
+            // use ids for tags if only one option is set.
+            if ids.is_none() && new_tags.is_none() {
+                return Err("You have to specify tags. [ids selector, optional] [tags]".into());
+            } else if new_tags.is_none() {
+                    nt = ids;
+                    i = new_tags;
+            }
+            commands::tag(
+                debug,
+                &mut &mut store,
+                Selector::new(
+                    i, children, parents, tags, before, after, started, stopped, recursive, or,
+                )?,
+                nt
+            )?
+        }
         Some(Commands::Start {
             ids,
             children,
@@ -299,12 +406,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             after,
             started,
             stopped,
-            recursive
+            recursive,
+            or,
         }) => commands::start(
             debug,
             &mut &mut store,
             Selector::new(
-                ids, children, parents, tags, before, after, started, stopped, recursive
+                ids, children, parents, tags, before, after, started, stopped, recursive, or,
             )?,
         )?,
         Some(Commands::Stop {
@@ -316,12 +424,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             after,
             started,
             stopped,
-            recursive
+            recursive,
+            or,
         }) => commands::stop(
             debug,
             &mut &mut store,
             Selector::new(
-                ids, children, parents, tags, before, after, started, stopped, recursive
+                ids, children, parents, tags, before, after, started, stopped, recursive, or,
             )?,
         )?,
         Some(Commands::List {
@@ -335,11 +444,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             stopped,
             recursive,
             long,
+            or,
         }) => commands::list(
             debug,
             &mut store,
             Selector::new(
-                ids, children, parents, tags, before, after, started, stopped, recursive
+                ids, children, parents, tags, before, after, started, stopped, recursive, or,
             )?,
             *long,
         )?,

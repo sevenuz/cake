@@ -61,6 +61,7 @@ impl Item {
     }
 
     pub fn add_child(&mut self, child: &Self) {
+        // TODO check if already child?
         self.children.push(child.id().to_owned());
         self.update_last_modified();
     }
@@ -75,12 +76,26 @@ impl Item {
     }
 
     pub fn add_parent(&mut self, parent: &Self) {
+        // TODO check if already parent?
         self.parents.push(parent.id().to_owned());
         self.update_last_modified();
     }
 
     pub fn retain_parent(&mut self, parent: &Self) {
         self.parents.retain(|s| !s.eq(parent.id()));
+        self.update_last_modified();
+    }
+
+    pub fn tags(&self) -> &Vec<String> {
+        &self.tags
+    }
+
+    pub fn append_tags(&mut self, tags: Vec<String>) {
+        for tag in tags {
+            if !self.tags.contains(&tag) {
+                self.tags.push(tag.to_owned());
+            }
+        }
         self.update_last_modified();
     }
 
@@ -95,10 +110,6 @@ impl Item {
 
     pub fn timestamp(&self) -> u64 {
         return self.timestamp;
-    }
-
-    pub fn last_modified(&self) -> u64 {
-        return self.last_modified;
     }
 
     // short form of fmt

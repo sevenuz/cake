@@ -1,50 +1,10 @@
 use crate::item::Item;
-use crate::store::{RecState, Store};
+use crate::store::{MAX_DEPTH, RecState, Store};
 use crate::util;
 use colored::*;
 use std::error::Error;
+use crate::Selector;
 
-// default filter
-#[derive(Debug)]
-pub struct Selector {
-    ids: Vec<String>,
-    children: Vec<String>,
-    parents: Vec<String>,
-    tags: Vec<String>,
-    before: Option<u64>, // time in seconds relative to now
-    after: Option<u64>,  // time in seconds relative to now
-    started: bool,
-    stopped: bool,
-    rparents: bool,  // recursive for parents
-    rchildren: bool, // recursive for children
-}
-
-impl Selector {
-    pub fn new(
-        ids: &Option<String>,
-        children: &Option<String>,
-        parents: &Option<String>,
-        tags: &Option<String>,
-        before: &Option<String>,
-        after: &Option<String>,
-        started: &bool,
-        stopped: &bool,
-        recursive: &u8,
-    ) -> Result<Selector, Box<dyn Error>> {
-        Ok(Selector {
-            ids: util::split_comma_cleanup(ids.to_owned().unwrap_or("".to_string())),
-            children: util::split_comma_cleanup(children.to_owned().unwrap_or("".to_string())),
-            parents: util::split_comma_cleanup(parents.to_owned().unwrap_or("".to_string())),
-            tags: util::split_comma_cleanup(tags.to_owned().unwrap_or("".to_string())),
-            before: util::parse_time(&before.to_owned().unwrap_or("".to_string()))?,
-            after: util::parse_time(&after.to_owned().unwrap_or("".to_string()))?,
-            started: *started,
-            stopped: *stopped,
-            rparents: *recursive > 1, // -rr only parents, -rrr both
-            rchildren: *recursive == 1 || *recursive > 2, // -r only children, -rrr both
-        })
-    }
-}
 
 pub fn add<F>(
     debug: F,
@@ -57,10 +17,13 @@ pub fn add<F>(
 where
     F: Fn(&str),
 {
-    debug(&format!(
-        "add {:?}, content: {:?}, edit: {:?}, overwrite: {:?}",
-        selector, content, edit, overwrite
-    ).clone());
+    debug(
+        &format!(
+            "add {:?}, content: {:?}, edit: {:?}, overwrite: {:?}",
+            selector, content, edit, overwrite
+        )
+        .clone(),
+    );
     // TODO editor from settings
     let editor = "vim";
     let _id = if selector.ids.is_empty() {
@@ -104,14 +67,35 @@ where
     F: Fn(&str),
 {
     debug(&format!("remove {:?}", selector));
-    match selector.ids.first() {
-        Some(id) => {
-            store.remove(id, selector.rchildren)?;
-            println!("{:?} removed.", id); // TODO print count of deleted items
-            Ok(())
-        }
-        None => Err("You have to provide an id of a todo".into()), // TODO
+    let ids = selector.get(store, true);
+    for id in &ids {
+        store.remove(id)?;
     }
+    println!("{} removed.", ids.len());
+    Ok(())
+}
+
+pub fn tag<F>(
+    debug: F,
+    store: &mut Store,
+    selector: Selector,
+    tags: &Option<String>,
+) -> Result<(), Box<dyn Error>>
+where
+    F: Fn(&str),
+{
+    debug(&format!("tag {:?} new_tags {:?}", selector, tags));
+    let ids = selector.get(store, true);
+    for id in &ids {
+        store
+            .get_item_mut(id)
+            .unwrap()
+            .append_tags(util::split_comma_cleanup(
+                tags.to_owned().unwrap_or("".to_string()),
+            ));
+    }
+    println!("{} tagged.", ids.len());
+    Ok(())
 }
 
 pub fn start<F>(debug: F, store: &mut Store, selector: Selector) -> Result<(), Box<dyn Error>>
@@ -119,17 +103,15 @@ where
     F: Fn(&str),
 {
     debug(&format!("start {:?}", selector));
-    match selector.ids.first() {
-        Some(id) => {
-            store
-                .get_item_mut(id)
-                .expect("Could not found id")
-                .start()?;
-            println!("{:?} started.", id);
-            Ok(())
-        }
-        None => Err("You have to provide an id of a todo".into()), // TODO
+    let ids = selector.get(store, true);
+    for id in &ids {
+        store
+            .get_item_mut(id)
+            .expect("Could not found id")
+            .start()?;
     }
+    println!("{} started.", ids.len());
+    Ok(())
 }
 
 pub fn stop<F>(debug: F, store: &mut Store, selector: Selector) -> Result<(), Box<dyn Error>>
@@ -137,14 +119,12 @@ where
     F: Fn(&str),
 {
     debug(&format!("stop {:?}", selector));
-    match selector.ids.first() {
-        Some(id) => {
-            store.get_item_mut(id).expect("Could not found id").stop()?;
-            println!("{:?} started.", id);
-            Ok(())
-        }
-        None => Err("You have to provide an id of a todo".into()), // TODO
+    let ids = selector.get(store, true);
+    for id in &ids {
+        store.get_item_mut(id).expect("Could not found id").stop()?;
     }
+    println!("{} stopped.", ids.len());
+    Ok(())
 }
 
 pub fn list<F>(
@@ -159,11 +139,7 @@ where
     debug(&format!("list {:?} long: {:?}", selector, long));
 
     let mut cycle: Vec<String> = vec![];
-    let max_depth = if selector.rchildren {
-        10 /*std::usize::MAX*/
-    } else {
-        1
-    };
+    let max_depth = if selector.rchildren { MAX_DEPTH } else { 1 };
 
     fn print_line(line: String, depth: usize, state: &RecState) {
         match state {
@@ -193,47 +169,47 @@ where
         print_line(item.print(), depth, &state);
     }
 
-    match selector.ids.first() {
-        Some(id) => {
-            store.check_id(id, true)?;
-            let keys = vec![id.to_owned()];
-            store.recursive_execute(
-                &keys,
-                &mut cycle,
-                if long { prl } else { prs },
-                0,
-                max_depth,
-            );
-            Ok(())
-        }
-        None => {
-            let items = store.get();
-            let mut keys = items.keys().cloned().collect::<Vec<String>>();
-            // sort output from old to new
-            keys.sort_by(|a, b| {
-                items
-                    .get(a)
-                    .unwrap()
-                    .timestamp()
-                    .cmp(&items.get(b).unwrap().timestamp())
-            });
-            // sort output by amount of parents. Zero parents first
-            keys.sort_by(|a, b| {
-                items
-                    .get(a)
-                    .unwrap()
-                    .parents()
-                    .len()
-                    .cmp(&items.get(b).unwrap().parents().len())
-            });
-            store.recursive_execute(
-                &keys,
-                &mut cycle,
-                if long { prl } else { prs },
-                0,
-                max_depth,
-            );
-            Ok(())
-        }
+    // TODO recursive for both: rparents, rchildren
+    // TODO shows same item as a child on -rrr
+    if selector.is_empty() {
+        let items = store.get();
+        let mut keys = items.keys().cloned().collect::<Vec<String>>();
+        // sort output from old to new
+        keys.sort_by(|a, b| {
+            items
+                .get(a)
+                .unwrap()
+                .timestamp()
+                .cmp(&items.get(b).unwrap().timestamp())
+        });
+        // sort output by amount of parents. Zero parents first
+        keys.sort_by(|a, b| {
+            items
+                .get(a)
+                .unwrap()
+                .parents()
+                .len()
+                .cmp(&items.get(b).unwrap().parents().len())
+        });
+        store.recursive_execute(
+            &keys,
+            &mut cycle,
+            if long { prl } else { prs },
+            0,
+            max_depth,
+            selector.rparents,
+        );
+        Ok(())
+    } else {
+        let ids = selector.get(store, false);
+        store.recursive_execute(
+            &ids,
+            &mut cycle,
+            if long { prl } else { prs },
+            0,
+            max_depth,
+            selector.rparents,
+        );
+        Ok(())
     }
 }

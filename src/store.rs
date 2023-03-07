@@ -1,7 +1,9 @@
 pub use self::inner::RecState;
 pub use self::inner::Store;
+pub use self::inner::MAX_DEPTH;
 
 pub mod inner {
+    pub const MAX_DEPTH: usize = 10; /*std::usize::MAX*/
 
     use std::collections::HashMap;
     use std::error::Error;
@@ -111,15 +113,10 @@ pub mod inner {
             Ok(())
         }
 
-        pub fn remove(&mut self, id: &str, recursive: bool) -> Result<(), Box<dyn Error>> {
+        pub fn remove(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
             match self.items.remove(id) {
                 Some(item) => {
                     self.set_relations(&item, false)?;
-                    if recursive {
-                        for rid in item.children() {
-                            self.remove(&rid, recursive)?;
-                        }
-                    }
                 }
                 None => return Err("Could not found id".into()),
             }
@@ -143,20 +140,27 @@ pub mod inner {
         pub fn recursive_execute(
             &self,
             items: &Vec<String>,
-            ids: &mut Vec<String>,
+            path: &mut Vec<String>,
             f: fn(&Item, usize, RecState) -> (),
             depth: usize,
             max_depth: usize,
-        ) {
+            up: bool, // recursive for parents
+        )
+        {
             if depth == max_depth {
                 return;
             }
             for s in items.iter() {
                 let _item = self.items.get(s).unwrap();
-                if !ids.contains(&s) {
-                    ids.push(s.to_string());
+                if !path.contains(&s) {
+                    path.push(s.to_string());
+                    if up {
+                        self.recursive_execute(&_item.parents(), path, f, depth + 1, max_depth, up);
+                    }
                     f(_item, depth, RecState::Normal);
-                    self.recursive_execute(&_item.children(), ids, f, depth + 1, max_depth);
+                    if !up {
+                        self.recursive_execute(&_item.children(), path, f, depth + 1, max_depth, up);
+                    }
                 } else {
                     f(_item, depth, RecState::Reappearence);
                 }
