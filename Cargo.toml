@@ -13,6 +13,7 @@ serde_json = "1.0"
 colored = "2"
 platform-dirs = "0.3.0"
 chrono = "0.4.23"
+termimad = "0.25.5"
 
 [profile.release]
 strip = true # Automatically strip symbols from the binary

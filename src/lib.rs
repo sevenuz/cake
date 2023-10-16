@@ -295,7 +295,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
     if let Err(err) = cli {
         // TODO search for commands in settings
-        println!("Sheesh, an {}", err);
+        println!("Sheesh, a {}", err);
         exit(1);
     }
 

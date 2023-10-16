@@ -1,10 +1,11 @@
 use crate::item::Item;
-use crate::store::{MAX_DEPTH, RecState, Store};
+use crate::store::{RecState, Store, MAX_DEPTH};
 use crate::util;
+use crate::Selector;
 use colored::*;
 use std::error::Error;
-use crate::Selector;
-
+use termimad::crossterm::style::Color::*;
+use termimad::*;
 
 pub fn add<F>(
     debug: F,
@@ -141,22 +142,30 @@ where
     let mut cycle: Vec<String> = vec![];
     let max_depth = if selector.rchildren { MAX_DEPTH } else { 1 };
 
-    fn print_line(line: String, depth: usize, state: &RecState) {
+    // long print version
+    fn prl(item: &Item, depth: usize, state: RecState) {
+        // TODO better coding style for that?
         match state {
-            RecState::Normal => println!("{:indent$}{}", "", line, indent = depth),
             RecState::Reappearence if depth > 0 => {
-                println!("{:indent$}{}", "", line.bright_green(), indent = depth)
+                println!("{}", "### Recursion Warning ###".red());
             }
             _ => (),
         }
-    }
 
-    fn prl(item: &Item, depth: usize, state: RecState) {
-        // double indention for visuality reasons
-        let indent = 10 * depth;
-        for line in item.to_string().split("\n") {
-            print_line(line.to_string(), indent, &state);
-        }
+        // TODO build skin somewhere else
+        let mut skin = MadSkin::default();
+        skin.set_headers_fg(rgb(255, 187, 0));
+        skin.headers[0].set_fg(rgb(155, 187, 0));
+        skin.headers[1].set_fg(rgb(155, 87, 0));
+        skin.headers[0].align = Alignment::Left;
+        skin.headers[1].align = Alignment::Left;
+        skin.headers[2].align = Alignment::Left;
+        skin.bold.set_fg(Yellow);
+        skin.italic.set_fgbg(Magenta, rgb(30, 30, 40));
+        skin.bullet = StyledChar::from_fg_char(Yellow, '⟡');
+        skin.quote_mark.set_fg(Yellow);
+        skin.print_text(&item.to_string());
+
         if !(matches!(state, RecState::Reappearence) && depth == 0) {
             println!(
                 "{}",
@@ -166,7 +175,13 @@ where
     }
 
     fn prs(item: &Item, depth: usize, state: RecState) {
-        print_line(item.print(), depth, &state);
+        match state {
+            RecState::Normal => println!("{:indent$}{}", "", item.print(), indent = depth),
+            RecState::Reappearence if depth > 0 => {
+                println!("{:indent$}{}", "", item.print().bright_green(), indent = depth)
+            }
+            _ => (),
+        }
     }
 
     // TODO recursive for both: rparents, rchildren

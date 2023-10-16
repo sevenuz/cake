@@ -28,7 +28,7 @@ impl fmt::Display for Item {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "| id: {} | timestamp: {} | last modified: {} \n| tags: {:?} \n| timetrack: {:?} \n| parents: {:?} \n| children: {:?} \n\n {}",
+            "| id | {} \n| timestamp | {} \n| last modified | {} \n| tags | {:?} \n| timetrack | {:?} \n| parents | {:?} \n| children | {:?}\n\n{}",
             self.id, ft(self.timestamp), ft(self.last_modified), self.tags, self.timetrack, self.parents, self.children, self.content
         )
     }
