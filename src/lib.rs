@@ -3,6 +3,7 @@ mod item;
 mod store;
 mod util;
 mod selector;
+mod skin;
 
 use crate::store::Store;
 use clap::{Parser, Subcommand};
@@ -288,6 +289,12 @@ pub enum Commands {
         #[clap(long, action)]
         or: bool,
     },
+    /// show a markdown file in termianl
+    Show {
+        /// Path to the file
+        #[clap(value_parser)]
+        path: String
+    },
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
@@ -453,6 +460,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             )?,
             *long,
         )?,
+        Some(Commands::Show {
+            path,
+        }) => commands::show(debug, path)?,
         None => {
             println!("Nothing happed o.0");
         }

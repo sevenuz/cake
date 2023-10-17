@@ -1,4 +1,5 @@
 use chrono::{Local, TimeZone};
+use termimad::crossterm::style::Stylize;
 use core::fmt;
 
 use crate::util;
@@ -12,7 +13,7 @@ pub struct Item {
     tags: Vec<String>,
     timetrack: Vec<u64>,
     content: String,
-    timestamp: u64,   // creation timestamp
+    timestamp: u64,     // creation timestamp
     last_modified: u64, // last update timestamp
 }
 
@@ -115,7 +116,12 @@ impl Item {
     // short form of fmt
     pub fn print(&self) -> String {
         // prints only first line of the content
-        return format!("|{}| {}", self.id, self.content.split("\n").next().unwrap());
+        return format!(
+            "|{}{}| {}",
+            self.id,
+            if self.is_started() { " *".dark_red() } else { "".white() },
+            self.content.split("\n").next().unwrap()
+        );
     }
 
     pub fn is_started(&self) -> bool {

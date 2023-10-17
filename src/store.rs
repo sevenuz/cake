@@ -136,7 +136,6 @@ pub mod inner {
         }
 
         // executes passed fn for every element in items, executing children recursively
-        // existence in not checked, so it can panic
         pub fn recursive_execute(
             &self,
             items: &Vec<String>,
@@ -145,24 +144,38 @@ pub mod inner {
             depth: usize,
             max_depth: usize,
             up: bool, // recursive for parents
-        )
-        {
+        ) {
             if depth == max_depth {
                 return;
             }
             for s in items.iter() {
-                let _item = self.items.get(s).unwrap();
-                if !path.contains(&s) {
-                    path.push(s.to_string());
-                    if up {
-                        self.recursive_execute(&_item.parents(), path, f, depth + 1, max_depth, up);
+                if let Some(_item) = self.items.get(s) {
+                    if !path.contains(&s) {
+                        path.push(s.to_string());
+                        if up {
+                            self.recursive_execute(
+                                &_item.parents(),
+                                path,
+                                f,
+                                depth + 1,
+                                max_depth,
+                                up,
+                            );
+                        }
+                        f(_item, depth, RecState::Normal);
+                        if !up {
+                            self.recursive_execute(
+                                &_item.children(),
+                                path,
+                                f,
+                                depth + 1,
+                                max_depth,
+                                up,
+                            );
+                        }
+                    } else {
+                        f(_item, depth, RecState::Reappearence);
                     }
-                    f(_item, depth, RecState::Normal);
-                    if !up {
-                        self.recursive_execute(&_item.children(), path, f, depth + 1, max_depth, up);
-                    }
-                } else {
-                    f(_item, depth, RecState::Reappearence);
                 }
             }
         }

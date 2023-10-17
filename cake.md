@@ -18,7 +18,8 @@ Hier genutzte Delimiter müssen escaped werden...
 \***
 
 \___
-
+---
+---
 ---
 ###### id2 [tag1, tag4]
 Dieser Todo hat keine parents oder children und ist nur einfacher Text.
