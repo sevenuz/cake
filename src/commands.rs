@@ -1,6 +1,6 @@
 use crate::item::Item;
 use crate::skin;
-use crate::store::{RecState, Store, MAX_DEPTH};
+use crate::store::{inner::ItemView, RecState, Store, MAX_DEPTH};
 use crate::util;
 use crate::Selector;
 use colored::*;
@@ -140,42 +140,8 @@ where
     debug(&format!("list {:?} long: {:?}", selector, long));
 
     let mut cycle: Vec<String> = vec![];
+    let item_views: Vec<ItemView>;
     let max_depth = if selector.rchildren { MAX_DEPTH } else { 1 };
-
-    // long print version
-    fn prl(item: &Item, depth: usize, state: RecState) {
-        // TODO better coding style for that?
-        match state {
-            RecState::Reappearence if depth > 0 => {
-                println!("{}", "### Recursion Warning ###".red());
-            }
-            _ => (),
-        }
-
-        skin::build().print_text(&item.to_string());
-
-        if !(matches!(state, RecState::Reappearence) && depth == 0) {
-            println!(
-                "{}",
-                "=====================================================".red()
-            );
-        }
-    }
-
-    fn prs(item: &Item, depth: usize, state: RecState) {
-        match state {
-            RecState::Normal => println!("{:indent$}{}", "", item.print(), indent = depth),
-            RecState::Reappearence if depth > 0 => {
-                println!(
-                    "{:indent$}{}",
-                    "",
-                    item.print().bright_green(),
-                    indent = depth
-                )
-            }
-            _ => (),
-        }
-    }
 
     // TODO recursive for both: rparents, rchildren
     // TODO shows same item as a child on -rrr
@@ -199,27 +165,53 @@ where
                 .len()
                 .cmp(&items.get(b).unwrap().parents().len())
         });
-        store.recursive_execute(
-            &keys,
-            &mut cycle,
-            if long { prl } else { prs },
-            0,
-            max_depth,
-            selector.rparents,
-        );
-        Ok(())
+        item_views = store.recursive_execute(&keys, &mut cycle, 0, max_depth, selector.rparents);
     } else {
         let ids = selector.get(store, false);
-        store.recursive_execute(
-            &ids,
-            &mut cycle,
-            if long { prl } else { prs },
-            0,
-            max_depth,
-            selector.rparents,
-        );
-        Ok(())
+        item_views = store.recursive_execute(&ids, &mut cycle, 0, max_depth, selector.rparents);
     }
+
+    // printing of results
+    if long {
+        for (i, item_view) in item_views.iter().enumerate() {
+            if matches!(item_view.state, RecState::Reappearence) && item_view.depth > 0 {
+                println!("{}", "### Recursion Warning ###".red());
+            }
+
+            // appends a dilimeter at the end if there are following items
+            skin::build().print_text(
+                &(item_view.item.to_string()
+                    + if i + 1 < item_views.len() {
+                        "\n---"
+                    } else {
+                        ""
+                    }),
+            );
+        }
+    } else {
+        for item_view in item_views {
+            match item_view.state {
+                RecState::Normal => println!(
+                    "{:indent$}{}",
+                    "",
+                    item_view.item.print(),
+                    indent = item_view.depth
+                ),
+                RecState::Reappearence if item_view.depth > 0 => {
+                    print!("{}", "### Recursion Warning ###".red());
+                    println!(
+                        "{:indent$}{}",
+                        "",
+                        item_view.item.print(),
+                        indent = item_view.depth
+                    )
+                }
+                _ => (),
+            }
+        }
+    }
+
+    Ok(())
 }
 
 pub fn show<F>(debug: F, path: &str) -> Result<(), Box<dyn Error>>

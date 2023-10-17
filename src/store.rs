@@ -11,9 +11,17 @@ pub mod inner {
     use crate::{item::Item, util::timestamp};
     use serde::{Deserialize, Serialize};
 
+    #[derive(Copy, Clone)]
     pub enum RecState {
         Normal,
         Reappearence,
+    }
+
+    #[derive(Copy, Clone)]
+    pub struct ItemView<'a> {
+        pub item: &'a Item,
+        pub depth: usize,
+        pub state: RecState,
     }
 
     #[derive(Serialize, Deserialize)]
@@ -136,48 +144,59 @@ pub mod inner {
         }
 
         // executes passed fn for every element in items, executing children recursively
-        pub fn recursive_execute(
-            &self,
+        pub fn recursive_execute<'a>(
+            &'a self,
             items: &Vec<String>,
             path: &mut Vec<String>,
-            f: fn(&Item, usize, RecState) -> (),
             depth: usize,
             max_depth: usize,
             up: bool, // recursive for parents
-        ) {
+        ) -> Vec<ItemView<'a>> {
+            let mut res: Vec<ItemView<'a>> = vec![];
             if depth == max_depth {
-                return;
+                return res;
             }
             for s in items.iter() {
                 if let Some(_item) = self.items.get(s) {
                     if !path.contains(&s) {
                         path.push(s.to_string());
+                        let mut res1 = vec![];
+                        let mut res2 = vec![];
                         if up {
-                            self.recursive_execute(
+                            res1 = self.recursive_execute(
                                 &_item.parents(),
                                 path,
-                                f,
                                 depth + 1,
                                 max_depth,
                                 up,
                             );
                         }
-                        f(_item, depth, RecState::Normal);
+                        res.append(&mut res1);
+                        res.push(ItemView {
+                            item: _item,
+                            depth,
+                            state: RecState::Normal,
+                        });
                         if !up {
-                            self.recursive_execute(
+                            res2 = self.recursive_execute(
                                 &_item.children(),
                                 path,
-                                f,
                                 depth + 1,
                                 max_depth,
                                 up,
                             );
                         }
+                        res.append(&mut res2);
                     } else {
-                        f(_item, depth, RecState::Reappearence);
+                        res.push(ItemView {
+                            item: _item,
+                            depth,
+                            state: RecState::Reappearence,
+                        });
                     }
                 }
             }
+            return res;
         }
     }
 }

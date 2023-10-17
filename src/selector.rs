@@ -70,11 +70,11 @@ impl Selector {
             for id in &r {
                 if self.rparents {
                     let items = vec![id.to_owned()];
-                    store.recursive_execute(&items, &mut path1, |_, _, _| (), 0, MAX_DEPTH, true);
+                    store.recursive_execute(&items, &mut path1, 0, MAX_DEPTH, true);
                 }
                 if self.rchildren {
                     let items = vec![id.to_owned()];
-                    store.recursive_execute(&items, &mut path2, |_, _, _| (), 0, MAX_DEPTH, false);
+                    store.recursive_execute(&items, &mut path2, 0, MAX_DEPTH, false);
                 }
             }
             for i in path1.iter().chain(path2.iter()) {
