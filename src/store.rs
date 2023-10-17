@@ -22,6 +22,7 @@ pub mod inner {
         pub item: &'a Item,
         pub depth: usize,
         pub state: RecState,
+        pub has_children: bool,
     }
 
     #[derive(Serialize, Deserialize)]
@@ -176,6 +177,7 @@ pub mod inner {
                             item: _item,
                             depth,
                             state: RecState::Normal,
+                            has_children: _item.children().len() > 0
                         });
                         if !up {
                             res2 = self.recursive_execute(
@@ -192,6 +194,7 @@ pub mod inner {
                             item: _item,
                             depth,
                             state: RecState::Reappearence,
+                            has_children: _item.children().len() > 0
                         });
                     }
                 }

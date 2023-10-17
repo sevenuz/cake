@@ -1,6 +1,6 @@
 use chrono::{Local, TimeZone};
-use termimad::crossterm::style::Stylize;
 use core::fmt;
+use termimad::crossterm::style::Stylize;
 
 use crate::util;
 use serde::{Deserialize, Serialize};
@@ -114,12 +114,20 @@ impl Item {
     }
 
     // short form of fmt
-    pub fn print(&self) -> String {
+    // the id is surrounded by spaces to reach spacer_len
+    pub fn print(&self, spacer_len: usize, has_children: bool) -> String {
         // prints only first line of the content
+        let border = if has_children { "\\" } else { "|" };
         return format!(
-            "|{}{}| {}",
-            self.id,
-            if self.is_started() { " *".dark_red() } else { "".white() },
+            "{}{}{}{} {}",
+            border,
+            util::space(&self.id, spacer_len),
+            if self.is_started() {
+                "*".dark_red()
+            } else {
+                "".white()
+            },
+            border,
             self.content.split("\n").next().unwrap()
         );
     }

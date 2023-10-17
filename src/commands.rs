@@ -189,22 +189,30 @@ where
             );
         }
     } else {
+        // find maximun id len
+        let max_id_len = item_views.iter().fold(0, |a, b| {
+            if a > b.item.id().len() {
+                a
+            } else {
+                b.item.id().len()
+            }
+        });
         for item_view in item_views {
             match item_view.state {
                 RecState::Normal => println!(
                     "{:indent$}{}",
                     "",
-                    item_view.item.print(),
+                    item_view.item.print(max_id_len, item_view.has_children),
                     indent = item_view.depth
                 ),
                 RecState::Reappearence if item_view.depth > 0 => {
-                    print!("{}", "### Recursion Warning ###".red());
-                    println!(
+                    print!(
                         "{:indent$}{}",
                         "",
-                        item_view.item.print(),
+                        item_view.item.print(max_id_len, item_view.has_children),
                         indent = item_view.depth
-                    )
+                    );
+                    println!("{}", "### Recursion Warning ###".red());
                 }
                 _ => (),
             }

@@ -168,7 +168,7 @@ pub fn find_save_file(path: &mut PathBuf) -> Result<String, Box<dyn Error>> {
 
 pub fn is_subset<T>(vec1: &Vec<T>, vec2: &Vec<T>) -> bool
 where
-    T: PartialEq
+    T: PartialEq,
 {
     for i in vec1 {
         if !vec2.contains(i) {
@@ -176,4 +176,17 @@ where
         }
     }
     true
+}
+
+pub fn space(s: &str, spacer_len: usize) -> String {
+    let prefix = (spacer_len - s.len()) / 2;
+    let appendix = if (spacer_len - s.len()) % 2 == 0 {
+        prefix
+    } else {
+        prefix + 1
+    };
+    let mut result = (0..prefix).map(|_| " ").collect::<String>();
+    result += &s;
+    result += &(0..appendix).map(|_| " ").collect::<String>();
+    result
 }
