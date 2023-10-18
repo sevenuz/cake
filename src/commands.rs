@@ -177,6 +177,7 @@ where
             if matches!(item_view.state, RecState::Reappearence) && item_view.depth > 0 {
                 println!("{}", "### Recursion Warning ###".red());
             }
+            debug(&format!("### raw ###\n{}", item_view.item.print_long(true)));
 
             // appends a dilimeter at the end if there are following items
             skin::build().print_text(

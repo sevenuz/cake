@@ -17,18 +17,9 @@ mod tests {
     //#[should_panic]
     #[test]
     fn test_parse_time() {
-        assert_eq!(
-            parse_time("3s").unwrap().unwrap(),
-            timestamp() - 3
-        );
-        assert_eq!(
-            parse_time("1h").unwrap().unwrap(),
-            timestamp() - 60 * 60
-        );
-        assert_eq!(
-            parse_time("30m").unwrap().unwrap(),
-            timestamp() - 30 * 60
-        );
+        assert_eq!(parse_time("3s").unwrap().unwrap(), timestamp() - 3);
+        assert_eq!(parse_time("1h").unwrap().unwrap(), timestamp() - 60 * 60);
+        assert_eq!(parse_time("30m").unwrap().unwrap(), timestamp() - 30 * 60);
         assert_eq!(
             parse_time("30m1s4w").unwrap().unwrap(),
             timestamp() - (30 * 60 + 1 + 4 * 7 * 24 * 60 * 60)
@@ -109,7 +100,8 @@ fn remove_illegal_characters(mut s: String) -> String {
     if s.chars().next().unwrap() == '~' {
         s = s.replacen("~", "", 1);
     }
-    s
+    // not allowed because pipe is used in metadata header of markdown representation
+    s.replace("|", "")
 }
 
 const NAME: &str = env!("CARGO_PKG_NAME");
