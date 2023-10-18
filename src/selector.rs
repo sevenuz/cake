@@ -9,8 +9,8 @@ pub struct Selector {
     pub children: Vec<String>,
     pub parents: Vec<String>,
     pub tags: Vec<String>,
-    pub before: Option<u64>, // time in seconds relative to now
-    pub after: Option<u64>,  // time in seconds relative to now
+    pub before: Option<i64>, // time in seconds relative to now
+    pub after: Option<i64>,  // time in seconds relative to now
     pub started: bool,
     pub stopped: bool,
     pub rparents: bool,  // recursive for parents

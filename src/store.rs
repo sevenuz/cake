@@ -28,7 +28,7 @@ pub mod inner {
     #[derive(Serialize, Deserialize)]
     pub struct Store {
         items: HashMap<String, Item>,
-        last_write: u64,
+        last_write: i64,
     }
 
     impl Store {
@@ -95,7 +95,7 @@ pub mod inner {
         }
 
         pub fn write(&mut self, file: &str) -> Result<(), Box<dyn Error>> {
-            self.last_write = timestamp().as_secs();
+            self.last_write = timestamp();
             let serialized = serde_json::to_string_pretty(&self)?;
             std::fs::write(file, serialized)?;
             Ok(())

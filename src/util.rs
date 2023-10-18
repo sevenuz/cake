@@ -1,6 +1,6 @@
+use chrono::Local;
 use nanoid::nanoid;
 use platform_dirs::AppDirs;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{
     env::temp_dir,
     error::Error,
@@ -19,23 +19,23 @@ mod tests {
     fn test_parse_time() {
         assert_eq!(
             parse_time("3s").unwrap().unwrap(),
-            timestamp().as_secs() - 3
+            timestamp() - 3
         );
         assert_eq!(
             parse_time("1h").unwrap().unwrap(),
-            timestamp().as_secs() - 60 * 60
+            timestamp() - 60 * 60
         );
         assert_eq!(
             parse_time("30m").unwrap().unwrap(),
-            timestamp().as_secs() - 30 * 60
+            timestamp() - 30 * 60
         );
         assert_eq!(
             parse_time("30m1s4w").unwrap().unwrap(),
-            timestamp().as_secs() - (30 * 60 + 1 + 4 * 7 * 24 * 60 * 60)
+            timestamp() - (30 * 60 + 1 + 4 * 7 * 24 * 60 * 60)
         );
         assert_eq!(
             parse_time("1y1d").unwrap().unwrap(),
-            timestamp().as_secs() - (365 * 24 * 60 * 60 + 24 * 60 * 60)
+            timestamp() - (365 * 24 * 60 * 60 + 24 * 60 * 60)
         );
         assert!(parse_time("100sc1hwac3h1sinn").is_err());
         assert!(parse_time("1T").is_err());
@@ -52,19 +52,19 @@ pub fn generate_id() -> String {
 }
 
 // parse e.g. 1y1w1d1h1m1s and subtracts it from now
-pub fn parse_time(t: &str) -> Result<Option<u64>, Box<dyn Error>> {
+pub fn parse_time(t: &str) -> Result<Option<i64>, Box<dyn Error>> {
     if t.is_empty() {
         return Ok(None);
     }
 
     const NUMBERS: [char; 10] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
     const UNIT: [char; 6] = ['y', 'w', 'd', 'h', 'm', 's'];
-    let mut values: [u64; 6] = [0, 0, 0, 0, 0, 0];
+    let mut values: [i64; 6] = [0, 0, 0, 0, 0, 0];
 
     let mut last_pos = 0;
     for (i, c) in t.chars().enumerate() {
         if UNIT.contains(&c) {
-            match t[last_pos..i].parse::<u64>() {
+            match t[last_pos..i].parse::<i64>() {
                 Err(err) => return Err(Box::new(err)),
                 Ok(n) => {
                     values[UNIT.iter().position(|e| *e == c).unwrap()] = n;
@@ -81,13 +81,12 @@ pub fn parse_time(t: &str) -> Result<Option<u64>, Box<dyn Error>> {
         + 60 * 60 * values[3] // hours
         + 60 * values[4] // minutes
         + values[5]; // seconds
-    let now = timestamp().as_secs();
+    let now = timestamp();
     Ok(Some(now - t))
 }
 
-pub fn timestamp() -> Duration {
-    let t = SystemTime::now();
-    t.duration_since(UNIX_EPOCH).unwrap()
+pub fn timestamp() -> i64 {
+    Local::now().timestamp()
 }
 
 // return empty vector if input is empty
