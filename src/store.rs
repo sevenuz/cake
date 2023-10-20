@@ -4,11 +4,13 @@ pub use self::inner::MAX_DEPTH;
 
 pub mod inner {
     pub const MAX_DEPTH: usize = 10; /*std::usize::MAX*/
+    const MD_DELIMITER: &str = "\n---\n---\n---\n";
 
-    use std::collections::HashMap;
+    use std::{collections::HashMap, str::FromStr};
     use std::error::Error;
 
-    use crate::{item::Item, util::timestamp};
+    use crate::item::ParseItemError;
+    use crate::{item::Item};
     use serde::{Deserialize, Serialize};
 
     #[derive(Copy, Clone)]
@@ -28,7 +30,6 @@ pub mod inner {
     #[derive(Serialize, Deserialize)]
     pub struct Store {
         items: HashMap<String, Item>,
-        last_write: i64,
     }
 
     impl Store {
@@ -80,13 +81,12 @@ pub mod inner {
             Ok(())
         }
 
-        pub fn new(file: &str) -> Result<Store, Box<dyn Error>> {
+        pub fn new_from_json(file: &str) -> Result<Store, Box<dyn Error>> {
             let serialized = match std::fs::read_to_string(file) {
                 Ok(f) => f,
                 Err(_err) => {
                     return Ok(Store {
                         items: HashMap::new(),
-                        last_write: 0,
                     })
                 }
             };
@@ -94,9 +94,40 @@ pub mod inner {
             Ok(_store)
         }
 
-        pub fn write(&mut self, file: &str) -> Result<(), Box<dyn Error>> {
-            self.last_write = timestamp();
+        pub fn write_json(&mut self, file: &str) -> Result<(), Box<dyn Error>> {
             let serialized = serde_json::to_string_pretty(&self)?;
+            std::fs::write(file, serialized)?;
+            Ok(())
+        }
+
+        pub fn new_from_md(file: &str) -> Result<Store, ParseItemError> {
+            let serialized = match std::fs::read_to_string(file) {
+                Ok(f) => f,
+                Err(_err) => {
+                    return Ok(Store {
+                        items: HashMap::new(),
+                    })
+                }
+            };
+            let mut items = HashMap::new();
+            let item_strs = serialized.split(MD_DELIMITER);
+            for itm_str in item_strs {
+                let item = Item::from_str(itm_str)?;
+                items.insert(item.id().to_owned(), item);
+            }
+            let _store: Store = Store { items };
+            Ok(_store)
+        }
+
+        pub fn write_md(&mut self, file: &str) -> Result<(), Box<dyn Error>> {
+            let mut serialized: String = "".to_string();
+            for (i, (_id, itm)) in self.items.iter().enumerate() {
+                serialized += &itm.print_long(true);
+                if i + 1 < self.items.len() {
+                    // delimiter of entries
+                    serialized += MD_DELIMITER;
+                }
+            }
             std::fs::write(file, serialized)?;
             Ok(())
         }

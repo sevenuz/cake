@@ -26,7 +26,7 @@ where
         .clone(),
     );
     // TODO editor from settings
-    let editor = "vim";
+    let editor = "nvim";
     let _id = if selector.ids.is_empty() {
         util::generate_id()
     } else {

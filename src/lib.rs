@@ -1,9 +1,9 @@
 mod commands;
 mod item;
-mod store;
-mod util;
 mod selector;
 mod skin;
+mod store;
+mod util;
 
 use crate::store::Store;
 use clap::{Parser, Subcommand};
@@ -19,9 +19,15 @@ use std::{
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 pub struct Cli {
-    /// Sets a custom config file
+    /// Sets a custom input db file.
+    /// The format is determined by the file extension: json or md
     #[clap(short, long, value_parser, value_name = "FILE")]
-    pub config: Option<String>,
+    pub input: Option<String>,
+
+    /// Sets a custom output db file. If not set, the input file is used.
+    /// The format is determined by the file extension: json or md
+    #[clap(short, long, value_parser, value_name = "FILE")]
+    pub output: Option<String>,
 
     /// Turn debugging information on
     #[clap(short, long, action = clap::ArgAction::Count)]
@@ -293,9 +299,12 @@ pub enum Commands {
     Show {
         /// Path to the file
         #[clap(value_parser)]
-        path: String
+        path: String,
     },
 }
+
+const FILETYPE_JSON: &str = ".json";
+const FILETYPE_MD: &str = ".md";
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let cli = Cli::try_parse();
@@ -319,8 +328,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = args().collect();
     debug(&format!("{:?}", args));
 
-    // use empty config path to write to global save file
-    let file = match cli.config {
+    // use empty input path to write to global save file
+    let input_file = match cli.input {
         Some(f) => {
             if f.is_empty() {
                 util::find_save_file(&mut PathBuf::new()).unwrap()
@@ -330,9 +339,20 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
         None => util::find_save_file(&mut current_dir()?).unwrap(),
     };
-    debug(&format!("File: {}", file));
+    let output_file = match cli.output {
+        Some(f) if !f.is_empty() => f,
+        None | _ => input_file.to_owned(),
+    };
+    debug(&format!("Input: {}, Output: {}", input_file, output_file));
 
-    let mut store = Store::new(&file)?;
+    let mut store: Store;
+    if input_file.ends_with(FILETYPE_MD) {
+        store = Store::new_from_md(&input_file)?;
+    } else if input_file.ends_with(FILETYPE_JSON) {
+        store = Store::new_from_json(&input_file)?;
+    } else {
+        return Err("Only .md or .json files are supported".into());
+    }
 
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
@@ -392,8 +412,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             if ids.is_none() && new_tags.is_none() {
                 return Err("You have to specify tags. [ids selector, optional] [tags]".into());
             } else if new_tags.is_none() {
-                    nt = ids;
-                    i = new_tags;
+                nt = ids;
+                i = new_tags;
             }
             commands::tag(
                 debug,
@@ -401,7 +421,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 Selector::new(
                     i, children, parents, tags, before, after, started, stopped, recursive, or,
                 )?,
-                nt
+                nt,
             )?
         }
         Some(Commands::Start {
@@ -460,14 +480,18 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             )?,
             *long,
         )?,
-        Some(Commands::Show {
-            path,
-        }) => commands::show(debug, path)?,
+        Some(Commands::Show { path }) => commands::show(debug, path)?,
         None => {
             println!("Nothing happed o.0");
         }
     }
 
-    store.write(&file)?;
+    if output_file.ends_with(FILETYPE_MD) {
+        store.write_md(&output_file)?;
+    } else if output_file.ends_with(FILETYPE_JSON) {
+        store.write_json(&output_file)?;
+    } else {
+        return Err("Only .md or .json files are supported".into());
+    }
     Ok(())
 }

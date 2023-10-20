@@ -107,6 +107,7 @@ fn remove_illegal_characters(mut s: String) -> String {
 const NAME: &str = env!("CARGO_PKG_NAME");
 const SAVE_FILE: &str = "cake.json";
 
+// TODO panicks with the expect calls but should return err
 pub fn input_from_external_editor(
     editor: &str,
     text: Option<&String>,

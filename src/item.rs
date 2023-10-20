@@ -34,7 +34,25 @@ pub struct Item {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParseItemError;
 
+// https://users.rust-lang.org/t/what-is-stderror-and-how-exactly-does-propagate-errors/86267
+// impl for StdError which is alias of std::error::Error
+// needed for the Box<dyn Err>
+const PARSE_ITEM_ERROR_MSG: &str = "Invalid string to create an item";
+impl std::error::Error for ParseItemError {
+    fn description(&self) -> &str {
+        PARSE_ITEM_ERROR_MSG
+    }
+}
+impl fmt::Display for ParseItemError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", PARSE_ITEM_ERROR_MSG)
+    }
+}
+
 fn str_to_vec(s: &str) -> Vec<String> {
+    if s.is_empty() {
+        return vec![];
+    }
     s.split(", ").map(|v| v.to_string()).collect()
 }
 
@@ -137,10 +155,19 @@ impl FromStr for Item {
         };
         let timetrack: Vec<i64>;
         if let Some(raw_timetrack) = lines.next() {
-            timetrack = pollish(raw_timetrack, PREFIX_TIMETRACK)?
-                .split(", ")
-                .map(|a| (tf(a).unwrap())) // TODO unwrap() o.0
-                .collect();
+            let pollished = pollish(raw_timetrack, PREFIX_TIMETRACK)?;
+            if pollished.is_empty() {
+                timetrack = vec![];
+            } else {
+                // Result implements FromIterator, so you can move the Result outside and iterators
+                // will take care of the rest (including stopping iteration if an error is found).
+                // https://stackoverflow.com/questions/26368288/how-do-i-stop-iteration-and-return-an-error-when-iteratormap-returns-a-result
+                // super cool :D
+                timetrack = pollished
+                    .split(", ")
+                    .map(|a| tf(a))
+                    .collect::<Result<Vec<i64>, ParseItemError>>()?;
+            }
         } else {
             return Err(ParseItemError);
         };
@@ -210,13 +237,14 @@ impl Item {
         );
     }
 
-    /**
-     * long info about the item
-     * first: a table of metadata
-     * second: content
-     * if the serialize flag is true, the timetrack is printed as date,
-     * else only the timedifferences are printed
-     */
+    /// # Arguments
+    /// * `serialize` - if the serialize flag is true, the timetrack is printed as date,
+    /// else only the timedifferences are printed
+    ///
+    /// # Returns
+    /// long info about the item
+    /// first: a table of metadata
+    /// second: content
     pub fn print_long(&self, serialize: bool) -> String {
         let tt;
         if serialize {
