@@ -1,5 +1,5 @@
 use crate::item::Item;
-use crate::skin;
+use crate::config;
 use crate::store::{inner::ItemView, RecState, Store, MAX_DEPTH};
 use crate::util;
 use crate::Selector;
@@ -180,7 +180,7 @@ where
             debug(&format!("### raw ###\n{}", item_view.item.print_long(true)));
 
             // appends a dilimeter at the end if there are following items
-            skin::build().print_text(
+            config::build_skin().print_text(
                 &(item_view.item.to_string()
                     + if i + 1 < item_views.len() {
                         "\n---"
@@ -229,6 +229,6 @@ where
 {
     debug(&format!("show: {:?}", path));
     let data = fs::read_to_string(path)?;
-    skin::build().print_text(&data);
+    config::build_skin().print_text(&data);
     Ok(())
 }

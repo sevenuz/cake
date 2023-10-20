@@ -1,7 +1,7 @@
 mod commands;
 mod item;
 mod selector;
-mod skin;
+mod config;
 mod store;
 mod util;
 
