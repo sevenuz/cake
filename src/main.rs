@@ -1,5 +1,5 @@
 use cake::run;
-use colored::*;
+use termimad::crossterm::style::Stylize;
 
 /*
 * # Lifetimes

@@ -3,7 +3,7 @@ use crate::config;
 use crate::store::{inner::ItemView, RecState, Store, MAX_DEPTH};
 use crate::util;
 use crate::Selector;
-use colored::*;
+use termimad::crossterm::style::Stylize;
 use std::error::Error;
 use std::fs;
 

@@ -7,8 +7,8 @@ mod util;
 
 use crate::store::Store;
 use clap::{Parser, Subcommand};
-use colored::*;
 use selector::Selector;
+use termimad::crossterm::style::Stylize;
 use std::{
     env::{args, current_dir},
     error::Error,
