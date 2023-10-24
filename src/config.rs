@@ -16,6 +16,10 @@ use termimad::MadSkin;
 // .cake folder in ~ with default md/json file?
 #[derive(Serialize, Deserialize)]
 pub struct Config {
+    /// if the config is changed, it will be written to config_file
+    /// default initialization to false
+    #[serde(skip)]
+    dirty: bool,
     /// file name searching for when no input file is given (e.g. cake.md)
     save_file_name: String,
     /// full file path to the default save file including file name and suffix (json, md)
@@ -24,6 +28,27 @@ pub struct Config {
     skin_file_name: String,
 }
 
+const DEFAULT_SKIN_GRUVBOX: &str = r###"# This Hjson file is the default gruvbox skin.
+# Checkout following resources for more information:
+# https://github.com/Canop/termimad/blob/main/examples/skin-file/skin.hjson
+# https://docs.rs/termimad/latest/termimad/struct.MadSkin.html
+
+bold: "#fb0 bold"
+italic: dim italic
+strikeout: crossedout red
+bullet: ○ bold
+paragraph: gray(20)
+code_block: gray(2) gray(15) left
+headers: [
+    green bold underlined left
+    red underlined left
+    yellow left
+]
+quote: > yellow
+horizontal-rule: "~ #00cafe"
+table: "#540 left"
+scrollbar: "red yellow""###;
+
 impl Config {
     pub fn new() -> Result<Config, Box<dyn Error>> {
         if let Ok(serialized) = std::fs::read_to_string(util::config_file()?) {
@@ -31,11 +56,20 @@ impl Config {
         } else {
             // default settings
             Ok(Config {
+                dirty: true,
                 save_file_name: "cake.json".to_string(),
                 default_file_path: util::default_save_file("cake.json")?,
                 skin_file_name: "gruvbox.hjson".to_string(),
             })
         }
+    }
+
+    pub fn write_json_if_dirty(&self) -> Result<(), Box<dyn Error>> {
+        if self.dirty {
+            let serialized = serde_json::to_string_pretty(&self)?;
+            std::fs::write(util::config_file()?, serialized)?;
+        }
+        Ok(())
     }
 
     pub fn find_save_file(&self) -> Result<String, Box<dyn Error>> {
@@ -52,7 +86,12 @@ impl Config {
     pub fn build_skin(&self) -> Result<MadSkin, Box<dyn Error>> {
         // https://github.com/Canop/termimad/blob/main/examples/skin-file/main.rs
         // read the skin file in a string
-        let hjson = fs::read_to_string(util::config_path()?.join(&self.skin_file_name))?;
+        let path = util::config_path()?.join(&self.skin_file_name);
+        let hjson = fs::read_to_string(path.clone()).unwrap_or_else(|_| {
+            // write default theme
+            let _ = std::fs::write(path, DEFAULT_SKIN_GRUVBOX);
+            DEFAULT_SKIN_GRUVBOX.to_string()
+        });
         // deserialize the Hjson into a skin
         let skin: MadSkin = deser_hjson::from_str(&hjson)?;
 

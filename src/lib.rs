@@ -492,5 +492,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     } else {
         return Err("Only .md or .json files are supported".into());
     }
+    config.write_json_if_dirty()?;
     Ok(())
 }
