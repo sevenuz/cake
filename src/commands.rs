@@ -1,11 +1,11 @@
+use crate::config::Config;
 use crate::item::Item;
-use crate::config;
 use crate::store::{inner::ItemView, RecState, Store, MAX_DEPTH};
 use crate::util;
 use crate::Selector;
-use termimad::crossterm::style::Stylize;
 use std::error::Error;
 use std::fs;
+use termimad::crossterm::style::Stylize;
 
 pub fn add<F>(
     debug: F,
@@ -130,6 +130,7 @@ where
 
 pub fn list<F>(
     debug: F,
+    config: &Config,
     store: &mut Store,
     selector: Selector,
     long: bool,
@@ -180,7 +181,7 @@ where
             debug(&format!("### raw ###\n{}", item_view.item.print_long(true)));
 
             // appends a dilimeter at the end if there are following items
-            config::build_skin().print_text(
+            config.build_skin()?.print_text(
                 &(item_view.item.to_string()
                     + if i + 1 < item_views.len() {
                         "\n---"
@@ -223,12 +224,12 @@ where
     Ok(())
 }
 
-pub fn show<F>(debug: F, path: &str) -> Result<(), Box<dyn Error>>
+pub fn show<F>(debug: F, config: &Config, path: &str) -> Result<(), Box<dyn Error>>
 where
     F: Fn(&str),
 {
     debug(&format!("show: {:?}", path));
     let data = fs::read_to_string(path)?;
-    config::build_skin().print_text(&data);
+    config.build_skin()?.print_text(&data);
     Ok(())
 }

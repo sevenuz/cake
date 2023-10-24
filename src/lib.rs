@@ -1,25 +1,22 @@
 mod commands;
+mod config;
 mod item;
 mod selector;
-mod config;
 mod store;
 mod util;
 
 use crate::store::Store;
 use clap::{Parser, Subcommand};
+use config::Config;
 use selector::Selector;
+use std::{env::args, error::Error, process::exit};
 use termimad::crossterm::style::Stylize;
-use std::{
-    env::{args, current_dir},
-    error::Error,
-    path::PathBuf,
-    process::exit,
-};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 pub struct Cli {
     /// Sets a custom input db file.
+    /// Use an empty input path to write to the global save file.
     /// The format is determined by the file extension: json or md
     #[clap(short, long, value_parser, value_name = "FILE")]
     pub input: Option<String>,
@@ -328,16 +325,17 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = args().collect();
     debug(&format!("{:?}", args));
 
-    // use empty input path to write to global save file
+    let config = Config::new()?;
     let input_file = match cli.input {
         Some(f) => {
+            // use empty input path to write to global save file
             if f.is_empty() {
-                util::find_save_file(&mut PathBuf::new()).unwrap()
+                config.get_default_file_path()
             } else {
                 f
             }
         }
-        None => util::find_save_file(&mut current_dir()?).unwrap(),
+        None => config.find_save_file()?,
     };
     let output_file = match cli.output {
         Some(f) if !f.is_empty() => f,
@@ -474,13 +472,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             or,
         }) => commands::list(
             debug,
+            &config,
             &mut store,
             Selector::new(
                 ids, children, parents, tags, before, after, started, stopped, recursive, or,
             )?,
             *long,
         )?,
-        Some(Commands::Show { path }) => commands::show(debug, path)?,
+        Some(Commands::Show { path }) => commands::show(debug, &config, path)?,
         None => {
             println!("Nothing happed o.0");
         }

@@ -1,10 +1,10 @@
 use chrono::Local;
+use directories::{BaseDirs, ProjectDirs};
 use nanoid::nanoid;
-use platform_dirs::AppDirs;
 use std::{
     env::temp_dir,
     error::Error,
-    fs::{read_dir, write, File},
+    fs::{self, read_dir, write, File},
     io::Read,
     path::PathBuf,
     process::Command,
@@ -104,8 +104,8 @@ fn remove_illegal_characters(mut s: String) -> String {
     s.replace("|", "")
 }
 
-const NAME: &str = env!("CARGO_PKG_NAME");
-const SAVE_FILE: &str = "cake.json";
+const PKG_NAME: &str = env!("CARGO_PKG_NAME");
+const CONFIG_FILE: &str = "config.json";
 
 // TODO panicks with the expect calls but should return err
 pub fn input_from_external_editor(
@@ -132,29 +132,53 @@ pub fn input_from_external_editor(
     Ok(editable)
 }
 
-// find next cake save file in current or upper dirs, fallback is data_dir
-pub fn find_save_file(path: &mut PathBuf) -> Result<String, Box<dyn Error>> {
+pub fn config_file() -> Result<PathBuf, Box<dyn Error>> {
+    return Ok(config_path()?.join(CONFIG_FILE));
+}
+
+pub fn config_path() -> Result<PathBuf, Box<dyn Error>> {
+    // TODO random qualifier and organization string :D
+    // https://github.com/dirs-dev/directories-rs#projectdirs
+    if let Some(proj_dirs) = ProjectDirs::from("net", "sevenuz", PKG_NAME) {
+        let path = proj_dirs.config_dir();
+        fs::create_dir_all(path)?;
+        return Ok(path.to_path_buf());
+    } else {
+        return Err("Could not find config directory".into());
+    }
+}
+
+pub fn default_save_file(save_file_name: &str) -> Result<String, Box<dyn Error>> {
+    if let Some(base_dirs) = BaseDirs::new() {
+        let path = base_dirs.data_dir(); // ~/.local/.. on linux
+        fs::create_dir_all(path)?; // Do we need this?
+        return Ok(path
+            .join(save_file_name)
+            .into_os_string()
+            .into_string()
+            .unwrap());
+    } else {
+        return Err("Could not find data directorie".into());
+    }
+}
+
+/// find next cake save file in current or upper dirs, fallback is data_dir
+pub fn find_save_file(path: &mut PathBuf, save_file_name: &str) -> Result<String, Box<dyn Error>> {
     if path.is_dir() {
         for entry in read_dir(path.as_path())? {
             let path = entry?.path();
             let name = path.file_name().ok_or("No filename")?;
 
-            if name == SAVE_FILE {
+            if name == save_file_name {
                 return Ok(path.into_os_string().into_string().unwrap());
             }
         }
     }
 
     if path.pop() {
-        return find_save_file(path);
+        return find_save_file(path, save_file_name);
     } else {
-        let app_dirs = AppDirs::new(Some(NAME), false).unwrap();
-        return Ok(app_dirs
-            .data_dir
-            .join(SAVE_FILE)
-            .into_os_string()
-            .into_string()
-            .unwrap());
+        return default_save_file(save_file_name);
     }
 }
 
