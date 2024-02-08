@@ -9,6 +9,7 @@ use termimad::crossterm::style::Stylize;
 mod tests;
 
 const PREFIX_ID: &str = "| id | ";
+const TABLE_HEADER_DELIMITER: &str = "|---|---|";
 const PREFIX_TIMESTAMP: &str = "| timestamp | ";
 const PREFIX_LAST_MODIFIED: &str = "| last modified | ";
 const PREFIX_TAGS: &str = "| tags | ";
@@ -135,6 +136,7 @@ impl FromStr for Item {
         } else {
             return Err(ParseItemError);
         };
+        lines.next(); // skip Table delimiter
         let timestamp: i64;
         if let Some(raw_timestamp) = lines.next() {
             timestamp = tf(&pollish(raw_timestamp, PREFIX_TIMESTAMP)?)?;
@@ -272,9 +274,10 @@ impl Item {
                 .collect::<Vec<String>>();
         }
         let res = format!(
-            "{}{}|\n{}{}|\n{}{}|\n{}{}|\n{}{}|\n{}{}|\n{}{}|\n\n{}",
+            "{}{}|\n{}\n{}{}|\n{}{}|\n{}{}|\n{}{}|\n{}{}|\n{}{}|\n\n{}",
             PREFIX_ID,
             self.id,
+            TABLE_HEADER_DELIMITER,
             PREFIX_TIMESTAMP,
             ft(self.timestamp),
             PREFIX_LAST_MODIFIED,
