@@ -6,11 +6,11 @@ pub mod inner {
     pub const MAX_DEPTH: usize = 10; /*std::usize::MAX*/
     const MD_DELIMITER: &str = "\n---\n---\n---\n";
 
-    use std::{collections::HashMap, str::FromStr};
     use std::error::Error;
+    use std::{collections::HashMap, str::FromStr};
 
+    use crate::item::Item;
     use crate::item::ParseItemError;
-    use crate::{item::Item};
     use serde::{Deserialize, Serialize};
 
     #[derive(Copy, Clone)]
@@ -112,6 +112,9 @@ pub mod inner {
             let mut items = HashMap::new();
             let item_strs = serialized.split(MD_DELIMITER);
             for itm_str in item_strs {
+                if itm_str.is_empty() {
+                    continue;
+                }
                 let item = Item::from_str(itm_str)?;
                 items.insert(item.id().to_owned(), item);
             }
@@ -121,8 +124,18 @@ pub mod inner {
 
         pub fn write_md(&mut self, file: &str) -> Result<(), Box<dyn Error>> {
             let mut serialized: String = "".to_string();
-            for (i, (_id, itm)) in self.items.iter().enumerate() {
-                serialized += &itm.print_long(true);
+
+            let mut keys = self.items.keys().cloned().collect::<Vec<String>>();
+            // sort output from old to new
+            keys.sort_by(|a, b| {
+                self.items
+                    .get(a)
+                    .unwrap()
+                    .timestamp()
+                    .cmp(&self.items.get(b).unwrap().timestamp())
+            });
+            for (i, id) in keys.iter().enumerate() {
+                serialized += &self.get_item(id).unwrap().print_long(true);
                 if i + 1 < self.items.len() {
                     // delimiter of entries
                     serialized += MD_DELIMITER;
@@ -208,7 +221,7 @@ pub mod inner {
                             item: _item,
                             depth,
                             state: RecState::Normal,
-                            has_children: _item.children().len() > 0
+                            has_children: _item.children().len() > 0,
                         });
                         if !up {
                             res2 = self.recursive_execute(
@@ -225,7 +238,7 @@ pub mod inner {
                             item: _item,
                             depth,
                             state: RecState::Reappearence,
-                            has_children: _item.children().len() > 0
+                            has_children: _item.children().len() > 0,
                         });
                     }
                 }
