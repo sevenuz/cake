@@ -91,7 +91,10 @@ where
         store
             .get_item_mut(id)
             .unwrap()
-            .append_tags(util::split_comma_cleanup(
+            .append_tags(util::split_comma_tags(
+                tags.to_owned().unwrap_or("".to_string()),
+            ))
+            .remove_tags(util::split_comma_exclude_tags(
                 tags.to_owned().unwrap_or("".to_string()),
             ));
     }
@@ -165,7 +168,16 @@ where
             .len()
             .cmp(&items.get(b).unwrap().parents().len())
     });
-    item_views = store.recursive_execute(&keys, &mut cycle, 0, max_depth, selector.rparents);
+    // get the recursive ItemView to print with indention
+    item_views = store
+        .recursive_execute(&keys, &mut cycle, 0, max_depth, selector.rparents)
+        .iter()
+        .filter(|iv| {
+            // filter exclude tags again, because recursive execution is not filtering in selector
+            selector.exclude(iv.item.id(), store)
+        })
+        .map(|iv| iv.to_owned())
+        .collect();
 
     // printing of results
     if long {

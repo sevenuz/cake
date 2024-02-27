@@ -81,11 +81,11 @@ recursivooo
 | id | cake|
 |---|---|
 | timestamp | Tue Oct 17 09:29:58 2023 +0200|
-| last modified | Tue Oct 24 16:56:29 2023 +0200|
+| last modified | Wed Feb 28 00:53:11 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | |
-| children | 9d7, 109, de8, ef5, 594, a60, 713, c3e, 5dc, d0a, 67d, 5d1, 74e, 91d, f37|
+| children | 9d7, 109, de8, ef5, 594, a60, 713, c3e, 5dc, d0a, 67d, 5d1, 74e, 91d, f37, f70, 5e4|
 
 # Cake TUI
 A tool to organize todos with
@@ -110,8 +110,8 @@ A tool to organize todos with
 | id | 9d7|
 |---|---|
 | timestamp | Tue Oct 17 09:47:35 2023 +0200|
-| last modified | Tue Oct 17 09:47:35 2023 +0200|
-| tags | |
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
+| tags | done|
 | timetrack | |
 | parents | cake|
 | children | |
@@ -124,7 +124,7 @@ markdown serialization
 | id | 109|
 |---|---|
 | timestamp | Tue Oct 17 09:48:24 2023 +0200|
-| last modified | Tue Oct 17 09:48:24 2023 +0200|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | cake|
@@ -138,7 +138,7 @@ recursion support for r, rr, rrr
 | id | de8|
 |---|---|
 | timestamp | Tue Oct 17 09:49:08 2023 +0200|
-| last modified | Tue Oct 17 17:30:14 2023 +0200|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | done|
 | timetrack | |
 | parents | cake|
@@ -152,8 +152,8 @@ beautify short view
 | id | ef5|
 |---|---|
 | timestamp | Tue Oct 17 09:50:11 2023 +0200|
-| last modified | Tue Oct 17 09:50:11 2023 +0200|
-| tags | |
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
+| tags | done|
 | timetrack | |
 | parents | cake|
 | children | |
@@ -166,7 +166,7 @@ show cmd to show md files in gerenal
 | id | c3e|
 |---|---|
 | timestamp | Tue Oct 17 09:50:30 2023 +0200|
-| last modified | Tue Oct 17 17:37:04 2023 +0200|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | |
 | timetrack | Tue Oct 17 17:06:29 2023 +0200, Tue Oct 17 17:13:12 2023 +0200|
 | parents | cake|
@@ -186,7 +186,7 @@ hide_recursive_elements
 | id | 594|
 |---|---|
 | timestamp | Tue Oct 17 09:53:49 2023 +0200|
-| last modified | Tue Oct 17 09:53:49 2023 +0200|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | cake|
@@ -214,8 +214,8 @@ gome pdf view with tabs
 | id | a60|
 |---|---|
 | timestamp | Tue Oct 17 17:30:59 2023 +0200|
-| last modified | Tue Oct 17 17:30:59 2023 +0200|
-| tags | |
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
+| tags | done|
 | timetrack | |
 | parents | cake|
 | children | |
@@ -228,7 +228,7 @@ remove other color lib
 | id | 70f|
 |---|---|
 | timestamp | Tue Oct 17 17:34:08 2023 +0200|
-| last modified | Tue Oct 17 17:37:04 2023 +0200|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | d4f, c3e|
@@ -242,7 +242,7 @@ run cmd
 | id | 713|
 |---|---|
 | timestamp | Tue Oct 17 17:35:00 2023 +0200|
-| last modified | Tue Oct 17 17:35:00 2023 +0200|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | cake|
@@ -256,7 +256,7 @@ uuid alphabet to keyboard homerows
 | id | d4f|
 |---|---|
 | timestamp | Tue Oct 17 17:36:02 2023 +0200|
-| last modified | Mon Feb 26 17:37:43 2024 +0100|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | done|
 | timetrack | |
 | parents | c3e|
@@ -270,7 +270,7 @@ in the middle
 | id | 5dc|
 |---|---|
 | timestamp | Tue Oct 17 19:03:20 2023 +0200|
-| last modified | Tue Oct 17 19:03:20 2023 +0200|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | cake|
@@ -284,7 +284,7 @@ make view scrollable
 | id | d0a|
 |---|---|
 | timestamp | Tue Oct 17 19:04:40 2023 +0200|
-| last modified | Tue Oct 17 19:04:40 2023 +0200|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | cake|
@@ -312,7 +312,7 @@ gnome-translate-indicator
 | id | 67d|
 |---|---|
 | timestamp | Wed Oct 18 09:14:06 2023 +0200|
-| last modified | Wed Oct 18 09:14:06 2023 +0200|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | cake|
@@ -326,7 +326,7 @@ format for long: timetrack
 | id | 5d1|
 |---|---|
 | timestamp | Wed Oct 18 15:35:48 2023 +0200|
-| last modified | Wed Oct 18 15:35:48 2023 +0200|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | cake|
@@ -340,7 +340,7 @@ tests
 | id | 74e|
 |---|---|
 | timestamp | Wed Oct 18 15:45:22 2023 +0200|
-| last modified | Wed Oct 18 15:45:22 2023 +0200|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | cake|
@@ -368,7 +368,7 @@ morgen wandern gehen
 | id | 91d|
 |---|---|
 | timestamp | Sat Oct 21 23:40:10 2023 +0200|
-| last modified | Sat Oct 21 23:40:10 2023 +0200|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | wichtig|
 | timetrack | |
 | parents | cake|
@@ -382,7 +382,7 @@ summe im timetrack
 | id | f37|
 |---|---|
 | timestamp | Tue Oct 24 16:56:29 2023 +0200|
-| last modified | Mon Feb 26 17:37:43 2024 +0100|
+| last modified | Wed Feb 28 00:46:55 2024 +0100|
 | tags | done|
 | timetrack | |
 | parents | cake|
@@ -403,3 +403,31 @@ deterministic serialization order
 | children | |
 
 der zur zeit letzte eintrag
+
+---
+---
+---
+| id | f70|
+|---|---|
+| timestamp | Wed Feb 28 00:51:06 2024 +0100|
+| last modified | Wed Feb 28 00:51:06 2024 +0100|
+| tags | |
+| timetrack | |
+| parents | cake|
+| children | |
+
+exclustion with ~ for ids, parents and children as well
+
+---
+---
+---
+| id | 5e4|
+|---|---|
+| timestamp | Wed Feb 28 00:53:11 2024 +0100|
+| last modified | Wed Feb 28 00:53:11 2024 +0100|
+| tags | |
+| timetrack | |
+| parents | cake|
+| children | |
+
+pretty md on add cmd

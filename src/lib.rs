@@ -113,7 +113,8 @@ pub enum Commands {
         #[clap(long, action)]
         or: bool,
     },
-    /// tag items with selectors
+    /// Tag items with selectors.
+    /// Use ~tag to remove a tag.
     Tag {
         /// Select by ids
         #[clap(value_parser)]

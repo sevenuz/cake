@@ -333,12 +333,23 @@ impl Item {
         &self.tags
     }
 
-    pub fn append_tags(&mut self, tags: Vec<String>) {
+    pub fn append_tags(&mut self, tags: Vec<String>) -> &mut Self {
         for tag in tags {
             if !self.tags.contains(&tag) {
                 self.tags.push(tag.to_owned());
             }
         }
+        self.update_last_modified();
+        self
+    }
+
+    pub fn remove_tags(&mut self, tags: Vec<String>) {
+        self.tags = self
+            .tags
+            .iter()
+            .filter(|tag| !tags.contains(tag))
+            .map(|s| s.to_owned())
+            .collect::<Vec<String>>();
         self.update_last_modified();
     }
 

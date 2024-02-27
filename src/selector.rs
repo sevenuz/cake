@@ -60,6 +60,12 @@ impl Selector {
             && !self.stopped;
     }
 
+    /// checks if item should be excluded
+    pub fn exclude(&self, key: &String, store: &Store) -> bool {
+        let item = store.get_item(key).unwrap();
+        !util::contains_element(item.tags(), &self.exclude_tags)
+    }
+
     pub fn get(&self, store: &Store, recursive: bool) -> Vec<String> {
         let mut r;
         if self.or {
@@ -67,6 +73,7 @@ impl Selector {
         } else {
             r = self.get_and(store);
         }
+        // the ItemView is not used, only the path to collect recursivly ids
         if recursive {
             let mut path1 = vec![];
             let mut path2 = vec![];
@@ -86,7 +93,10 @@ impl Selector {
                 }
             }
         }
-        r
+        r.iter()
+            .filter(|key| self.exclude(key, store))
+            .map(|s| s.to_owned())
+            .collect::<Vec<String>>()
     }
 
     fn get_or(&self, store: &Store) -> Vec<String> {
@@ -104,10 +114,6 @@ impl Selector {
                     || self.after.is_some() && item.timestamp() > self.after.unwrap()
                     || item.is_started() && self.started
                     || item.is_stopped() && self.stopped
-            })
-            .filter(|key| {
-                let item = store.get_item(key).unwrap();
-                !util::contains_element(item.tags(), &self.exclude_tags)
             })
             .map(|s| s.to_owned())
             .collect::<Vec<String>>();
@@ -129,10 +135,6 @@ impl Selector {
                     && (self.after.is_none() || item.timestamp() > self.after.unwrap())
                     && (!self.started || item.is_started())
                     && (!self.stopped || item.is_stopped())
-            })
-            .filter(|key| {
-                let item = store.get_item(key).unwrap();
-                !util::contains_element(item.tags(), &self.exclude_tags)
             })
             .map(|s| s.to_owned())
             .collect::<Vec<_>>();

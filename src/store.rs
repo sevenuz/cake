@@ -188,7 +188,9 @@ pub mod inner {
             return &self.items;
         }
 
-        // executes passed fn for every element in items, executing children recursively
+        /// generates an ItemView for every element in items, executing children recursively
+        /// ids are collected in path
+        /// @up to recursivly go through parents
         pub fn recursive_execute<'a>(
             &'a self,
             items: &Vec<String>,
