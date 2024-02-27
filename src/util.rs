@@ -80,6 +80,32 @@ pub fn timestamp() -> i64 {
     Local::now().timestamp()
 }
 
+pub fn split_comma_tags(s: String) -> Vec<String> {
+    if s.is_empty() {
+        return vec![];
+    }
+    s.split(",")
+        .into_iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .filter(|s| s.chars().next().unwrap() != '~')
+        .map(|s| remove_illegal_characters(s.to_string()))
+        .collect()
+}
+
+pub fn split_comma_exclude_tags(s: String) -> Vec<String> {
+    if s.is_empty() {
+        return vec![];
+    }
+    s.split(",")
+        .into_iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .filter(|s| s.chars().next().unwrap() == '~')
+        .map(|s| remove_illegal_characters(s.to_string()))
+        .collect()
+}
+
 // return empty vector if input is empty
 // removes illegal characters
 pub fn split_comma_cleanup(s: String) -> Vec<String> {
@@ -182,6 +208,20 @@ pub fn find_save_file(path: &mut PathBuf, save_file_name: &str) -> Result<String
     }
 }
 
+/// checks if at least one element of vec1 is contained in vec2
+pub fn contains_element<T>(vec1: &Vec<T>, vec2: &Vec<T>) -> bool
+where
+    T: PartialEq,
+{
+    for i in vec1 {
+        if vec2.contains(i) {
+            return true;
+        }
+    }
+    false
+}
+
+/// checks if all elements of vec1 are contained in vec2
 pub fn is_subset<T>(vec1: &Vec<T>, vec2: &Vec<T>) -> bool
 where
     T: PartialEq,

@@ -1,4 +1,4 @@
-use crate::store::{MAX_DEPTH, Store};
+use crate::store::{Store, MAX_DEPTH};
 use crate::util;
 use std::error::Error;
 
@@ -9,13 +9,14 @@ pub struct Selector {
     pub children: Vec<String>,
     pub parents: Vec<String>,
     pub tags: Vec<String>,
+    pub exclude_tags: Vec<String>,
     pub before: Option<i64>, // time in seconds relative to now
     pub after: Option<i64>,  // time in seconds relative to now
     pub started: bool,
     pub stopped: bool,
     pub rparents: bool,  // recursive for parents
     pub rchildren: bool, // recursive for children
-    or: bool,        // use or concatination of selectors
+    or: bool,            // use or concatination of selectors
 }
 
 impl Selector {
@@ -35,7 +36,8 @@ impl Selector {
             ids: util::split_comma_cleanup(ids.to_owned().unwrap_or("".to_string())),
             children: util::split_comma_cleanup(children.to_owned().unwrap_or("".to_string())),
             parents: util::split_comma_cleanup(parents.to_owned().unwrap_or("".to_string())),
-            tags: util::split_comma_cleanup(tags.to_owned().unwrap_or("".to_string())),
+            tags: util::split_comma_tags(tags.to_owned().unwrap_or("".to_string())),
+            exclude_tags: util::split_comma_exclude_tags(tags.to_owned().unwrap_or("".to_string())),
             before: util::parse_time(&before.to_owned().unwrap_or("".to_string()))?,
             after: util::parse_time(&after.to_owned().unwrap_or("".to_string()))?,
             started: *started,
@@ -46,6 +48,7 @@ impl Selector {
         })
     }
 
+    /// check if selector is empty, except exclude_tags
     pub fn is_empty(&self) -> bool {
         return self.ids.is_empty()
             && self.children.is_empty()
@@ -87,62 +90,52 @@ impl Selector {
     }
 
     fn get_or(&self, store: &Store) -> Vec<String> {
-        let mut r = vec![];
-        for id in &self.ids {
-            if store.get_item(&id).is_some() {
-                r.push(id.to_owned());
-            }
-        }
-        for (id, item) in store.get() {
-            for i in &self.children {
-                if item.children().contains(i) {
-                    r.push(id.to_owned());
-                }
-            }
-            for i in &self.parents {
-                if item.parents().contains(i) {
-                    r.push(id.to_owned());
-                }
-            }
-            for i in &self.tags {
-                if item.tags().contains(i) {
-                    r.push(id.to_owned());
-                }
-            }
-            if self.before.is_some() && item.timestamp() < self.before.unwrap() {
-                r.push(id.to_owned());
-            }
-            if self.after.is_some() && item.timestamp() > self.after.unwrap() {
-                r.push(id.to_owned());
-            }
-            if item.is_started() && self.started {
-                r.push(id.to_owned());
-            }
-            if item.is_stopped() && self.stopped {
-                r.push(id.to_owned());
-            }
-        }
-        r.dedup();
-        r
+        let keys = store.get().keys().cloned().collect::<Vec<String>>();
+        let keys = keys
+            .iter()
+            .filter(|key| {
+                let item = store.get_item(&key).unwrap();
+                self.is_empty()
+                    || self.ids.contains(key)
+                    || util::contains_element(item.children(), &self.children)
+                    || util::contains_element(item.parents(), &self.parents)
+                    || util::contains_element(item.tags(), &self.tags)
+                    || self.before.is_some() && item.timestamp() < self.before.unwrap()
+                    || self.after.is_some() && item.timestamp() > self.after.unwrap()
+                    || item.is_started() && self.started
+                    || item.is_stopped() && self.stopped
+            })
+            .filter(|key| {
+                let item = store.get_item(key).unwrap();
+                !util::contains_element(item.tags(), &self.exclude_tags)
+            })
+            .map(|s| s.to_owned())
+            .collect::<Vec<String>>();
+        keys
     }
 
     fn get_and(&self, store: &Store) -> Vec<String> {
-        let mut r = vec![];
-        for id in self.get_or(store) {
-            let item = store.get_item(&id).unwrap();
-            if (self.ids.is_empty() || self.ids.contains(&id))
-                && (self.children.is_empty() || util::is_subset(&self.children, item.children()))
-                && (self.parents.is_empty() || util::is_subset(&self.parents, item.parents()))
-                && (self.tags.is_empty() || util::is_subset(&self.tags, item.tags()))
-                && (self.before.is_none() || item.timestamp() < self.before.unwrap())
-                && (self.after.is_none() || item.timestamp() > self.after.unwrap())
-                && (!self.started || item.is_started())
-                && (!self.stopped || item.is_stopped())
-            {
-                r.push(id.to_owned());
-            }
-        }
-        r
+        let keys = store.get().keys().cloned().collect::<Vec<String>>();
+        let keys = keys
+            .iter()
+            .filter(|key| {
+                let item = store.get_item(&key).unwrap();
+                (self.ids.is_empty() || self.ids.contains(&key))
+                    && (self.children.is_empty()
+                        || util::is_subset(&self.children, item.children()))
+                    && (self.parents.is_empty() || util::is_subset(&self.parents, item.parents()))
+                    && (self.tags.is_empty() || util::is_subset(&self.tags, item.tags()))
+                    && (self.before.is_none() || item.timestamp() < self.before.unwrap())
+                    && (self.after.is_none() || item.timestamp() > self.after.unwrap())
+                    && (!self.started || item.is_started())
+                    && (!self.stopped || item.is_stopped())
+            })
+            .filter(|key| {
+                let item = store.get_item(key).unwrap();
+                !util::contains_element(item.tags(), &self.exclude_tags)
+            })
+            .map(|s| s.to_owned())
+            .collect::<Vec<_>>();
+        keys
     }
 }
-

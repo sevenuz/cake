@@ -146,31 +146,26 @@ where
 
     // TODO recursive for both: rparents, rchildren
     // TODO shows same item as a child on -rrr
-    if selector.is_empty() {
-        let items = store.get();
-        let mut keys = items.keys().cloned().collect::<Vec<String>>();
-        // sort output from old to new
-        keys.sort_by(|a, b| {
-            items
-                .get(a)
-                .unwrap()
-                .timestamp()
-                .cmp(&items.get(b).unwrap().timestamp())
-        });
-        // sort output by amount of parents. Zero parents first
-        keys.sort_by(|a, b| {
-            items
-                .get(a)
-                .unwrap()
-                .parents()
-                .len()
-                .cmp(&items.get(b).unwrap().parents().len())
-        });
-        item_views = store.recursive_execute(&keys, &mut cycle, 0, max_depth, selector.rparents);
-    } else {
-        let ids = selector.get(store, false);
-        item_views = store.recursive_execute(&ids, &mut cycle, 0, max_depth, selector.rparents);
-    }
+    let items = store.get();
+    let mut keys = selector.get(store, false);
+    // sort output from old to new
+    keys.sort_by(|a, b| {
+        items
+            .get(a)
+            .unwrap()
+            .timestamp()
+            .cmp(&items.get(b).unwrap().timestamp())
+    });
+    // sort output by amount of parents. Zero parents first
+    keys.sort_by(|a, b| {
+        items
+            .get(a)
+            .unwrap()
+            .parents()
+            .len()
+            .cmp(&items.get(b).unwrap().parents().len())
+    });
+    item_views = store.recursive_execute(&keys, &mut cycle, 0, max_depth, selector.rparents);
 
     // printing of results
     if long {

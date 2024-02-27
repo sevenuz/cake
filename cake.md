@@ -256,8 +256,8 @@ uuid alphabet to keyboard homerows
 | id | d4f|
 |---|---|
 | timestamp | Tue Oct 17 17:36:02 2023 +0200|
-| last modified | Tue Oct 17 17:37:04 2023 +0200|
-| tags | |
+| last modified | Mon Feb 26 17:37:43 2024 +0100|
+| tags | done|
 | timetrack | |
 | parents | c3e|
 | children | 70f|
@@ -382,8 +382,8 @@ summe im timetrack
 | id | f37|
 |---|---|
 | timestamp | Tue Oct 24 16:56:29 2023 +0200|
-| last modified | Tue Oct 24 16:56:29 2023 +0200|
-| tags | |
+| last modified | Mon Feb 26 17:37:43 2024 +0100|
+| tags | done|
 | timetrack | |
 | parents | cake|
 | children | |
