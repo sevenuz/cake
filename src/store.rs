@@ -10,7 +10,7 @@ pub mod inner {
     use std::{collections::HashMap, str::FromStr};
 
     use crate::item::Item;
-    use crate::item::ParseItemError;
+    use crate::error::ParseError;
     use serde::{Deserialize, Serialize};
 
     #[derive(Copy, Clone)]
@@ -100,7 +100,7 @@ pub mod inner {
             Ok(())
         }
 
-        pub fn new_from_md(file: &str) -> Result<Store, ParseItemError> {
+        pub fn new_from_md(file: &str) -> Result<Store, ParseError> {
             let serialized = match std::fs::read_to_string(file) {
                 Ok(f) => f,
                 Err(_err) => {

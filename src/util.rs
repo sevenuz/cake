@@ -1,4 +1,5 @@
-use chrono::Local;
+use crate::error;
+use chrono::{DateTime, Local, TimeZone};
 use directories::{BaseDirs, ProjectDirs};
 use nanoid::nanoid;
 use std::{
@@ -36,13 +37,13 @@ mod tests {
 
 pub fn generate_id() -> String {
     let alphabet: [char; 16] = [
-        '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'a', 'b', 'c', 'd', 'e', 'f',
+        'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'e', 'r', 't', 'u', 'i', 'n', 'v',
     ];
 
     nanoid!(3, &alphabet)
 }
 
-// parse e.g. 1y1w1d1h1m1s and subtracts it from now
+/// parse e.g. 1y1w1d1h1m1s and subtracts it from now
 pub fn parse_time(t: &str) -> Result<Option<i64>, Box<dyn Error>> {
     if t.is_empty() {
         return Ok(None);
@@ -74,6 +75,44 @@ pub fn parse_time(t: &str) -> Result<Option<i64>, Box<dyn Error>> {
         + values[5]; // seconds
     let now = timestamp();
     Ok(Some(now - t))
+}
+
+/// show timestamp in hours, minutes, seconds
+pub fn timestamp_to_hms(timestamp: i64) -> String {
+    let hours = timestamp / 60 / 60;
+    let minutes = (timestamp - hours * 60) / 60;
+    let seconds = timestamp - hours * 60 * 60 - minutes * 60;
+    let mut res = "".to_string();
+    if hours > 0 {
+        res += &format!("{}h", hours);
+    }
+    if minutes > 0 {
+        res += &format!("{}m", minutes);
+    }
+    if seconds > 0 {
+        res += &format!("{}s", seconds);
+    }
+    res
+}
+
+// DO NOT CHANGE IT, it will break parse_timestamp
+const DATE_FORMAT: &str = "%c %z";
+pub fn format_timestamp(timestamp: i64) -> String {
+    Local
+        .timestamp_opt(timestamp, 0)
+        .unwrap()
+        .format(DATE_FORMAT)
+        .to_string()
+}
+
+/// from the formatted string of fn ft, this parses the unix timestamp
+pub fn parse_timestamp(s: &str) -> Result<i64, error::ParseError> {
+    let dt_timestamp = DateTime::parse_from_str(s, DATE_FORMAT)
+        .ok()
+        .ok_or(error::ParseError {
+            message: "Invalid timestamp".to_string(),
+        })?;
+    return Ok(dt_timestamp.timestamp());
 }
 
 pub fn timestamp() -> i64 {
@@ -245,4 +284,43 @@ pub fn space(s: &str, spacer_len: usize) -> String {
     result += &s;
     result += &(0..appendix).map(|_| " ").collect::<String>();
     result
+}
+
+/// splits string seperated by comma
+pub fn str_to_vec(s: &str) -> Vec<String> {
+    if s.is_empty() {
+        return vec![];
+    }
+    s.split(", ").map(|v| v.to_string()).collect()
+}
+
+/// joins vector with comma
+pub fn vec_to_str<T>(v: &Vec<T>) -> String
+where
+    T: std::fmt::Display,
+{
+    let mut res: String = "".to_string();
+    for s in v {
+        res += &s.to_string();
+        res += ", ";
+    }
+    if v.is_empty() {
+        "".to_string()
+    } else {
+        // remove last comma
+        res.strip_suffix(", ").unwrap().to_string()
+    }
+}
+
+/// removes prefix and suffix from raw metadata line
+pub fn extract_metadata(s: &str, prefix: &str) -> Result<String, error::ParseError> {
+    Ok(s.strip_prefix(prefix)
+        .ok_or(error::ParseError {
+            message: "Invalid metadata".to_string(),
+        })?
+        .strip_suffix("|")
+        .ok_or(error::ParseError {
+            message: "Invalid metadata".to_string(),
+        })?
+        .to_string())
 }

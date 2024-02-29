@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod error;
 mod item;
 mod selector;
 mod store;
@@ -366,6 +367,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             overwrite,
         }) => commands::add(
             &debug,
+            &config,
             &mut store,
             Selector::new(
                 ids, children, parents, tags, &None, &None, &false, &false, &0, &false,

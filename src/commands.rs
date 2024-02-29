@@ -9,6 +9,7 @@ use termimad::crossterm::style::Stylize;
 
 pub fn add<F>(
     debug: F,
+    config: &Config,
     store: &mut Store,
     selector: Selector,
     content: String,
@@ -59,7 +60,7 @@ where
     } else {
         store.add(item)?;
     }
-    println!("{}", store.get_item(&_id).unwrap());
+    config.build_skin()?.print_text(&store.get_item(&_id).unwrap().print_long(false));
     Ok(())
 }
 

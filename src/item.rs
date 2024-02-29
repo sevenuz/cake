@@ -1,5 +1,5 @@
+use crate::error;
 use crate::util;
-use chrono::{DateTime, Local, TimeZone};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -17,9 +17,6 @@ const PREFIX_TIMETRACK: &str = "| timetrack | ";
 const PREFIX_PARENTS: &str = "| parents | ";
 const PREFIX_CHILDREN: &str = "| children | ";
 
-// DO NOT CHANGE IT, it will break tf
-const DATE_FORMAT: &str = "%c %z";
-
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Item {
     id: String,
@@ -32,132 +29,53 @@ pub struct Item {
     last_modified: i64, // last update timestamp
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct ParseItemError;
-
-// https://users.rust-lang.org/t/what-is-stderror-and-how-exactly-does-propagate-errors/86267
-// impl for StdError which is alias of std::error::Error
-// needed for the Box<dyn Err>
-const PARSE_ITEM_ERROR_MSG: &str = "Invalid string to create an item";
-impl std::error::Error for ParseItemError {
-    fn description(&self) -> &str {
-        PARSE_ITEM_ERROR_MSG
-    }
-}
-impl fmt::Display for ParseItemError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", PARSE_ITEM_ERROR_MSG)
-    }
-}
-
-fn str_to_vec(s: &str) -> Vec<String> {
-    if s.is_empty() {
-        return vec![];
-    }
-    s.split(", ").map(|v| v.to_string()).collect()
-}
-
-fn vec_to_str<T>(v: &Vec<T>) -> String
-where
-    T: std::fmt::Display,
-{
-    let mut res: String = "".to_string();
-    for s in v {
-        res += &s.to_string();
-        res += ", ";
-    }
-    if v.is_empty() {
-        "".to_string()
-    } else {
-        // remove last comma
-        res.strip_suffix(", ").unwrap().to_string()
-    }
-}
-
-// show timestamp in hours, minutes, seconds
-fn hms(timestamp: i64) -> String {
-    let hours = timestamp / 60 / 60;
-    let minutes = (timestamp - hours * 60) / 60;
-    let seconds = timestamp - hours * 60 * 60 - minutes * 60;
-    let mut res = "".to_string();
-    if hours > 0 {
-        res += &format!("{}h", hours);
-    }
-    if minutes > 0 {
-        res += &format!("{}m", minutes);
-    }
-    if seconds > 0 {
-        res += &format!("{}s", seconds);
-    }
-    res
-}
-
-// format timestamp
-fn ft(timestamp: i64) -> String {
-    Local
-        .timestamp_opt(timestamp, 0)
-        .unwrap()
-        .format(DATE_FORMAT)
-        .to_string()
-}
-
-// from the formatted string of fn ft, this parses the unix timestamp
-fn tf(s: &str) -> Result<i64, ParseItemError> {
-    let dt_timestamp = DateTime::parse_from_str(s, DATE_FORMAT)
-        .ok()
-        .ok_or(ParseItemError)?;
-    return Ok(dt_timestamp.timestamp());
-}
-
 impl fmt::Display for Item {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{}", self.print_long(false))
     }
 }
 
-// removes prefix and suffix from raw metadata line
-fn pollish(s: &str, prefix: &str) -> Result<String, ParseItemError> {
-    Ok(s.strip_prefix(prefix)
-        .ok_or(ParseItemError)?
-        .strip_suffix("|")
-        .ok_or(ParseItemError)?
-        .to_string())
-}
-
 // https://doc.rust-lang.org/std/str/trait.FromStr.html
 impl FromStr for Item {
-    type Err = ParseItemError;
+    type Err = error::ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let err = error::ParseError {
+            message: "Invalid string to create an item".to_string(),
+        };
         let mut lines = s.lines();
         let id: String;
         if let Some(raw_id) = lines.next() {
-            id = pollish(raw_id, PREFIX_ID)?;
+            id = util::extract_metadata(raw_id, PREFIX_ID)?;
         } else {
-            return Err(ParseItemError);
+            return Err(err);
         };
         lines.next(); // skip Table delimiter
         let timestamp: i64;
         if let Some(raw_timestamp) = lines.next() {
-            timestamp = tf(&pollish(raw_timestamp, PREFIX_TIMESTAMP)?)?;
+            timestamp =
+                util::parse_timestamp(&util::extract_metadata(raw_timestamp, PREFIX_TIMESTAMP)?)?;
         } else {
-            return Err(ParseItemError);
+            return Err(err);
         };
         let last_modified: i64;
         if let Some(raw_last_modified) = lines.next() {
-            last_modified = tf(&pollish(raw_last_modified, PREFIX_LAST_MODIFIED)?)?;
+            last_modified = util::parse_timestamp(&util::extract_metadata(
+                raw_last_modified,
+                PREFIX_LAST_MODIFIED,
+            )?)?;
         } else {
-            return Err(ParseItemError);
+            return Err(err);
         };
         let tags: Vec<String>;
         if let Some(raw_tags) = lines.next() {
-            tags = str_to_vec(&pollish(raw_tags, PREFIX_TAGS)?);
+            tags = util::str_to_vec(&util::extract_metadata(raw_tags, PREFIX_TAGS)?);
         } else {
-            return Err(ParseItemError);
+            return Err(err);
         };
         let timetrack: Vec<i64>;
         if let Some(raw_timetrack) = lines.next() {
-            let pollished = pollish(raw_timetrack, PREFIX_TIMETRACK)?;
+            let pollished = util::extract_metadata(raw_timetrack, PREFIX_TIMETRACK)?;
             if pollished.is_empty() {
                 timetrack = vec![];
             } else {
@@ -167,23 +85,23 @@ impl FromStr for Item {
                 // super cool :D
                 timetrack = pollished
                     .split(", ")
-                    .map(|a| tf(a))
-                    .collect::<Result<Vec<i64>, ParseItemError>>()?;
+                    .map(|a| util::parse_timestamp(a))
+                    .collect::<Result<Vec<i64>, error::ParseError>>()?;
             }
         } else {
-            return Err(ParseItemError);
+            return Err(err);
         };
         let parents: Vec<String>;
         if let Some(raw_parents) = lines.next() {
-            parents = str_to_vec(&pollish(raw_parents, PREFIX_PARENTS)?);
+            parents = util::str_to_vec(&util::extract_metadata(raw_parents, PREFIX_PARENTS)?);
         } else {
-            return Err(ParseItemError);
+            return Err(err);
         };
         let children: Vec<String>;
         if let Some(raw_children) = lines.next() {
-            children = str_to_vec(&pollish(raw_children, PREFIX_CHILDREN)?);
+            children = util::str_to_vec(&util::extract_metadata(raw_children, PREFIX_CHILDREN)?);
         } else {
-            return Err(ParseItemError);
+            return Err(err);
         };
         lines.next();
         let content = lines.map(|s| format!("{}\n", s)).collect();
@@ -253,7 +171,7 @@ impl Item {
             tt = self
                 .timetrack
                 .iter()
-                .map(|t| ft(*t))
+                .map(|t| util::format_timestamp(*t))
                 .collect::<Vec<String>>();
         } else {
             // calculate timedifferences
@@ -270,7 +188,7 @@ impl Item {
             tt = even
                 .zip(odd)
                 .map(|((_, first), (_, second))| second - first)
-                .map(|t| hms(t))
+                .map(|t| util::timestamp_to_hms(t))
                 .collect::<Vec<String>>();
         }
         let res = format!(
@@ -279,17 +197,17 @@ impl Item {
             self.id,
             TABLE_HEADER_DELIMITER,
             PREFIX_TIMESTAMP,
-            ft(self.timestamp),
+            util::format_timestamp(self.timestamp),
             PREFIX_LAST_MODIFIED,
-            ft(self.last_modified),
+            util::format_timestamp(self.last_modified),
             PREFIX_TAGS,
-            vec_to_str(&self.tags),
+            util::vec_to_str(&self.tags),
             PREFIX_TIMETRACK,
-            vec_to_str(&tt),
+            util::vec_to_str(&tt),
             PREFIX_PARENTS,
-            vec_to_str(&self.parents),
+            util::vec_to_str(&self.parents),
             PREFIX_CHILDREN,
-            vec_to_str(&self.children),
+            util::vec_to_str(&self.children),
             self.content
         );
         res
@@ -383,7 +301,7 @@ impl Item {
             Err(format!(
                 "{} runs already since {}",
                 self.id.to_owned(),
-                ft(*self.timetrack.last().unwrap())
+                util::format_timestamp(*self.timetrack.last().unwrap())
             ))
         }
     }

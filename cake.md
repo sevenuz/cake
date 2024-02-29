@@ -81,11 +81,11 @@ recursivooo
 | id | cake|
 |---|---|
 | timestamp | Tue Oct 17 09:29:58 2023 +0200|
-| last modified | Wed Feb 28 00:53:11 2024 +0100|
+| last modified | Wed Feb 28 11:28:04 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | |
-| children | 9d7, 109, de8, ef5, 594, a60, 713, c3e, 5dc, d0a, 67d, 5d1, 74e, 91d, f37, f70, 5e4|
+| children | 9d7, 109, de8, ef5, 594, a60, 713, c3e, 5dc, d0a, 67d, 5d1, 74e, 91d, f37, f70, 5e4, d27|
 
 # Cake TUI
 A tool to organize todos with
@@ -431,3 +431,17 @@ exclustion with ~ for ids, parents and children as well
 | children | |
 
 pretty md on add cmd
+
+---
+---
+---
+| id | d27|
+|---|---|
+| timestamp | Wed Feb 28 11:28:04 2024 +0100|
+| last modified | Wed Feb 28 11:28:04 2024 +0100|
+| tags | |
+| timetrack | |
+| parents | cake|
+| children | |
+
+deadline date?
