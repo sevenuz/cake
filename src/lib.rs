@@ -5,6 +5,7 @@ mod item;
 mod selector;
 mod store;
 mod util;
+mod view;
 
 use crate::store::Store;
 use clap::{Parser, Subcommand};

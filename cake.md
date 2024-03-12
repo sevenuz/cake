@@ -67,11 +67,11 @@ sveltekit
 | id | frech|
 |---|---|
 | timestamp | Mon Oct 16 21:44:51 2023 +0200|
-| last modified | Mon Oct 16 22:59:21 2023 +0200|
+| last modified | Sat Mar  9 12:44:07 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | 2c5|
-| children | easycase|
+| children | easycase, ntj|
 
 recursivooo
 
@@ -81,11 +81,11 @@ recursivooo
 | id | cake|
 |---|---|
 | timestamp | Tue Oct 17 09:29:58 2023 +0200|
-| last modified | Wed Feb 28 11:28:04 2024 +0100|
+| last modified | Wed Mar  6 11:33:40 2024 +0100|
 | tags | |
 | timetrack | |
 | parents | |
-| children | 9d7, 109, de8, ef5, 594, a60, 713, c3e, 5dc, d0a, 67d, 5d1, 74e, 91d, f37, f70, 5e4, d27|
+| children | 9d7, 109, de8, ef5, 594, a60, 713, c3e, 5dc, d0a, 67d, 5d1, 74e, 91d, f37, f70, 5e4, d27, dfa, ath, urd|
 
 # Cake TUI
 A tool to organize todos with
@@ -242,8 +242,8 @@ run cmd
 | id | 713|
 |---|---|
 | timestamp | Tue Oct 17 17:35:00 2023 +0200|
-| last modified | Wed Feb 28 00:46:55 2024 +0100|
-| tags | |
+| last modified | Thu Feb 29 18:01:19 2024 +0100|
+| tags | done|
 | timetrack | |
 | parents | cake|
 | children | |
@@ -424,8 +424,8 @@ exclustion with ~ for ids, parents and children as well
 | id | 5e4|
 |---|---|
 | timestamp | Wed Feb 28 00:53:11 2024 +0100|
-| last modified | Wed Feb 28 00:53:11 2024 +0100|
-| tags | |
+| last modified | Thu Feb 29 18:01:19 2024 +0100|
+| tags | done|
 | timetrack | |
 | parents | cake|
 | children | |
@@ -445,3 +445,101 @@ pretty md on add cmd
 | children | |
 
 deadline date?
+
+---
+---
+---
+| id | aol|
+|---|---|
+| timestamp | Thu Feb 29 18:02:30 2024 +0100|
+| last modified | Thu Feb 29 18:02:30 2024 +0100|
+| tags | |
+| timetrack | |
+| parents | |
+| children | |
+
+# test ost eron
+
+---
+---
+---
+| id | dfa|
+|---|---|
+| timestamp | Thu Feb 29 18:19:41 2024 +0100|
+| last modified | Thu Feb 29 18:19:41 2024 +0100|
+| tags | |
+| timetrack | |
+| parents | cake|
+| children | |
+
+id collision on big todo generation
+
+---
+---
+---
+| id | ath|
+|---|---|
+| timestamp | Thu Feb 29 18:19:59 2024 +0100|
+| last modified | Thu Feb 29 18:19:59 2024 +0100|
+| tags | |
+| timetrack | |
+| parents | cake|
+| children | |
+
+stress test for big todo files
+
+---
+---
+---
+| id | ist|
+|---|---|
+| timestamp | Mon Mar  4 14:40:04 2024 +0100|
+| last modified | Mon Mar  4 14:40:04 2024 +0100|
+| tags | |
+| timetrack | |
+| parents | |
+| children | |
+
+do my assignment for ccc
+
+---
+---
+---
+| id | urd|
+|---|---|
+| timestamp | Wed Mar  6 11:33:40 2024 +0100|
+| last modified | Wed Mar  6 11:33:40 2024 +0100|
+| tags | |
+| timetrack | |
+| parents | cake|
+| children | |
+
+limit chars for long lines in short ls
+
+---
+---
+---
+| id | ntj|
+|---|---|
+| timestamp | Sat Mar  9 12:44:07 2024 +0100|
+| last modified | Tue Mar 12 10:29:44 2024 +0100|
+| tags | |
+| timetrack | |
+| parents | frech|
+| children | tlv|
+
+iwas
+
+---
+---
+---
+| id | tlv|
+|---|---|
+| timestamp | Tue Mar 12 10:29:44 2024 +0100|
+| last modified | Tue Mar 12 10:29:44 2024 +0100|
+| tags | |
+| timetrack | |
+| parents | ntj|
+| children | |
+
+child whatever

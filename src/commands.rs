@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::item::Item;
 use crate::store::{inner::ItemView, RecState, Store, MAX_DEPTH};
 use crate::util;
+use crate::view;
 use crate::Selector;
 use std::error::Error;
 use std::fs;
@@ -60,7 +61,7 @@ where
     } else {
         store.add(item)?;
     }
-    config.build_skin()?.print_text(&store.get_item(&_id).unwrap().print_long(false));
+    view::print(&config, store.get_item(&_id).unwrap().print_long(false))?;
     Ok(())
 }
 
@@ -181,22 +182,22 @@ where
         .collect();
 
     // printing of results
+    let mut text: String = "".to_string();
     if long {
         for (i, item_view) in item_views.iter().enumerate() {
             if matches!(item_view.state, RecState::Reappearence) && item_view.depth > 0 {
-                println!("{}", "### Recursion Warning ###".red());
+                text = text + &format!("{}", "### Recursion Warning ###".red());
             }
             debug(&format!("### raw ###\n{}", item_view.item.print_long(true)));
 
             // appends a dilimeter at the end if there are following items
-            config.build_skin()?.print_text(
-                &(item_view.item.to_string()
+            text = text
+                + &(item_view.item.to_string()
                     + if i + 1 < item_views.len() {
-                        "\n---"
+                        "\n---\n"
                     } else {
                         ""
-                    }),
-            );
+                    });
         }
     } else {
         // find maximun id len
@@ -209,25 +210,32 @@ where
         });
         for item_view in item_views {
             match item_view.state {
-                RecState::Normal => println!(
-                    "{:indent$}{}",
-                    "",
-                    item_view.item.print(max_id_len, item_view.has_children),
-                    indent = item_view.depth
-                ),
+                RecState::Normal => {
+                    text = text
+                        + &format!(
+                            "{:indent$} {}\n",
+                            "‎",
+                            item_view.item.print(max_id_len, item_view.has_children),
+                            indent = item_view.depth
+                        );
+                    debug(&format!("indention {:?}", item_view.depth));
+                }
                 RecState::Reappearence if item_view.depth > 0 => {
-                    print!(
-                        "{:indent$}{}",
-                        "",
-                        item_view.item.print(max_id_len, item_view.has_children),
-                        indent = item_view.depth
-                    );
-                    println!("{}", "### Recursion Warning ###".red());
+                    text = text
+                        + &format!(
+                            "{:indent$} {}",
+                            "‎",
+                            item_view.item.print(max_id_len, item_view.has_children),
+                            indent = item_view.depth
+                        );
+                    text = text + &format!(" {}\n", "### Reappearence Warning ###".red());
+                    debug(&format!("indention {:?}", item_view.depth));
                 }
                 _ => (),
             }
         }
     }
+    view::print(&config, text)?;
 
     Ok(())
 }
@@ -238,6 +246,6 @@ where
 {
     debug(&format!("show: {:?}", path));
     let data = fs::read_to_string(path)?;
-    config.build_skin()?.print_text(&data);
+    view::print(&config, data)?;
     Ok(())
 }

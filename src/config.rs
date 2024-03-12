@@ -26,6 +26,10 @@ pub struct Config {
     default_file_path: String,
     /// searches in config dir for skin file (hjson)
     skin_file_name: String,
+    /// When output has more lines than the threshold, then show it in scrollview
+    /// -1 to never go into scrollview
+    /// 127 as maximum
+    pub scrollview_threshold: i8,
 }
 
 const DEFAULT_SKIN_GRUVBOX: &str = r###"# This Hjson file is the default gruvbox skin.
@@ -60,6 +64,7 @@ impl Config {
                 save_file_name: "cake.json".to_string(),
                 default_file_path: util::default_save_file("cake.json")?,
                 skin_file_name: "gruvbox.hjson".to_string(),
+                scrollview_threshold: 30,
             })
         }
     }
