@@ -58,11 +58,11 @@ impl Config {
         if let Ok(serialized) = std::fs::read_to_string(util::config_file()?) {
             Ok(serde_json::from_str::<Config>(&serialized)?)
         } else {
-            // default settings
+            // default settings on linux at ~/.config/cake
             Ok(Config {
                 dirty: true,
-                save_file_name: "cake.json".to_string(),
-                default_file_path: util::default_save_file("cake.json")?,
+                save_file_name: "cake.md".to_string(),
+                default_file_path: util::default_save_file("cake.md")?,
                 skin_file_name: "gruvbox.hjson".to_string(),
                 scrollview_threshold: 30,
             })

@@ -223,7 +223,7 @@ pub fn default_save_file(save_file_name: &str) -> Result<String, Box<dyn Error>>
             .into_string()
             .unwrap());
     } else {
-        return Err("Could not find data directorie".into());
+        return Err("Could not find data directory".into());
     }
 }
 
