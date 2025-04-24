@@ -20,8 +20,12 @@ pub struct Config {
     /// default initialization to false
     #[serde(skip)]
     dirty: bool,
+    /// editor for cake add
+    pub editor: String,
+    /// git branch name for cake init --git
+    pub git_branch_name: String,
     /// file name searching for when no input file is given (e.g. cake.md)
-    save_file_name: String,
+    pub save_file_name: String,
     /// full file path to the default save file including file name and suffix (json, md)
     default_file_path: String,
     /// searches in config dir for skin file (hjson)
@@ -56,11 +60,13 @@ scrollbar: "red yellow""###;
 impl Config {
     pub fn new() -> Result<Config, Box<dyn Error>> {
         if let Ok(serialized) = std::fs::read_to_string(util::config_file()?) {
-            Ok(serde_json::from_str::<Config>(&serialized)?)
+            Ok(deser_hjson::from_str::<Config>(&serialized)?)
         } else {
             // default settings on linux at ~/.config/cake
             Ok(Config {
                 dirty: true,
+                editor: std::env::var("EDITOR").unwrap_or("vim".to_string()),
+                git_branch_name: "cake".to_string(),
                 save_file_name: "cake.md".to_string(),
                 default_file_path: util::default_save_file("cake.md")?,
                 skin_file_name: "gruvbox.hjson".to_string(),

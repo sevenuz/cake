@@ -1,11 +1,11 @@
 | id | cake|
 |---|---|
 | timestamp | Tue Oct 17 09:29:58 2023 +0200|
-| last modified | Thu Apr 24 12:23:31 2025 +0200|
+| last modified | Thu Apr 24 15:20:46 2025 +0200|
 | tags | cake|
 | timetrack | |
 | parents | |
-| children | 109, 594, c3e, 5dc, d0a, 67d, 5d1, 74e, 91d, f70, d27, dfa, ath, urd, rdt, lsh|
+| children | 109, 594, c3e, 5dc, d0a, 67d, 5d1, 74e, 91d, f70, d27, dfa, ath, urd, rdt, lsh, ggl|
 
 # Cake TUI
 A tool to organize todos with
@@ -298,3 +298,17 @@ Statistics like:
 
 Graph:
 - show graph of items
+
+---
+---
+---
+| id | ggl|
+|---|---|
+| timestamp | Thu Apr 24 15:20:46 2025 +0200|
+| last modified | Thu Apr 24 15:20:46 2025 +0200|
+| tags | |
+| timetrack | |
+| parents | cake|
+| children | |
+
+make save_file format independent from name in config

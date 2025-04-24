@@ -39,7 +39,7 @@ pub struct Cli {
 // TODO https://docs.rs/clap/latest/clap/builder/struct.Arg.html#method.value_delimiter
 #[derive(Subcommand)]
 pub enum Commands {
-    /// add or edit items
+    /// add new items, alias edit: sets --edit
     #[clap(alias("edit"))]
     Add {
         /// a custom unique id for the item
@@ -70,7 +70,7 @@ pub enum Commands {
         #[clap(short, long, action)]
         overwrite: bool,
     },
-    /// remove items
+    /// remove items, alias rm
     #[clap(alias("rm"))]
     Remove {
         /// Select by ids
@@ -248,7 +248,7 @@ pub enum Commands {
         #[clap(long, action)]
         or: bool,
     },
-    /// list items
+    /// list items, alias ls
     #[clap(alias("ls"))]
     List {
         /// Select by ids
@@ -295,11 +295,22 @@ pub enum Commands {
         #[clap(long, action)]
         or: bool,
     },
-    /// show a markdown file in termianl
+    /// show a markdown file in terminal
     Show {
         /// Path to the file
         #[clap(value_parser)]
         path: String,
+    },
+    /// Creates new cake save file in current directory, checkout `cake help init` for git options.
+    Init {
+        /// Creates new branch for the cake save file which is checked out
+        /// before every cake operation.
+        #[clap(long, action)]
+        git: bool,
+        /// Wether the cake branch should be pushed to remote or not.
+        /// This option works only together with the git option.
+        #[clap(long, action)]
+        remote: bool,
     },
 }
 
@@ -484,6 +495,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             *long,
         )?,
         Some(Commands::Show { path }) => commands::show(debug, &config, path)?,
+        Some(Commands::Init { git, remote }) => commands::init(debug, &config, *git, *remote)?,
         None => {
             println!("Nothing happed o.0");
         }

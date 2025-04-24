@@ -5,7 +5,8 @@ use crate::util;
 use crate::view;
 use crate::Selector;
 use std::error::Error;
-use std::fs;
+use std::fs::{self, File};
+use std::path::Path;
 use termimad::crossterm::style::Stylize;
 
 pub fn add<F>(
@@ -27,8 +28,6 @@ where
         )
         .clone(),
     );
-    // TODO editor from settings
-    let editor = "nvim";
     let _id = if selector.ids.is_empty() {
         util::generate_id()
     } else {
@@ -43,7 +42,7 @@ where
     store.check_existence(&item, edit)?;
     item.set_content(if content.is_empty() {
         util::input_from_external_editor(
-            editor,
+            &config.editor,
             if edit {
                 Some(&store.get_item(&_id.to_string()).unwrap().content())
             } else {
@@ -255,5 +254,28 @@ where
     debug(&format!("show: {:?}", path));
     let data = fs::read_to_string(path)?;
     view::print(&config, data)?;
+    Ok(())
+}
+
+pub fn init<F>(debug: F, config: &Config, git: bool, remote: bool) -> Result<(), Box<dyn Error>>
+where
+    F: Fn(&str),
+{
+    debug(&format!("init: git {:?}, remote {:?}", git, remote));
+    if !git {
+        let p = Path::new(&config.save_file_name);
+        debug(&format!("init: new file {:?}", p));
+        File::create_new(p)?;
+    } else {
+        // Command::new(editor)
+        //     .arg(&file_path)
+        //     .status()
+        //     .expect("Something went wrong");
+        if remote {
+            todo!();
+        }
+        todo!();
+    }
+    println!("New cake file created :)");
     Ok(())
 }
