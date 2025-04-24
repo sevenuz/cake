@@ -1,11 +1,11 @@
 | id | cake|
 |---|---|
 | timestamp | Tue Oct 17 09:29:58 2023 +0200|
-| last modified | Thu Apr 24 12:01:29 2025 +0200|
+| last modified | Thu Apr 24 12:23:31 2025 +0200|
 | tags | cake|
 | timetrack | |
 | parents | |
-| children | 109, 594, c3e, 5dc, d0a, 67d, 5d1, 74e, 91d, f70, d27, dfa, ath, urd, rdt|
+| children | 109, 594, c3e, 5dc, d0a, 67d, 5d1, 74e, 91d, f70, d27, dfa, ath, urd, rdt, lsh|
 
 # Cake TUI
 A tool to organize todos with
@@ -246,27 +246,55 @@ limit chars for long lines in short ls
 | id | rdt|
 |---|---|
 | timestamp | Thu Apr 24 11:54:52 2025 +0200|
-| last modified | Thu Apr 24 12:01:29 2025 +0200|
+| last modified | Thu Apr 24 12:14:18 2025 +0200|
 | tags | cake|
 | timetrack | |
 | parents | cake|
 | children | |
 
 # git support
-`cake git init` creates branch `cake` (can be configured of course) and there it creates
+`cake init --git (--remote)` creates branch `cake` (can be configured of course) and there it creates
 `cake.md`, adds it and pushes it (--set remote host...).
 
 Then, if you use all normal commands, it should check `git branch` for a `cake` branch,
 if so:
 - stash
 - checkout cake
-- fetch cake
-- rebase cake
+- fetch cake -> only if --remote branch exists
+- rebase cake -> only if --remote branch exists
 - all cake operations here
 - commit with message of changed or new ids
-- push
+- push -> only if --remote branch exists
 - checkout previous branch
 - stash pop
 
 on conflicts which should not happen because the instant sync:
 - abort operation and print message: solve conflicts on `cake` branch
+
+---
+---
+---
+| id | lsh|
+|---|---|
+| timestamp | Thu Apr 24 12:18:14 2025 +0200|
+| last modified | Thu Apr 24 12:23:31 2025 +0200|
+| tags | |
+| timetrack | |
+| parents | cake|
+| children | |
+
+# Charts and statistics
+if no subcommand is given, show rich charts
+- use https://ratatui.rs/
+- use https://github.com/Lol3rrr/termgraph ???
+
+Statistics like:
+- last added items
+- items with most children
+- deepest chain
+- recursion count
+- time overview
+- tag stats
+
+Graph:
+- show graph of items
