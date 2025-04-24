@@ -1,7 +1,7 @@
 mod commands;
-mod git;
 mod config;
 mod error;
+mod git;
 mod item;
 mod selector;
 mod store;
@@ -341,6 +341,20 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     debug(&format!("{:?}", args));
 
     let config = Config::new()?;
+    let mut current_branch = "".to_string();
+    if git::is_repo() {
+        current_branch = git::current_branch_name()?;
+        if git::check_if_branch_exists(&config)? {
+            debug(&format!(
+                "detected git repo and cake branch. current branch: {:?}",
+                current_branch
+            ));
+            debug(&format!("git stash"));
+            git::stash()?;
+            debug(&format!("git checkout {:?}", config.git_branch_name));
+            git::checkout_branch(&config.git_branch_name)?;
+        }
+    }
     let input_file = match cli.input {
         Some(f) => {
             // use empty input path to write to global save file
@@ -507,7 +521,24 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     } else if output_file.ends_with(FILETYPE_JSON) {
         store.write_json(&output_file)?;
     } else {
+        // TODO support all files if extension is set in settings
         return Err("Only .md or .json files are supported".into());
+    }
+    if git::is_repo() {
+        if git::check_if_branch_exists(&config)? {
+            debug(&format!(
+                "detected git repo and cake branch. current branch: {:?}",
+                current_branch
+            ));
+            debug(&format!("git add {:?}", config.save_file_name));
+            git::add(&config)?;
+            debug(&format!("git commit"));
+            git::commit("cake: TODO better message")?;
+            debug(&format!("git checkout {:?}", current_branch));
+            git::checkout_branch(&current_branch)?;
+            debug(&format!("git stash pop"));
+            git::stash_pop()?;
+        }
     }
     config.write_json_if_dirty()?;
     Ok(())

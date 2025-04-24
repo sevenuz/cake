@@ -308,7 +308,7 @@ where
         }
         debug(&format!("init: checkout {}", current_branch));
         git::checkout_branch(&current_branch)?;
-        debug(&format!("init: stash"));
+        debug(&format!("init: stash pop"));
         git::stash_pop()?;
     } else {
         let p = Path::new(&config.save_file_name);
