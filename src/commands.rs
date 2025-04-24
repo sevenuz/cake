@@ -216,7 +216,11 @@ where
                             "{:indent$} {}\n",
                             "‎",
                             item_view.item.print(max_id_len, item_view.has_children),
-                            indent = item_view.depth
+                            indent = if item_view.has_children {
+                                item_view.depth + 1
+                            } else {
+                                item_view.depth
+                            }
                         );
                     debug(&format!("indention {:?}", item_view.depth));
                 }
@@ -226,7 +230,11 @@ where
                             "{:indent$} {}",
                             "‎",
                             item_view.item.print(max_id_len, item_view.has_children),
-                            indent = item_view.depth
+                            indent = if item_view.has_children {
+                                item_view.depth + 1
+                            } else {
+                                item_view.depth
+                            }
                         );
                     text = text + &format!(" {}\n", "### Reappearence Warning ###".red());
                     debug(&format!("indention {:?}", item_view.depth));
