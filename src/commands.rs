@@ -1,9 +1,9 @@
 use crate::config::Config;
 use crate::item::Item;
 use crate::store::{inner::ItemView, RecState, Store, MAX_DEPTH};
-use crate::util;
 use crate::view;
 use crate::Selector;
+use crate::{git, util};
 use std::error::Error;
 use std::fs::{self, File};
 use std::path::Path;
@@ -262,20 +262,59 @@ where
     F: Fn(&str),
 {
     debug(&format!("init: git {:?}, remote {:?}", git, remote));
-    if !git {
+    if git {
+        if !git::is_repo() {
+            return Err(Box::from(
+                "You can use 'cake init --git' only in an existing repository.",
+            ));
+        }
+        if git::check_if_branch_exists(config)? {
+            return Err(Box::from(
+                "The branch '".to_owned() + &config.git_branch_name + "' already exists. Abort...",
+            ));
+        }
+        let current_branch = git::current_branch_name()?;
+        debug(&format!("init: current branch {:?}", current_branch));
+        debug(&format!("init: stash"));
+        git::stash()?;
+        debug(&format!("init: create {}", config.git_branch_name));
+        git::create_branch(config)?;
+        debug(&format!("init: checkout {}", config.git_branch_name));
+        git::checkout_branch(&config.git_branch_name)?;
+        let p = Path::new(&config.save_file_name);
+        debug(&format!("init: new file {:?}", p));
+        if let Err(e) = File::create_new(p) {
+            println!(
+                "I guess you already have a cake file in your repo o.0 \n {} \n{}",
+                e.to_string().yellow().italic(),
+                "So we are just using this one now. You can remove it from your other branches."
+            );
+        } else {
+            println!(
+                "New {} file created at branch {} :)",
+                config.save_file_name, config.git_branch_name
+            );
+            debug(&format!("init: add {}", config.save_file_name));
+            git::add(config)?;
+            debug(&format!("init: commit {}", config.save_file_name));
+            git::commit("init cake file")?;
+        }
+        if remote {
+            debug(&format!(
+                "init: push --set-upstream {} {}",
+                config.git_remote_name, config.git_branch_name
+            ));
+            git::push_set_upstream(config)?;
+        }
+        debug(&format!("init: checkout {}", current_branch));
+        git::checkout_branch(&current_branch)?;
+        debug(&format!("init: stash"));
+        git::stash_pop()?;
+    } else {
         let p = Path::new(&config.save_file_name);
         debug(&format!("init: new file {:?}", p));
         File::create_new(p)?;
-    } else {
-        // Command::new(editor)
-        //     .arg(&file_path)
-        //     .status()
-        //     .expect("Something went wrong");
-        if remote {
-            todo!();
-        }
-        todo!();
+        println!("New {} file created :)", config.save_file_name);
     }
-    println!("New cake file created :)");
     Ok(())
 }

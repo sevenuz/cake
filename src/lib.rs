@@ -1,4 +1,5 @@
 mod commands;
+mod git;
 mod config;
 mod error;
 mod item;
