@@ -172,7 +172,6 @@ fn remove_illegal_characters(mut s: String) -> String {
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const CONFIG_FILE: &str = "config.hjson";
 
-// TODO panicks with the expect calls but should return err
 pub fn input_from_external_editor(
     editor: &str,
     text: Option<&String>,
@@ -185,15 +184,10 @@ pub fn input_from_external_editor(
         write(&file_path, t).expect("Could not write to file.");
     }
 
-    Command::new(editor)
-        .arg(&file_path)
-        .status()
-        .expect("Something went wrong");
+    Command::new(editor).arg(&file_path).status()?;
 
     let mut editable = String::new();
-    File::open(file_path)
-        .expect("Could not open file")
-        .read_to_string(&mut editable)?;
+    File::open(file_path)?.read_to_string(&mut editable)?;
     Ok(editable)
 }
 

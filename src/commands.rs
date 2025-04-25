@@ -7,6 +7,7 @@ use crate::{git, util};
 use std::error::Error;
 use std::fs::{self, File};
 use std::path::Path;
+use std::process::Command;
 use termimad::crossterm::style::Stylize;
 
 pub fn add<F>(
@@ -321,5 +322,20 @@ where
         File::create_new(p)?;
         println!("New {} file created :)", config.save_file_name);
     }
+    Ok(())
+}
+
+pub fn config<F>(debug: F, config: &Config) -> Result<(), Box<dyn Error>>
+where
+    F: Fn(&str),
+{
+    debug(&format!(
+        "config: open editor {:?} with file {:?}",
+        config.editor,
+        util::config_file()?
+    ));
+    Command::new(&config.editor)
+        .arg(util::config_file()?)
+        .status()?;
     Ok(())
 }

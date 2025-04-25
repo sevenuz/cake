@@ -318,6 +318,8 @@ pub enum Commands {
         #[clap(long, action)]
         remote: bool,
     },
+    /// Open config file in editor
+    Config {},
 }
 
 const FILETYPE_JSON: &str = ".json";
@@ -536,6 +538,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         )?,
         Some(Commands::Show { path }) => commands::show(debug, &config, path)?,
         Some(Commands::Init { git, remote }) => commands::init(debug, &config, *git, *remote)?,
+        Some(Commands::Config {}) => commands::config(debug, &config)?,
         None => {
             println!("Nothing happed o.0");
         }
