@@ -26,6 +26,8 @@ pub struct Config {
     pub git_branch_name: String,
     /// git branch remote name for cake init --git
     pub git_remote_name: String,
+    /// push and fetch by default on the cake branch
+    pub git_push_fetch: bool,
     /// file name searching for when no input file is given (e.g. cake.md)
     pub save_file_name: String,
     /// full file path to the default save file including file name and suffix (json, md)
@@ -70,6 +72,7 @@ impl Config {
                 editor: std::env::var("EDITOR").unwrap_or("vim".to_string()),
                 git_branch_name: "cake".to_string(),
                 git_remote_name: "origin".to_string(),
+                git_push_fetch: false,
                 save_file_name: "cake.md".to_string(),
                 default_file_path: util::default_save_file("cake.md")?,
                 skin_file_name: "gruvbox.hjson".to_string(),

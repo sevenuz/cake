@@ -33,6 +33,11 @@ pub struct Cli {
     #[clap(short, long, action = clap::ArgAction::Count)]
     pub debug: u8,
 
+    /// Activate git push and fetch for the following action.
+    /// It only works if a cake branch exists, see 'cake help init'
+    #[clap(short, long)]
+    pub git: bool,
+
     #[clap(subcommand)]
     pub command: Option<Commands>,
 }
@@ -353,6 +358,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             git::stash()?;
             debug(&format!("git checkout {:?}", config.git_branch_name));
             git::checkout_branch(&config.git_branch_name)?;
+            if config.git_push_fetch || cli.git {
+                // TODO how to detect merge conflicts?
+                debug(&format!("git fetch"));
+                git::fetch(&config)?;
+                debug(&format!("git rebase"));
+                git::rebase()?;
+            }
         }
     }
     let input_file = match cli.input {
@@ -526,14 +538,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     }
     if git::is_repo() {
         if git::check_if_branch_exists(&config)? {
-            debug(&format!(
-                "detected git repo and cake branch. current branch: {:?}",
-                current_branch
-            ));
             debug(&format!("git add {:?}", config.save_file_name));
             git::add(&config)?;
             debug(&format!("git commit"));
             git::commit("cake: TODO better message")?;
+            if config.git_push_fetch || cli.git {
+                debug(&format!("git push"));
+                git::push(&config)?;
+            }
             debug(&format!("git checkout {:?}", current_branch));
             git::checkout_branch(&current_branch)?;
             debug(&format!("git stash pop"));
