@@ -347,7 +347,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
     let config = Config::new()?;
     let mut current_branch = "".to_string();
-    if git::is_repo() {
+    if git::is_repo() && !config.disable_git {
         current_branch = git::current_branch_name()?;
         if git::check_if_branch_exists(&config)? {
             debug(&format!(
@@ -359,11 +359,24 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             debug(&format!("git checkout {:?}", config.git_branch_name));
             git::checkout_branch(&config.git_branch_name)?;
             if config.git_push_fetch || cli.git {
-                // TODO how to detect merge conflicts?
                 debug(&format!("git fetch"));
+                println!("{}", "Fetching...".to_string().grey().italic());
                 git::fetch(&config)?;
                 debug(&format!("git rebase"));
                 git::rebase()?;
+                if git::check_conflicts()? {
+                    debug(&format!("git rebase --abourt"));
+                    git::rebase_abort()?;
+                    debug(&format!("git checkout {:?}", current_branch));
+                    git::checkout_branch(&current_branch)?;
+                    debug(&format!("git stash pop"));
+                    git::stash_pop()?;
+                    return Err(Box::from(
+                        "There are merge conflicts on branch '".to_owned()
+                            + &config.git_branch_name
+                            + "'. You need to resolve them, sorry. Abort...",
+                    ));
+                }
             }
         }
     }
@@ -536,13 +549,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         // TODO support all files if extension is set in settings
         return Err("Only .md or .json files are supported".into());
     }
-    if git::is_repo() {
+    if git::is_repo() && !config.disable_git {
         if git::check_if_branch_exists(&config)? {
             debug(&format!("git add {:?}", config.save_file_name));
             git::add(&config)?;
             debug(&format!("git commit"));
             git::commit("cake: TODO better message")?;
             if config.git_push_fetch || cli.git {
+                println!("{}", "Pushing...".to_string().grey().italic());
                 debug(&format!("git push"));
                 git::push(&config)?;
             }

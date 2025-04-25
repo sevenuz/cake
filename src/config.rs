@@ -22,6 +22,8 @@ pub struct Config {
     dirty: bool,
     /// editor for cake add
     pub editor: String,
+    /// disable all git actions
+    pub disable_git: bool,
     /// git branch name for cake init --git
     pub git_branch_name: String,
     /// git branch remote name for cake init --git
@@ -70,6 +72,7 @@ impl Config {
             Ok(Config {
                 dirty: true,
                 editor: std::env::var("EDITOR").unwrap_or("vim".to_string()),
+                disable_git: false,
                 git_branch_name: "cake".to_string(),
                 git_remote_name: "origin".to_string(),
                 git_push_fetch: false,

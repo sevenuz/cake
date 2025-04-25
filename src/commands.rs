@@ -263,6 +263,11 @@ where
 {
     debug(&format!("init: git {:?}, remote {:?}", git, remote));
     if git {
+        if config.disable_git {
+            return Err(Box::from(
+                "You have git support disabled. Check 'cake config'.",
+            ));
+        }
         if !git::is_repo() {
             return Err(Box::from(
                 "You can use 'cake init --git' only in an existing repository.",

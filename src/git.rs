@@ -1,5 +1,7 @@
 use std::{
-    error::Error, path::Path, process::{Command, Output}
+    error::Error,
+    path::Path,
+    process::{Command, Output},
 };
 
 use crate::config::Config;
@@ -11,6 +13,17 @@ pub fn is_repo() -> bool {
 pub fn check_if_branch_exists(config: &Config) -> Result<bool, Box<dyn Error>> {
     let output = String::from_utf8(Command::new("git").arg("branch").output()?.stdout)?;
     Ok(output.find(&config.git_branch_name).is_some())
+}
+
+pub fn check_conflicts() -> Result<bool, Box<dyn Error>> {
+    let output = String::from_utf8(
+        Command::new("git")
+            .env("LANG", "en_US")
+            .arg("status")
+            .output()?
+            .stdout,
+    )?;
+    Ok(output.find("CONFLICT").is_some())
 }
 
 pub fn stash() -> Result<Output, Box<dyn Error>> {
@@ -73,9 +86,11 @@ pub fn fetch(config: &Config) -> Result<Output, Box<dyn Error>> {
 }
 
 pub fn rebase() -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new("git")
-        .arg("rebase")
-        .output()?)
+    Ok(Command::new("git").arg("rebase").output()?)
+}
+
+pub fn rebase_abort() -> Result<Output, Box<dyn Error>> {
+    Ok(Command::new("git").arg("rebase").arg("--abort").output()?)
 }
 
 pub fn push(config: &Config) -> Result<Output, Box<dyn Error>> {
