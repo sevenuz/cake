@@ -15,6 +15,22 @@ pub fn check_if_branch_exists(config: &Config) -> Result<bool, Box<dyn Error>> {
     Ok(output.find(&config.git_branch_name).is_some())
 }
 
+pub fn check_if_remote_branch_exists(config: &Config) -> Result<bool, Box<dyn Error>> {
+    let output = String::from_utf8(
+        Command::new("git")
+            .arg("branch")
+            .arg("--all")
+            .output()?
+            .stdout,
+    )?;
+    Ok(output
+        .find(format!(
+            "remotes/{}/{}",
+            &config.git_remote_name, &config.git_branch_name
+        ).as_str())
+        .is_some())
+}
+
 pub fn check_conflicts() -> Result<bool, Box<dyn Error>> {
     let output = String::from_utf8(
         Command::new("git")
@@ -73,7 +89,8 @@ pub fn add(config: &Config) -> Result<Output, Box<dyn Error>> {
 pub fn commit(message: &str) -> Result<Output, Box<dyn Error>> {
     Ok(Command::new("git")
         .arg("commit")
-        .arg("-m\"".to_owned() + message + "\"")
+        .arg("-m")
+        .arg(message)
         .output()?)
 }
 

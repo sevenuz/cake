@@ -361,6 +361,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             debug(&format!("git checkout {:?}", config.git_branch_name));
             git::checkout_branch(&config.git_branch_name)?;
             if config.git_push_fetch || cli.git {
+                if !git::check_if_remote_branch_exists(&config)? {
+                    return Err(Box::from(
+                        "There is no remote branch for '".to_owned()
+                            + &config.git_branch_name
+                            + "'. You need to set it yourself. Abort...",
+                    ));
+                }
                 debug(&format!("git fetch"));
                 println!("{}", "Fetching...".to_string().grey().italic());
                 git::fetch(&config)?;
@@ -557,8 +564,16 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             debug(&format!("git add {:?}", config.save_file_name));
             git::add(&config)?;
             debug(&format!("git commit"));
-            git::commit("cake: TODO better message")?;
+            let args: String = std::env::args().collect::<Vec<_>>().join(" ");
+            git::commit(&args)?;
             if config.git_push_fetch || cli.git {
+                if !git::check_if_remote_branch_exists(&config)? {
+                    return Err(Box::from(
+                        "There is no remote branch for '".to_owned()
+                            + &config.git_branch_name
+                            + "'. You need to set it yourself. Abort...",
+                    ));
+                }
                 println!("{}", "Pushing...".to_string().grey().italic());
                 debug(&format!("git push"));
                 git::push(&config)?;
