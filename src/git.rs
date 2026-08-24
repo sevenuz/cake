@@ -6,6 +6,9 @@ use std::{
 
 use crate::config::Config;
 
+#[cfg(test)]
+mod tests;
+
 pub fn is_repo() -> bool {
     Path::new(".git").exists()
 }

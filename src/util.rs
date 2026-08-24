@@ -14,6 +14,8 @@ use std::{
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Sandbox;
+    use serial_test::serial;
 
     //#[should_panic]
     #[test]
@@ -32,6 +34,146 @@ mod tests {
         assert!(parse_time("100sc1hwac3h1sinn").is_err());
         assert!(parse_time("1T").is_err());
         assert!(parse_time("0.5Y").is_err());
+    }
+
+    #[test]
+    fn test_str_to_vec() {
+        assert_eq!(str_to_vec("1, 2, 3"), vec!["1", "2", "3"]);
+    }
+
+    #[test]
+    fn test_vec_to_str() {
+        assert_eq!(vec_to_str(&vec!["1", "2", "3"]), "1, 2, 3");
+        assert_eq!(vec_to_str(&vec![1, 2, 3]), "1, 2, 3");
+    }
+
+    // NOTE: assumes the host is running in the CET/CEST (+0100/+0200) timezone,
+    // same assumption the original version of this test made.
+    #[test]
+    fn test_format_timestamp() {
+        assert_eq!(format_timestamp(1678197184), "Tue Mar  7 14:53:04 2023 +0100");
+    }
+
+    #[test]
+    fn test_parse_timestamp() {
+        assert_eq!(
+            parse_timestamp("Tue Mar  7 14:53:04 2023 +0100").unwrap(),
+            1678197184
+        );
+    }
+
+    #[test]
+    fn test_timestamp_to_hms() {
+        assert_eq!(timestamp_to_hms(1000), "16m40s");
+    }
+
+    #[test]
+    fn test_space_pads_evenly_on_both_sides() {
+        assert_eq!(space("ab", 6), "  ab  ");
+    }
+
+    #[test]
+    fn test_space_extra_padding_goes_on_the_right_when_odd() {
+        assert_eq!(space("ab", 5), " ab  ");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_space_panics_when_string_is_longer_than_spacer_len() {
+        // BUG: `space` computes `spacer_len - s.len()` with no bounds check,
+        // so an id longer than spacer_len panics on unsigned-subtraction
+        // overflow instead of e.g. returning the string unpadded.
+        space("toolong", 3);
+    }
+
+    #[test]
+    fn test_split_comma_cleanup() {
+        assert_eq!(
+            split_comma_cleanup(" a , b ,,c ".to_string()),
+            vec!["a", "b", "c"]
+        );
+        assert_eq!(split_comma_cleanup("".to_string()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_split_comma_tags_excludes_tilde_prefixed_entries() {
+        assert_eq!(
+            split_comma_tags("work, ~blocked, urgent".to_string()),
+            vec!["work", "urgent"]
+        );
+    }
+
+    #[test]
+    fn test_split_comma_exclude_tags_keeps_only_tilde_prefixed_entries() {
+        assert_eq!(
+            split_comma_exclude_tags("work, ~blocked, urgent".to_string()),
+            vec!["blocked"]
+        );
+    }
+
+    #[test]
+    fn test_remove_illegal_characters_strips_leading_tilde_and_pipes() {
+        assert_eq!(remove_illegal_characters("~a|b|c".to_string()), "abc");
+    }
+
+    #[test]
+    fn test_contains_element() {
+        assert!(contains_element(&vec!["a", "b"], &vec!["b", "c"]));
+        assert!(!contains_element(&vec!["a"], &vec!["b", "c"]));
+    }
+
+    #[test]
+    fn test_is_subset() {
+        assert!(is_subset(&vec!["a", "b"], &vec!["a", "b", "c"]));
+        assert!(!is_subset(&vec!["a", "d"], &vec!["a", "b", "c"]));
+    }
+
+    #[test]
+    fn test_extract_metadata_strips_prefix_and_suffix() {
+        assert_eq!(extract_metadata("| id | abc|", "| id | ").unwrap(), "abc");
+    }
+
+    #[test]
+    fn test_extract_metadata_errs_on_missing_prefix() {
+        assert!(extract_metadata("nope|", "| id | ").is_err());
+    }
+
+    #[test]
+    fn test_extract_metadata_errs_on_missing_suffix() {
+        assert!(extract_metadata("| id | abc", "| id | ").is_err());
+    }
+
+    #[test]
+    fn test_generate_id_uses_only_alphabet_characters_and_length_three() {
+        let id = generate_id();
+        assert_eq!(id.len(), 3);
+        assert!(id
+            .chars()
+            .all(|c| "asdfghjklertuinv".contains(c)));
+    }
+
+    #[test]
+    #[serial]
+    fn find_save_file_locates_file_in_an_ancestor_directory() {
+        let sandbox = Sandbox::new();
+        std::fs::create_dir_all("a/b/c").unwrap();
+        std::fs::write("a/cake.md", "").unwrap();
+
+        let mut start = sandbox.path().join("a/b/c");
+        let found = find_save_file(&mut start, "cake.md").unwrap();
+
+        assert_eq!(found, sandbox.path().join("a/cake.md").to_str().unwrap());
+    }
+
+    #[test]
+    #[serial]
+    fn find_save_file_falls_back_to_default_when_not_found() {
+        let sandbox = Sandbox::new();
+        let mut start = sandbox.path().to_path_buf();
+
+        let found = find_save_file(&mut start, "cake.md").unwrap();
+
+        assert_eq!(found, default_save_file("cake.md").unwrap());
     }
 }
 

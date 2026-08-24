@@ -141,3 +141,85 @@ impl Selector {
         keys
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::item::Item;
+
+    fn store_with(items: Vec<Item>) -> Store {
+        let mut store =
+            Store::new_from_json("/definitely/does/not/exist/cake-selector-test.json").unwrap();
+        for item in items {
+            store.add(item).unwrap();
+        }
+        store
+    }
+
+    fn tagged(id: &str, tags: &[&str]) -> Item {
+        let mut item = Item::new(id.to_string(), vec![], vec![], vec![]);
+        item.append_tags(tags.iter().map(|t| t.to_string()).collect());
+        item
+    }
+
+    fn selector(tags: &str, or: bool) -> Selector {
+        Selector::new(
+            &None,
+            &None,
+            &None,
+            &Some(tags.to_string()),
+            &None,
+            &None,
+            &false,
+            &false,
+            &0,
+            &or,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn and_selector_requires_every_tag_to_match() {
+        let store = store_with(vec![
+            tagged("a", &["work", "urgent"]),
+            tagged("b", &["work"]),
+            tagged("c", &["urgent"]),
+        ]);
+        let mut result = selector("work,urgent", false).get(&store, false);
+        result.sort();
+        assert_eq!(result, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn or_selector_matches_any_tag() {
+        let store = store_with(vec![
+            tagged("a", &["work"]),
+            tagged("b", &["urgent"]),
+            tagged("c", &["idle"]),
+        ]);
+        let mut result = selector("work,urgent", true).get(&store, false);
+        result.sort();
+        assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn exclude_tag_removes_matching_items() {
+        let store = store_with(vec![
+            tagged("a", &["work"]),
+            tagged("b", &["work", "blocked"]),
+        ]);
+        let result = selector("work,~blocked", false).get(&store, false);
+        assert_eq!(result, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn is_empty_true_only_without_any_selector_criteria() {
+        let none = Selector::new(
+            &None, &None, &None, &None, &None, &None, &false, &false, &0, &false,
+        )
+        .unwrap();
+        assert!(none.is_empty());
+
+        assert!(!selector("x", false).is_empty());
+    }
+}

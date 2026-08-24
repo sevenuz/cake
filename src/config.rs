@@ -129,3 +129,40 @@ impl Config {
         return Ok(skin);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::Sandbox;
+
+    #[test]
+    #[serial_test::serial]
+    fn new_returns_sane_defaults_when_no_config_file_exists() {
+        let _sandbox = Sandbox::new();
+        let config = Config::new().unwrap();
+        assert_eq!(config.git_branch_name, "cake");
+        assert_eq!(config.git_remote_name, "origin");
+        assert_eq!(config.save_file_name, "cake.md");
+        assert!(!config.disable_git);
+        assert!(!config.git_push_fetch);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn build_skin_writes_and_parses_default_theme_when_missing() {
+        let _sandbox = Sandbox::new();
+        let config = Config::new().unwrap();
+        assert!(config.build_skin().is_ok());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn build_skin_errs_on_a_corrupt_skin_file_instead_of_silently_using_defaults() {
+        let _sandbox = Sandbox::new();
+        let config = Config::new().unwrap();
+        let skin_path = util::config_path().unwrap().join("gruvbox.hjson");
+        std::fs::write(&skin_path, "{ not valid hjson :::").unwrap();
+
+        assert!(config.build_skin().is_err());
+    }
+}

@@ -5,6 +5,8 @@ mod git;
 mod item;
 mod selector;
 mod store;
+#[cfg(test)]
+mod test_support;
 mod util;
 mod view;
 
