@@ -50,6 +50,28 @@ pub fn stash_pop() -> Result<Output, Box<dyn Error>> {
     Ok(Command::new("git").arg("stash").arg("pop").output()?)
 }
 
+/// Stashes uncommitted changes on creation; checks `original_branch` back
+/// out and restores the stash on drop, including on early return via `?`.
+pub struct StashGuard {
+    original_branch: String,
+}
+
+impl StashGuard {
+    pub fn new(original_branch: &str) -> Result<Self, Box<dyn Error>> {
+        stash()?;
+        Ok(Self {
+            original_branch: original_branch.to_string(),
+        })
+    }
+}
+
+impl Drop for StashGuard {
+    fn drop(&mut self) {
+        let _ = checkout_branch(&self.original_branch);
+        let _ = stash_pop();
+    }
+}
+
 pub fn create_branch(config: &Config) -> Result<Output, Box<dyn Error>> {
     Ok(Command::new("git")
         .arg("branch")

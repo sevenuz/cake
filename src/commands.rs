@@ -282,7 +282,7 @@ where
         let current_branch = git::current_branch_name()?;
         debug(&format!("init: current branch {:?}", current_branch));
         debug(&format!("init: stash"));
-        git::stash()?;
+        let _stash_guard = git::StashGuard::new(&current_branch)?;
         debug(&format!("init: create {}", config.git_branch_name));
         git::create_branch(config)?;
         debug(&format!("init: checkout {}", config.git_branch_name));
@@ -313,9 +313,8 @@ where
             git::push_set_upstream(config)?;
         }
         debug(&format!("init: checkout {}", current_branch));
-        git::checkout_branch(&current_branch)?;
         debug(&format!("init: stash pop"));
-        git::stash_pop()?;
+        // _stash_guard drops here: checks out `current_branch` and pops the stash
     } else {
         let p = Path::new(&config.save_file_name);
         debug(&format!("init: new file {:?}", p));

@@ -349,6 +349,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
     let config = Config::new()?;
     let mut current_branch = "".to_string();
+    let mut stash_guard: Option<git::StashGuard> = None;
     if git::is_repo() && !config.disable_git {
         current_branch = git::current_branch_name()?;
         if git::check_if_branch_exists(&config)? {
@@ -357,7 +358,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 current_branch
             ));
             debug(&format!("git stash"));
-            git::stash()?;
+            stash_guard = Some(git::StashGuard::new(&current_branch)?);
             debug(&format!("git checkout {:?}", config.git_branch_name));
             git::checkout_branch(&config.git_branch_name)?;
             if config.git_push_fetch || cli.git {
@@ -376,10 +377,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 if git::check_conflicts()? {
                     debug(&format!("git rebase --abourt"));
                     git::rebase_abort()?;
-                    debug(&format!("git checkout {:?}", current_branch));
-                    git::checkout_branch(&current_branch)?;
-                    debug(&format!("git stash pop"));
-                    git::stash_pop()?;
+                    // stash_guard drops here: checks out `current_branch` and pops the stash
                     return Err(Box::from(
                         "There are merge conflicts on branch '".to_owned()
                             + &config.git_branch_name
@@ -579,11 +577,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 git::push(&config)?;
             }
             debug(&format!("git checkout {:?}", current_branch));
-            git::checkout_branch(&current_branch)?;
             debug(&format!("git stash pop"));
-            git::stash_pop()?;
         }
     }
+    drop(stash_guard);
     config.write_json_if_dirty()?;
     Ok(())
 }
