@@ -1,6 +1,5 @@
 use std::{
     error::Error,
-    path::Path,
     process::{Command, Output},
 };
 
@@ -10,12 +9,24 @@ use crate::config::Config;
 mod tests;
 
 pub fn is_repo() -> bool {
-    Path::new(".git").exists()
+    Command::new("git")
+        .arg("rev-parse")
+        .arg("--is-inside-work-tree")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 pub fn check_if_branch_exists(config: &Config) -> Result<bool, Box<dyn Error>> {
-    let output = String::from_utf8(Command::new("git").arg("branch").output()?.stdout)?;
-    Ok(output.find(&config.git_branch_name).is_some())
+    let output = String::from_utf8(
+        Command::new("git")
+            .arg("branch")
+            .arg("--list")
+            .arg(&config.git_branch_name)
+            .output()?
+            .stdout,
+    )?;
+    Ok(!output.trim().is_empty())
 }
 
 pub fn check_if_remote_branch_exists(config: &Config) -> Result<bool, Box<dyn Error>> {
@@ -23,26 +34,30 @@ pub fn check_if_remote_branch_exists(config: &Config) -> Result<bool, Box<dyn Er
         Command::new("git")
             .arg("branch")
             .arg("--all")
+            .arg("--list")
+            .arg(format!(
+                "{}/{}",
+                &config.git_remote_name, &config.git_branch_name
+            ))
             .output()?
             .stdout,
     )?;
-    Ok(output
-        .find(format!(
-            "remotes/{}/{}",
-            &config.git_remote_name, &config.git_branch_name
-        ).as_str())
-        .is_some())
+    Ok(!output.trim().is_empty())
 }
 
 pub fn check_conflicts() -> Result<bool, Box<dyn Error>> {
     let output = String::from_utf8(
         Command::new("git")
-            .env("LANG", "en_US")
             .arg("status")
+            .arg("--porcelain")
             .output()?
             .stdout,
     )?;
-    Ok(output.find("CONFLICT").is_some())
+    // an unmerged (conflicted) path is reported with a `U` in either the
+    // staged or unstaged status column, e.g. "UU", "AU", "UD"
+    Ok(output
+        .lines()
+        .any(|line| line.get(0..2).is_some_and(|xy| xy.contains('U'))))
 }
 
 pub fn stash() -> Result<Output, Box<dyn Error>> {

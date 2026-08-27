@@ -104,7 +104,14 @@ impl FromStr for Item {
             return Err(err);
         };
         lines.next();
-        let content = lines.map(|s| format!("{}\n", s)).collect();
+        // Reconstruct content from the original byte slice (not by rejoining
+        // `lines`, which loses whether the last line had a trailing newline)
+        // so a round trip through print_long()/from_str() is exact.
+        let content = s
+            .match_indices('\n')
+            .nth(8)
+            .map(|(i, _)| s[i + 1..].to_string())
+            .unwrap_or_default();
         Ok(Item {
             id,
             timestamp,
@@ -323,7 +330,7 @@ impl Item {
 
     pub fn merge(&mut self, item: &mut Item) {
         self.content = item.content.to_string();
-        self.tags.append(&mut item.tags);
+        self.append_tags(std::mem::take(&mut item.tags));
         self.children.append(&mut item.children);
         self.parents.append(&mut item.parents);
         self.update_last_modified();

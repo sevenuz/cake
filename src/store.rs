@@ -5,6 +5,11 @@ pub use self::inner::MAX_DEPTH;
 pub mod inner {
     pub const MAX_DEPTH: usize = 10; /*std::usize::MAX*/
     const MD_DELIMITER: &str = "\n---\n---\n---\n";
+    // Stand-in for MD_DELIMITER when it shows up inside an item's own content,
+    // so splitting the file on MD_DELIMITER can't mistake it for an item
+    // boundary. Distinguished by a zero-width space real content won't
+    // plausibly contain at that exact position.
+    const MD_DELIMITER_ESCAPED: &str = "\n-\u{200B}--\n---\n---\n";
 
     use std::error::Error;
     use std::{collections::HashMap, str::FromStr};
@@ -115,7 +120,8 @@ pub mod inner {
                 if itm_str.is_empty() {
                     continue;
                 }
-                let item = Item::from_str(itm_str)?;
+                let unescaped = itm_str.replace(MD_DELIMITER_ESCAPED, MD_DELIMITER);
+                let item = Item::from_str(&unescaped)?;
                 items.insert(item.id().to_owned(), item);
             }
             let _store: Store = Store { items };
@@ -135,7 +141,8 @@ pub mod inner {
                     .cmp(&self.items.get(b).unwrap().timestamp())
             });
             for (i, id) in keys.iter().enumerate() {
-                serialized += &self.get_item(id).unwrap().print_long(true);
+                let text = self.get_item(id).unwrap().print_long(true);
+                serialized += &text.replace(MD_DELIMITER, MD_DELIMITER_ESCAPED);
                 if i + 1 < self.items.len() {
                     // delimiter of entries
                     serialized += MD_DELIMITER;
@@ -441,7 +448,7 @@ pub mod inner {
             assert_eq!(reloaded.get().len(), 1);
             assert_eq!(
                 reloaded.get_item("poison").unwrap().content(),
-                "before\n---\n---\n---\nafter\n",
+                "before\n---\n---\n---\nafter",
             );
         }
     }
