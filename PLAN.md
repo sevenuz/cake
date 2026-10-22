@@ -41,6 +41,8 @@ kind: task                   # task | note
 status: doing                # todo | doing | done | dropped   (tasks only)
 tags: [cake, storage]
 parent: "[[p0x7qe]]"         # single parent, Obsidian wikilink, optional
+blocked_by: ["[[m2k8zz]]"]   # optional, items that must close first
+related: ["[[a81hfq]]"]      # optional, no semantics
 aliases: ["File per item"]   # = title, makes Obsidian link autocomplete work
 created: 2026-10-22T09:12:00+02:00
 closed: 2026-10-23T18:00:00+02:00   # set when status -> done|dropped
@@ -59,6 +61,12 @@ Rules:
 
 - **Only the child stores the relation.** `children` is computed on load
   (`HashMap<parent, Vec<child>>`). Re-parenting touches exactly one file.
+- **Dependencies (Beads-style), same rule:** only the waiting item stores
+  `blocked_by`; `blocks` is computed on load. `related` is a plain link
+  list. Wikilinks → Obsidian graph shows them.
+- **Ready is computed, never stored:** ready = status todo|doing and every
+  `blocked_by` item is done|dropped; blocked = at least one open blocker.
+  Storing it would rewrite files when a blocker closes → conflicts.
 - **No stored `last_modified`.** It changes on every edit and guarantees
   conflicts. Use file mtime for "recently touched" sorting; `git log` when
   exact history is needed.
@@ -85,6 +93,8 @@ Rules:
 | `cake done <id>`   | close interval if open, `status: done`, set `closed`       |
 | `cake drop <id>`   | `status: dropped`, set `closed`                            |
 | `cake reopen <id>` | `status: todo`, remove `closed`                            |
+| `cake block <id> --by <ids>`   | add `blocked_by` edges (cycle check)           |
+| `cake unblock <id> --by <ids>` | remove `blocked_by` edges                      |
 
 ### Rust structure
 
@@ -95,6 +105,8 @@ pub struct Item {
     pub status: Option<Status>,  // Todo | Doing | Done | Dropped
     pub tags: Vec<String>,
     pub parent: Option<String>,
+    pub blocked_by: Vec<String>,
+    pub related: Vec<String>,
     pub created: DateTime<FixedOffset>,
     pub closed: Option<DateTime<FixedOffset>>,
     pub due: Option<Due>,
@@ -108,6 +120,7 @@ pub struct Store {
     root: PathBuf,
     items: HashMap<String, Item>,
     children: HashMap<String, Vec<String>>, // derived
+    blocks: HashMap<String, Vec<String>>,   // derived from blocked_by
     dirty: HashSet<String>,                 // only these get written
 }
 ```
@@ -281,7 +294,7 @@ Same item edited on two devices between syncs:
 
 Later (on top, no base change): `.gitattributes` `items/*.md merge=cake` +
 local `git config merge.cake.driver "cake merge-driver %O %A %B"` for
-field-wise 3-way merge (union of `time` and `tags`, …).
+field-wise 3-way merge (union of `time`, `tags`, `blocked_by`, `related`, …).
 
 ### Phone / foreign editors
 
@@ -308,10 +321,14 @@ clap 3 → 4. Selector flags currently repeated in 6 subcommands → one
 ```
 cake                         TUI dashboard (static summary if stdout not a tty)
 cake add [-m TEXT] [-t TAGS] [-p PARENT] [--note] [--due D] [--prio N]
+         [--blocked-by IDS] [--related IDS]
 cake edit <id>               $EDITOR on the item file
 cake start <id> | stop [id] | done <id> | drop <id> | reopen <id>
 cake tag <sel> +a -b
 cake mv <id> <parent|->      re-parent / detach
+cake block <id> --by <ids>   add blockers (cycle check like re-parent)
+cake unblock <id> --by <ids>
+cake ready                   open + unblocked, sorted by priority, due
 cake rm <sel>
 cake ls [selectors] [-l] [-r]
 cake show <id>               rendered markdown
@@ -323,7 +340,7 @@ cake config
 ```
 
 Selectors (existing + new): ids, `--tag`/`~tag`, `--parent`, `--status`,
-`--kind`, `--before/--after`, `--started/--stopped`, `--due-before`,
+`--kind`, `--blocked`, `--ready`, `--before/--after`, `--started/--stopped`, `--due-before`,
 `-s TEXT` (substring in title/body), `-r` recursion, `--or`.
 
 Non-interactive guarantees (needed for agents): no `$EDITOR` when
@@ -344,7 +361,8 @@ Global flag. Rules:
   exit code ≠ 0. Stable codes: `not_found`, `ambiguous_id`, `conflict`,
   `invalid_input`, `git`.
 - Item JSON = frontmatter fields + `title`, `body`, `children` (derived),
-  `tracked_seconds`, `running` (bool), `path`.
+  `blocks` (derived), `ready` (bool), `tracked_seconds`, `running` (bool),
+  `path`.
 - Top-level `"v": 1` for schema versioning.
 
 ---
@@ -381,6 +399,8 @@ Panels:
   configurable weekly goal, 14-day sparkline, streak, done-in-7-days,
   overdue count, sync status (ahead/behind from last fetch, unpublished,
   pending conflicts). No automatic network access; `S` runs `cake sync`.
+- **Blocked items** get a ⛔ status marker; a **Ready** filter shows only
+  unblocked open work. The preview shows the blocker chain.
 - **Tabs:** Tasks (tree, default filter `status:todo,doing`), Notes, Time
   (per-day log + bar chart by tag), Tags (tracked time + open count per tag).
 - **Preview:** body of selected item.
@@ -421,9 +441,13 @@ Contents outline:
 - **When to trigger:** user mentions tasks/todos/tracking/notes/"remember
   this for the project", or a `.cake/` dir exists in the repo, or starting
   non-trivial work in such a repo.
-- **Read first:** `cake ls --json --status todo,doing` and `cake ls --json
-  --kind note -s <topic>` before planning; reuse existing items instead of
+- **Read first:** `cake ready --json` at session start and pick work from
+  that list, not from everything open; `cake ls --json --kind note -s
+  <topic>` for context before planning; reuse existing items instead of
   creating duplicates.
+- **Dependencies:** work found mid-task → `cake add … -p <current>` (subtask)
+  or `--related`; ordering constraints → `cake block`. Before marking done,
+  check `blocks` and report what becomes ready.
 - **Write conventions:**
   - plans, designs, decisions → `kind: note`, tagged with area, parented
     under the relevant task;
@@ -449,17 +473,19 @@ operation set for MCP tool definitions.
 
 ## 7. Implementation order (stage 1)
 
-1. **Groundwork:** clap 4, `SelectorArgs` flatten, delete single-file
-   md/json stores and `-i/-o`, ISO time helpers, id generator + prefix
-   resolution. Tests stay green on what remains.
+1. **Groundwork:** clap 4, `SelectorArgs` flatten. Old stores stay until
+   step 3 replaces them, so every commit builds and works.
 2. **Item format:** frontmatter parse/write (round-trip tests incl. unknown
-   keys, CRLF, empty body), `Item` with status/kind/parent/intervals.
+   keys, CRLF, empty body), `Item` with status/kind/parent/intervals and
+   `blocked_by`/`related`, ISO time helpers, id generator
+   + prefix resolution.
    Lenient reading of foreign files (§3 Phone): defaults, id from
    filename, no rewrite on read.
-3. **Store:** directory load/save, dirty tracking, derived children, cycle
-   check on re-parent, atomic writes, discovery (§2).
+3. **Store:** directory load/save, dirty tracking, derived children and
+   blocks, cycle check on re-parent and block, atomic writes, discovery
+   (§2). Delete single-file md/json stores and `-i/-o`.
 4. **Commands** on the new store: add/edit/start/stop/done/drop/reopen/
-   tag/mv/rm/ls/show/log/stats.
+   tag/mv/block/unblock/ready/rm/ls/show/log/stats.
 5. **`--json`** for all commands + error codes.
 6. **Git:** rewrite `git.rs` around `-C <dir>`, status-checked calls,
    `init` (create + attach), commit, `sync` (`--publish`, `--continue`,
