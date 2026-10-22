@@ -149,7 +149,7 @@ mod tests {
 
     fn store_with(items: Vec<Item>) -> Store {
         let mut store =
-            Store::new_from_json("/definitely/does/not/exist/cake-selector-test.json").unwrap();
+            Store::new(std::path::Path::new("/definitely/does/not/exist/cake-selector-test")).unwrap();
         for item in items {
             store.add(item).unwrap();
         }
@@ -157,7 +157,7 @@ mod tests {
     }
 
     fn tagged(id: &str, tags: &[&str]) -> Item {
-        let mut item = Item::new(id.to_string(), vec![], vec![], vec![]);
+        let mut item = Item::new(id.to_string(), vec![], None, vec![]);
         item.append_tags(tags.iter().map(|t| t.to_string()).collect());
         item
     }

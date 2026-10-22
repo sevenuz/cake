@@ -1,32 +1,54 @@
-use crate::error;
+use crate::error::ParseError;
 use crate::util;
 use core::fmt;
-use serde::{Deserialize, Serialize};
-use std::str::FromStr;
+use serde_yaml_ng::{Mapping, Value};
 use termimad::crossterm::style::Stylize;
 
 #[cfg(test)]
 mod tests;
 
-const PREFIX_ID: &str = "| id | ";
-const TABLE_HEADER_DELIMITER: &str = "|---|---|";
-const PREFIX_TIMESTAMP: &str = "| timestamp | ";
-const PREFIX_LAST_MODIFIED: &str = "| last modified | ";
-const PREFIX_TAGS: &str = "| tags | ";
-const PREFIX_TIMETRACK: &str = "| timetrack | ";
-const PREFIX_PARENTS: &str = "| parents | ";
-const PREFIX_CHILDREN: &str = "| children | ";
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Kind {
+    Task,
+    Note,
+}
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Status {
+    Todo,
+    Doing,
+    Done,
+    Dropped,
+}
+
+impl Status {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Status::Todo => "todo",
+            Status::Doing => "doing",
+            Status::Done => "done",
+            Status::Dropped => "dropped",
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct Item {
     id: String,
-    children: Vec<String>,
-    parents: Vec<String>,
+    kind: Kind,
+    status: Option<Status>,
     tags: Vec<String>,
+    parent: Option<String>,
+    blocked_by: Vec<String>,
+    related: Vec<String>,
+    timestamp: i64, // creation timestamp
+    closed: Option<i64>,
+    due: Option<String>,
+    priority: Option<u64>,
     timetrack: Vec<i64>,
+    extra: Mapping,
     content: String,
-    timestamp: i64,     // creation timestamp
-    last_modified: i64, // last update timestamp
+    children: Vec<String>, // derived by store
 }
 
 impl fmt::Display for Item {
@@ -35,112 +57,207 @@ impl fmt::Display for Item {
     }
 }
 
-// https://doc.rust-lang.org/std/str/trait.FromStr.html
-impl FromStr for Item {
-    type Err = error::ParseError;
+fn err(message: String) -> ParseError {
+    ParseError { message }
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let err = error::ParseError {
-            message: "Invalid string to create an item".to_string(),
-        };
-        let mut lines = s.lines();
-        let id: String;
-        if let Some(raw_id) = lines.next() {
-            id = util::extract_metadata(raw_id, PREFIX_ID)?;
-        } else {
-            return Err(err);
-        };
-        lines.next(); // skip Table delimiter
-        let timestamp: i64;
-        if let Some(raw_timestamp) = lines.next() {
-            timestamp =
-                util::parse_timestamp(&util::extract_metadata(raw_timestamp, PREFIX_TIMESTAMP)?)?;
-        } else {
-            return Err(err);
-        };
-        let last_modified: i64;
-        if let Some(raw_last_modified) = lines.next() {
-            last_modified = util::parse_timestamp(&util::extract_metadata(
-                raw_last_modified,
-                PREFIX_LAST_MODIFIED,
-            )?)?;
-        } else {
-            return Err(err);
-        };
-        let tags: Vec<String>;
-        if let Some(raw_tags) = lines.next() {
-            tags = util::str_to_vec(&util::extract_metadata(raw_tags, PREFIX_TAGS)?);
-        } else {
-            return Err(err);
-        };
-        let timetrack: Vec<i64>;
-        if let Some(raw_timetrack) = lines.next() {
-            let pollished = util::extract_metadata(raw_timetrack, PREFIX_TIMETRACK)?;
-            if pollished.is_empty() {
-                timetrack = vec![];
-            } else {
-                // Result implements FromIterator, so you can move the Result outside and iterators
-                // will take care of the rest (including stopping iteration if an error is found).
-                // https://stackoverflow.com/questions/26368288/how-do-i-stop-iteration-and-return-an-error-when-iteratormap-returns-a-result
-                // super cool :D
-                timetrack = pollished
-                    .split(", ")
-                    .map(|a| util::parse_timestamp(a))
-                    .collect::<Result<Vec<i64>, error::ParseError>>()?;
-            }
-        } else {
-            return Err(err);
-        };
-        let parents: Vec<String>;
-        if let Some(raw_parents) = lines.next() {
-            parents = util::str_to_vec(&util::extract_metadata(raw_parents, PREFIX_PARENTS)?);
-        } else {
-            return Err(err);
-        };
-        let children: Vec<String>;
-        if let Some(raw_children) = lines.next() {
-            children = util::str_to_vec(&util::extract_metadata(raw_children, PREFIX_CHILDREN)?);
-        } else {
-            return Err(err);
-        };
-        lines.next();
-        // Reconstruct content from the original byte slice (not by rejoining
-        // `lines`, which loses whether the last line had a trailing newline)
-        // so a round trip through print_long()/from_str() is exact.
-        let content = s
-            .match_indices('\n')
-            .nth(8)
-            .map(|(i, _)| s[i + 1..].to_string())
-            .unwrap_or_default();
-        Ok(Item {
-            id,
-            timestamp,
-            last_modified,
-            tags,
-            timetrack,
-            parents,
-            children,
-            content,
-        })
+fn yaml_str(s: &str) -> String {
+    if !s.is_empty()
+        && s.chars().all(|c| c.is_alphanumeric() || "_-./".contains(c))
+        && !s.starts_with(['-', '.'])
+    {
+        s.to_string()
+    } else {
+        serde_json::to_string(s).unwrap()
     }
 }
 
-impl Item {
-    fn update_last_modified(&mut self) {
-        self.last_modified = util::timestamp();
-    }
+fn link(id: &str) -> String {
+    serde_json::to_string(&format!("[[{}]]", id)).unwrap()
+}
 
-    pub fn new(id: String, children: Vec<String>, parents: Vec<String>, tags: Vec<String>) -> Self {
+fn unlink(s: &str) -> String {
+    s.trim()
+        .trim_start_matches("[[")
+        .trim_end_matches("]]")
+        .to_string()
+}
+
+fn list(v: &[String], f: fn(&str) -> String) -> String {
+    format!("[{}]", v.iter().map(|s| f(s)).collect::<Vec<_>>().join(", "))
+}
+
+fn take_str(m: &mut Mapping, key: &str) -> Result<Option<String>, ParseError> {
+    match m.remove(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) => Ok(Some(s)),
+        Some(Value::Number(n)) => Ok(Some(n.to_string())),
+        Some(Value::Bool(b)) => Ok(Some(b.to_string())),
+        Some(_) => Err(err(format!("'{}' must be a string", key))),
+    }
+}
+
+fn take_list(m: &mut Mapping, key: &str) -> Result<Vec<String>, ParseError> {
+    match m.remove(key) {
+        None | Some(Value::Null) => Ok(vec![]),
+        Some(Value::Sequence(seq)) => seq
+            .into_iter()
+            .map(|v| match v {
+                Value::String(s) => Ok(s),
+                Value::Number(n) => Ok(n.to_string()),
+                _ => Err(err(format!("'{}' must be a list of strings", key))),
+            })
+            .collect(),
+        Some(Value::String(s)) => Ok(util::split_comma_cleanup(s)),
+        Some(_) => Err(err(format!("'{}' must be a list", key))),
+    }
+}
+
+fn take_time(m: &mut Mapping, key: &str) -> Result<Option<i64>, ParseError> {
+    take_str(m, key)?
+        .map(|s| util::parse_timestamp(&s))
+        .transpose()
+}
+
+impl Item {
+    pub fn new(id: String, children: Vec<String>, parent: Option<String>, tags: Vec<String>) -> Self {
         Self {
             id,
-            children,
-            parents,
+            kind: Kind::Task,
+            status: Some(Status::Todo),
             tags,
-            content: String::from(""),
-            timetrack: vec![],
+            parent,
+            blocked_by: vec![],
+            related: vec![],
             timestamp: util::timestamp(),
-            last_modified: util::timestamp(),
+            closed: None,
+            due: None,
+            priority: None,
+            timetrack: vec![],
+            extra: Mapping::new(),
+            content: String::new(),
+            children,
         }
+    }
+
+    /// lenient parsing: missing fields get defaults, malformed fields are errors
+    pub fn from_markdown(s: &str, fallback_id: &str, fallback_created: i64) -> Result<Self, ParseError> {
+        let s = s.replace("\r\n", "\n");
+        let (front, content) = match s.strip_prefix("---\n").and_then(|r| {
+            r.find("\n---\n")
+                .map(|i| (&r[..i], &r[i + 5..]))
+                .or_else(|| r.strip_suffix("\n---").map(|f| (f, "")))
+        }) {
+            Some((f, c)) => (f.to_string(), c.to_string()),
+            None => (String::new(), s.clone()),
+        };
+        let mut m: Mapping = if front.trim().is_empty() {
+            Mapping::new()
+        } else {
+            serde_yaml_ng::from_str(&front).map_err(|e| err(e.to_string()))?
+        };
+        let id = take_str(&mut m, "id")?.unwrap_or(fallback_id.to_string());
+        let kind = match take_str(&mut m, "kind")?.as_deref() {
+            None | Some("task") => Kind::Task,
+            Some("note") => Kind::Note,
+            Some(k) => return Err(err(format!("unknown kind '{}'", k))),
+        };
+        let status = match take_str(&mut m, "status")?.as_deref() {
+            None if kind == Kind::Task => Some(Status::Todo),
+            None => None,
+            Some("todo") => Some(Status::Todo),
+            Some("doing") => Some(Status::Doing),
+            Some("done") => Some(Status::Done),
+            Some("dropped") => Some(Status::Dropped),
+            Some(s) => return Err(err(format!("unknown status '{}'", s))),
+        };
+        let tags = take_list(&mut m, "tags")?;
+        let parent = take_str(&mut m, "parent")?.map(|p| unlink(&p));
+        let blocked_by = take_list(&mut m, "blocked_by")?.iter().map(|s| unlink(s)).collect();
+        let related = take_list(&mut m, "related")?.iter().map(|s| unlink(s)).collect();
+        let timestamp = take_time(&mut m, "created")?.unwrap_or(fallback_created);
+        let closed = take_time(&mut m, "closed")?;
+        let due = take_str(&mut m, "due")?;
+        let priority = match m.remove("priority") {
+            None | Some(Value::Null) => None,
+            Some(Value::Number(n)) if n.as_u64().is_some() => n.as_u64(),
+            Some(_) => return Err(err("'priority' must be a number".to_string())),
+        };
+        let mut timetrack = vec![];
+        for interval in take_list(&mut m, "time")? {
+            let (start, end) = interval
+                .split_once('/')
+                .ok_or(err(format!("invalid interval '{}'", interval)))?;
+            timetrack.push(util::parse_timestamp(start)?);
+            if !end.trim().is_empty() {
+                timetrack.push(util::parse_timestamp(end)?);
+            } else if timetrack.len() % 2 == 1 {
+                break;
+            }
+        }
+        Ok(Item {
+            id,
+            kind,
+            status,
+            tags,
+            parent,
+            blocked_by,
+            related,
+            timestamp,
+            closed,
+            due,
+            priority,
+            timetrack,
+            extra: m,
+            content,
+            children: vec![],
+        })
+    }
+
+    pub fn to_markdown(&self) -> String {
+        let mut s = format!("---\nid: {}\n", yaml_str(&self.id));
+        if self.kind == Kind::Note {
+            s += "kind: note\n";
+        }
+        if let Some(st) = self.status {
+            s += &format!("status: {}\n", st.as_str());
+        }
+        if !self.tags.is_empty() {
+            s += &format!("tags: {}\n", list(&self.tags, yaml_str));
+        }
+        if let Some(p) = &self.parent {
+            s += &format!("parent: {}\n", link(p));
+        }
+        if !self.blocked_by.is_empty() {
+            s += &format!("blocked_by: {}\n", list(&self.blocked_by, link));
+        }
+        if !self.related.is_empty() {
+            s += &format!("related: {}\n", list(&self.related, link));
+        }
+        s += &format!("created: {}\n", util::format_timestamp(self.timestamp));
+        if let Some(c) = self.closed {
+            s += &format!("closed: {}\n", util::format_timestamp(c));
+        }
+        if let Some(d) = &self.due {
+            s += &format!("due: {}\n", yaml_str(d));
+        }
+        if let Some(p) = self.priority {
+            s += &format!("priority: {}\n", p);
+        }
+        if !self.timetrack.is_empty() {
+            s += "time:\n";
+            for pair in self.timetrack.chunks(2) {
+                s += &format!(
+                    "  - {}/{}\n",
+                    util::format_timestamp(pair[0]),
+                    pair.get(1).map(|t| util::format_timestamp(*t)).unwrap_or_default()
+                );
+            }
+        }
+        if !self.extra.is_empty() {
+            s += &serde_yaml_ng::to_string(&self.extra).unwrap();
+        }
+        s + "---\n" + &self.content
     }
 
     /**
@@ -165,93 +282,59 @@ impl Item {
     }
 
     /// # Arguments
-    /// * `serialize` - if the serialize flag is true, the timetrack is printed as date,
+    /// * `serialize` - if true, the timetrack is printed as date,
     /// else only the timedifferences are printed
-    ///
-    /// # Returns
-    /// long info about the item
-    /// first: a table of metadata
-    /// second: content
     pub fn print_long(&self, serialize: bool) -> String {
-        let tt;
-        if serialize {
-            tt = self
-                .timetrack
+        let tt = if serialize {
+            self.timetrack
                 .iter()
                 .map(|t| util::format_timestamp(*t))
-                .collect::<Vec<String>>();
+                .collect::<Vec<String>>()
         } else {
-            // calculate timedifferences
-            let even = self
-                .timetrack
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| i % 2 == 0);
-            let odd = self
-                .timetrack
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| i % 2 == 1);
-            tt = even
-                .zip(odd)
-                .map(|((_, first), (_, second))| second - first)
-                .map(|t| util::timestamp_to_hms(t))
-                .collect::<Vec<String>>();
-        }
-        let res = format!(
-            "{}{}|\n{}\n{}{}|\n{}{}|\n{}{}|\n{}{}|\n{}{}|\n{}{}|\n\n{}",
-            PREFIX_ID,
+            self.timetrack
+                .chunks(2)
+                .filter(|p| p.len() == 2)
+                .map(|p| util::timestamp_to_hms(p[1] - p[0]))
+                .collect::<Vec<String>>()
+        };
+        format!(
+            "| id | {}|\n|---|---|\n| status | {}|\n| created | {}|\n| tags | {}|\n| timetrack | {}|\n| parent | {}|\n| children | {}|\n| blocked by | {}|\n\n{}",
             self.id,
-            TABLE_HEADER_DELIMITER,
-            PREFIX_TIMESTAMP,
+            self.status.map(|s| s.as_str()).unwrap_or("note"),
             util::format_timestamp(self.timestamp),
-            PREFIX_LAST_MODIFIED,
-            util::format_timestamp(self.last_modified),
-            PREFIX_TAGS,
             util::vec_to_str(&self.tags),
-            PREFIX_TIMETRACK,
             util::vec_to_str(&tt),
-            PREFIX_PARENTS,
-            util::vec_to_str(&self.parents),
-            PREFIX_CHILDREN,
+            self.parent.clone().unwrap_or_default(),
             util::vec_to_str(&self.children),
+            util::vec_to_str(&self.blocked_by),
             self.content
-        );
-        res
+        )
     }
 
     pub fn id(&self) -> &String {
-        return &self.id;
+        &self.id
     }
 
     pub fn children(&self) -> &Vec<String> {
-        return &self.children;
+        &self.children
     }
 
-    pub fn add_child(&mut self, child: &Self) {
-        // TODO check if already child?
-        self.children.push(child.id().to_owned());
-        self.update_last_modified();
+    pub fn add_child(&mut self, child: &str) {
+        if !self.children.iter().any(|c| c == child) {
+            self.children.push(child.to_owned());
+        }
     }
 
-    pub fn retain_child(&mut self, child: &Self) {
-        self.children.retain(|s| !s.eq(child.id()));
-        self.update_last_modified();
+    pub fn retain_child(&mut self, child: &str) {
+        self.children.retain(|s| s != child);
     }
 
-    pub fn parents(&self) -> &Vec<String> {
-        return &self.parents;
+    pub fn parents(&self) -> &[String] {
+        self.parent.as_slice()
     }
 
-    pub fn add_parent(&mut self, parent: &Self) {
-        // TODO check if already parent?
-        self.parents.push(parent.id().to_owned());
-        self.update_last_modified();
-    }
-
-    pub fn retain_parent(&mut self, parent: &Self) {
-        self.parents.retain(|s| !s.eq(parent.id()));
-        self.update_last_modified();
+    pub fn set_parent(&mut self, parent: Option<String>) {
+        self.parent = parent;
     }
 
     pub fn tags(&self) -> &Vec<String> {
@@ -261,53 +344,47 @@ impl Item {
     pub fn append_tags(&mut self, tags: Vec<String>) -> &mut Self {
         for tag in tags {
             if !self.tags.contains(&tag) {
-                self.tags.push(tag.to_owned());
+                self.tags.push(tag);
             }
         }
-        self.update_last_modified();
         self
     }
 
     pub fn remove_tags(&mut self, tags: Vec<String>) {
-        self.tags = self
-            .tags
-            .iter()
-            .filter(|tag| !tags.contains(tag))
-            .map(|s| s.to_owned())
-            .collect::<Vec<String>>();
-        self.update_last_modified();
+        self.tags.retain(|tag| !tags.contains(tag));
     }
 
     pub fn content(&self) -> &String {
-        return &self.content;
+        &self.content
     }
 
     pub fn set_content(&mut self, content: String) {
         self.content = content;
-        self.update_last_modified();
     }
 
     pub fn timestamp(&self) -> i64 {
-        return self.timestamp;
+        self.timestamp
     }
 
     pub fn is_started(&self) -> bool {
-        return self.timetrack.len() % 2 == 1;
+        self.timetrack.len() % 2 == 1
     }
 
     pub fn is_stopped(&self) -> bool {
-        return self.timetrack.len() % 2 == 0;
+        self.timetrack.len() % 2 == 0
     }
 
     pub fn start(&mut self) -> Result<(), String> {
         if self.is_stopped() {
             self.timetrack.push(util::timestamp());
-            self.update_last_modified();
+            if self.kind == Kind::Task {
+                self.status = Some(Status::Doing);
+            }
             Ok(())
         } else {
             Err(format!(
                 "{} runs already since {}",
-                self.id.to_owned(),
+                self.id,
                 util::format_timestamp(*self.timetrack.last().unwrap())
             ))
         }
@@ -316,23 +393,24 @@ impl Item {
     pub fn stop(&mut self) -> Result<(), String> {
         if self.is_started() {
             self.timetrack.push(util::timestamp());
-            self.update_last_modified();
             Ok(())
         } else {
-            Err(format!("{} is not running.", self.id.to_owned()))
+            Err(format!("{} is not running.", self.id))
         }
     }
 
+    /// replaces the item but keeps the derived children
     pub fn set(&mut self, item: Item) {
+        let children = std::mem::take(&mut self.children);
         *self = item;
-        self.update_last_modified();
+        self.children = children;
     }
 
     pub fn merge(&mut self, item: &mut Item) {
         self.content = item.content.to_string();
         self.append_tags(std::mem::take(&mut item.tags));
-        self.children.append(&mut item.children);
-        self.parents.append(&mut item.parents);
-        self.update_last_modified();
+        if item.parent.is_some() {
+            self.parent = item.parent.take();
+        }
     }
 }

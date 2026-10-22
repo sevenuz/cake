@@ -14,22 +14,20 @@ use crate::store::Store;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
 use selector::Selector;
-use std::{env::args, error::Error, process::exit};
+use std::{
+    env::{args, current_dir},
+    error::Error,
+    path::PathBuf,
+    process::exit,
+};
 use termimad::crossterm::style::Stylize;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
-    /// Sets a custom input db file.
-    /// Use an empty input path to write to the global save file.
-    /// The format is determined by the file extension: json or md
-    #[arg(short, long, value_name = "FILE")]
-    pub input: Option<String>,
-
-    /// Sets a custom output db file. If not set, the input file is used.
-    /// The format is determined by the file extension: json or md
-    #[arg(short, long, value_name = "FILE")]
-    pub output: Option<String>,
+    /// Use the store at this path instead of the nearest .cake or the global store
+    #[arg(long, value_name = "DIR", env = "CAKE_STORE")]
+    pub store: Option<PathBuf>,
 
     /// Turn debugging information on
     #[arg(short, long, action = clap::ArgAction::Count)]
@@ -191,9 +189,6 @@ pub enum Commands {
     Config {},
 }
 
-const FILETYPE_JSON: &str = ".json";
-const FILETYPE_MD: &str = ".md";
-
 pub fn run() -> Result<(), Box<dyn Error>> {
     let cli = Cli::try_parse();
 
@@ -256,31 +251,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             }
         }
     }
-    let input_file = match cli.input {
-        Some(f) => {
-            // use empty input path to write to global save file
-            if f.is_empty() {
-                config.get_default_file_path()
-            } else {
-                f
-            }
-        }
-        None => config.find_save_file()?,
+    let root = match &cli.store {
+        Some(p) => p.to_owned(),
+        None => util::find_store(&current_dir()?)?,
     };
-    let output_file = match cli.output {
-        Some(f) if !f.is_empty() => f,
-        None | _ => input_file.to_owned(),
-    };
-    debug(&format!("Input: {}, Output: {}", input_file, output_file));
-
-    let mut store: Store;
-    if input_file.ends_with(FILETYPE_MD) {
-        store = Store::new_from_md(&input_file)?;
-    } else if input_file.ends_with(FILETYPE_JSON) {
-        store = Store::new_from_json(&input_file)?;
-    } else {
-        return Err("Only .md or .json files are supported".into());
-    }
+    debug(&format!("Store: {}", root.display()));
+    let mut store = Store::new(&root)?;
 
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
@@ -340,18 +316,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    if output_file.ends_with(FILETYPE_MD) {
-        store.write_md(&output_file)?;
-    } else if output_file.ends_with(FILETYPE_JSON) {
-        store.write_json(&output_file)?;
-    } else {
-        // TODO support all files if extension is set in settings
-        return Err("Only .md or .json files are supported".into());
-    }
+    let changed = store.save()?;
     if git::is_repo() && !config.disable_git {
         if git::check_if_branch_exists(&config)? {
-            debug(&format!("git add {:?}", config.save_file_name));
-            git::add(&config)?;
+            for path in &changed {
+                debug(&format!("git add {:?}", path));
+                git::add(path)?;
+            }
             debug(&format!("git commit"));
             let args: String = std::env::args().collect::<Vec<_>>().join(" ");
             git::commit(&args)?;

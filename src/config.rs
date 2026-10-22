@@ -1,7 +1,6 @@
 use crate::util;
 use crate::Error;
 use serde::{Deserialize, Serialize};
-use std::env::current_dir;
 use std::fs;
 use termimad::MadSkin;
 
@@ -30,10 +29,6 @@ pub struct Config {
     pub git_remote_name: String,
     /// push and fetch by default on the cake branch
     pub git_push_fetch: bool,
-    /// file name searching for when no input file is given (e.g. cake.md)
-    pub save_file_name: String,
-    /// full file path to the default save file including file name and suffix (json, md)
-    default_file_path: String,
     /// searches in config dir for skin file (hjson)
     skin_file_name: String,
     /// When output has more lines than the threshold, then show it in scrollview
@@ -76,8 +71,6 @@ impl Config {
                 git_branch_name: "cake".to_string(),
                 git_remote_name: "origin".to_string(),
                 git_push_fetch: false,
-                save_file_name: "cake.md".to_string(),
-                default_file_path: util::default_save_file("cake.md")?,
                 skin_file_name: "gruvbox.hjson".to_string(),
                 scrollview_threshold: 30,
             })
@@ -90,14 +83,6 @@ impl Config {
             std::fs::write(util::config_file()?, serialized)?;
         }
         Ok(())
-    }
-
-    pub fn find_save_file(&self) -> Result<String, Box<dyn Error>> {
-        util::find_save_file(&mut current_dir()?, &self.save_file_name)
-    }
-
-    pub fn get_default_file_path(&self) -> String {
-        self.default_file_path.to_string()
     }
 
     // markdown style
@@ -142,7 +127,6 @@ mod tests {
         let config = Config::new().unwrap();
         assert_eq!(config.git_branch_name, "cake");
         assert_eq!(config.git_remote_name, "origin");
-        assert_eq!(config.save_file_name, "cake.md");
         assert!(!config.disable_git);
         assert!(!config.git_push_fetch);
     }

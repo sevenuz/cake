@@ -5,7 +5,7 @@ use crate::view;
 use crate::Selector;
 use crate::{git, util};
 use std::error::Error;
-use std::fs::{self, File};
+use std::fs;
 use std::path::Path;
 use std::process::Command;
 use termimad::crossterm::style::Stylize;
@@ -37,7 +37,7 @@ where
     let mut item = Item::new(
         _id.clone(),
         selector.children,
-        selector.parents,
+        selector.parents.first().cloned(),
         selector.tags,
     );
     store.check_existence(&item, edit)?;
@@ -287,24 +287,10 @@ where
         git::create_branch(config)?;
         debug(&format!("init: checkout {}", config.git_branch_name));
         git::checkout_branch(&config.git_branch_name)?;
-        let p = Path::new(&config.save_file_name);
-        debug(&format!("init: new file {:?}", p));
-        if let Err(e) = File::create_new(p) {
-            println!(
-                "I guess you already have a cake file in your repo o.0 \n {} \n{}",
-                e.to_string().yellow().italic(),
-                "So we are just using this one now. You can remove it from your other branches."
-            );
-        } else {
-            println!(
-                "New {} file created at branch {} :)",
-                config.save_file_name, config.git_branch_name
-            );
-            debug(&format!("init: add {}", config.save_file_name));
-            git::add(config)?;
-            debug(&format!("init: commit {}", config.save_file_name));
-            git::commit("init cake file")?;
-        }
+        let p = Path::new(util::STORE_DIR).join("items");
+        debug(&format!("init: new store {:?}", p));
+        fs::create_dir_all(&p)?;
+        println!("New store {} created at branch {} :)", util::STORE_DIR, config.git_branch_name);
         if remote {
             debug(&format!(
                 "init: push --set-upstream {} {}",
@@ -316,10 +302,13 @@ where
         debug(&format!("init: stash pop"));
         // _stash_guard drops here: checks out `current_branch` and pops the stash
     } else {
-        let p = Path::new(&config.save_file_name);
-        debug(&format!("init: new file {:?}", p));
-        File::create_new(p)?;
-        println!("New {} file created :)", config.save_file_name);
+        let p = Path::new(util::STORE_DIR).join("items");
+        debug(&format!("init: new store {:?}", p));
+        if p.is_dir() {
+            return Err("There is already a store here.".into());
+        }
+        fs::create_dir_all(&p)?;
+        println!("New store {} created :)", util::STORE_DIR);
     }
     Ok(())
 }

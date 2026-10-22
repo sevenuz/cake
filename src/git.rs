@@ -1,5 +1,6 @@
 use std::{
     error::Error,
+    path::Path,
     process::{Command, Output},
 };
 
@@ -119,10 +120,10 @@ pub fn checkout_branch(branch: &str) -> Result<Output, Box<dyn Error>> {
     Ok(Command::new("git").arg("checkout").arg(branch).output()?)
 }
 
-pub fn add(config: &Config) -> Result<Output, Box<dyn Error>> {
+pub fn add(path: &Path) -> Result<Output, Box<dyn Error>> {
     Ok(Command::new("git")
         .arg("add")
-        .arg(&config.save_file_name)
+        .arg(path)
         .output()?)
 }
 

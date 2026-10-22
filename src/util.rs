@@ -1,13 +1,13 @@
 use crate::error;
-use chrono::{DateTime, Local, TimeZone};
+use chrono::{DateTime, Local, SecondsFormat, TimeZone};
 use directories::{BaseDirs, ProjectDirs};
 use nanoid::nanoid;
 use std::{
     env::temp_dir,
     error::Error,
-    fs::{self, read_dir, write, File},
+    fs::{self, write, File},
     io::Read,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
 };
 
@@ -36,10 +36,6 @@ mod tests {
         assert!(parse_time("0.5Y").is_err());
     }
 
-    #[test]
-    fn test_str_to_vec() {
-        assert_eq!(str_to_vec("1, 2, 3"), vec!["1", "2", "3"]);
-    }
 
     #[test]
     fn test_vec_to_str() {
@@ -47,19 +43,10 @@ mod tests {
         assert_eq!(vec_to_str(&vec![1, 2, 3]), "1, 2, 3");
     }
 
-    // NOTE: assumes the host is running in the CET/CEST (+0100/+0200) timezone,
-    // same assumption the original version of this test made.
     #[test]
-    fn test_format_timestamp() {
-        assert_eq!(format_timestamp(1678197184), "Tue Mar  7 14:53:04 2023 +0100");
-    }
-
-    #[test]
-    fn test_parse_timestamp() {
-        assert_eq!(
-            parse_timestamp("Tue Mar  7 14:53:04 2023 +0100").unwrap(),
-            1678197184
-        );
+    fn test_timestamp_round_trip() {
+        assert_eq!(parse_timestamp(&format_timestamp(1678197184)).unwrap(), 1678197184);
+        assert_eq!(parse_timestamp("2023-03-07T14:53:04+01:00").unwrap(), 1678197184);
     }
 
     #[test]
@@ -128,61 +115,39 @@ mod tests {
         assert!(!is_subset(&vec!["a", "d"], &vec!["a", "b", "c"]));
     }
 
-    #[test]
-    fn test_extract_metadata_strips_prefix_and_suffix() {
-        assert_eq!(extract_metadata("| id | abc|", "| id | ").unwrap(), "abc");
-    }
+
+
 
     #[test]
-    fn test_extract_metadata_errs_on_missing_prefix() {
-        assert!(extract_metadata("nope|", "| id | ").is_err());
-    }
-
-    #[test]
-    fn test_extract_metadata_errs_on_missing_suffix() {
-        assert!(extract_metadata("| id | abc", "| id | ").is_err());
-    }
-
-    #[test]
-    fn test_generate_id_uses_only_alphabet_characters_and_length_three() {
+    fn test_generate_id_uses_only_alphabet_characters_and_length_six() {
         let id = generate_id();
-        assert_eq!(id.len(), 3);
-        assert!(id
-            .chars()
-            .all(|c| "asdfghjklertuinv".contains(c)));
+        assert_eq!(id.len(), 6);
+        assert!(id.chars().all(|c| "0123456789abcdefghjkmnpqrstvwxyz".contains(c)));
     }
 
     #[test]
     #[serial]
-    fn find_save_file_locates_file_in_an_ancestor_directory() {
+    fn find_store_locates_store_in_an_ancestor_directory() {
         let sandbox = Sandbox::new();
         std::fs::create_dir_all("a/b/c").unwrap();
-        std::fs::write("a/cake.md", "").unwrap();
+        std::fs::create_dir_all("a/.cake/items").unwrap();
 
-        let mut start = sandbox.path().join("a/b/c");
-        let found = find_save_file(&mut start, "cake.md").unwrap();
+        let found = find_store(&sandbox.path().join("a/b/c")).unwrap();
 
-        assert_eq!(found, sandbox.path().join("a/cake.md").to_str().unwrap());
+        assert_eq!(found, sandbox.path().join("a/.cake"));
     }
 
     #[test]
     #[serial]
-    fn find_save_file_falls_back_to_default_when_not_found() {
+    fn find_store_falls_back_to_global_store() {
         let sandbox = Sandbox::new();
-        let mut start = sandbox.path().to_path_buf();
-
-        let found = find_save_file(&mut start, "cake.md").unwrap();
-
-        assert_eq!(found, default_save_file("cake.md").unwrap());
+        assert_eq!(find_store(sandbox.path()).unwrap(), global_store().unwrap());
     }
 }
 
 pub fn generate_id() -> String {
-    let alphabet: [char; 16] = [
-        'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'e', 'r', 't', 'u', 'i', 'n', 'v',
-    ];
-
-    nanoid!(3, &alphabet)
+    let alphabet: Vec<char> = "0123456789abcdefghjkmnpqrstvwxyz".chars().collect();
+    nanoid!(6, &alphabet)
 }
 
 /// parse e.g. 1y1w1d1h1m1s and subtracts it from now
@@ -237,24 +202,20 @@ pub fn timestamp_to_hms(timestamp: i64) -> String {
     res
 }
 
-// DO NOT CHANGE IT, it will break parse_timestamp
-const DATE_FORMAT: &str = "%c %z";
+/// RFC 3339 in local time, second precision
 pub fn format_timestamp(timestamp: i64) -> String {
     Local
         .timestamp_opt(timestamp, 0)
         .unwrap()
-        .format(DATE_FORMAT)
-        .to_string()
+        .to_rfc3339_opts(SecondsFormat::Secs, false)
 }
 
-/// from the formatted string of fn ft, this parses the unix timestamp
 pub fn parse_timestamp(s: &str) -> Result<i64, error::ParseError> {
-    let dt_timestamp = DateTime::parse_from_str(s, DATE_FORMAT)
-        .ok()
-        .ok_or(error::ParseError {
-            message: "Invalid timestamp".to_string(),
-        })?;
-    return Ok(dt_timestamp.timestamp());
+    Ok(DateTime::parse_from_rfc3339(s.trim())
+        .map_err(|_| error::ParseError {
+            message: format!("Invalid timestamp '{}'", s),
+        })?
+        .timestamp())
 }
 
 pub fn timestamp() -> i64 {
@@ -349,42 +310,25 @@ pub fn config_path() -> Result<PathBuf, Box<dyn Error>> {
     }
 }
 
-pub fn default_save_file(save_file_name: &str) -> Result<String, Box<dyn Error>> {
-    if let Some(base_dirs) = BaseDirs::new() {
-        let path = base_dirs.data_dir(); // ~/.local/.. on linux
-        fs::create_dir_all(path)?; // Do we need this?
-        return Ok(path
-            .join(save_file_name)
-            .into_os_string()
-            .into_string()
-            .unwrap());
-    } else {
-        return Err("Could not find data directory".into());
-    }
+pub const STORE_DIR: &str = ".cake";
+
+pub fn global_store() -> Result<PathBuf, Box<dyn Error>> {
+    let base_dirs = BaseDirs::new().ok_or("Could not find data directory")?;
+    Ok(base_dirs.data_dir().join(PKG_NAME))
 }
 
-/// find next cake save file in current or upper dirs, fallback is data_dir
-pub fn find_save_file(path: &mut PathBuf, save_file_name: &str) -> Result<String, Box<dyn Error>> {
-    if path.is_dir() {
-        for entry in read_dir(path.as_path())? {
-            let path = entry?.path();
-            let name = path.file_name().ok_or("No filename")?;
-
-            if name == save_file_name {
-                return Ok(path.into_os_string().into_string().unwrap());
-            }
+/// find next store with an items dir in current or upper dirs, fallback is the global store
+pub fn find_store(path: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    for dir in path.ancestors() {
+        if dir.join(STORE_DIR).join("items").is_dir() {
+            return Ok(dir.join(STORE_DIR));
         }
     }
-
-    if path.pop() {
-        return find_save_file(path, save_file_name);
-    } else {
-        return default_save_file(save_file_name);
-    }
+    global_store()
 }
 
 /// checks if at least one element of vec1 is contained in vec2
-pub fn contains_element<T>(vec1: &Vec<T>, vec2: &Vec<T>) -> bool
+pub fn contains_element<T>(vec1: &[T], vec2: &[T]) -> bool
 where
     T: PartialEq,
 {
@@ -397,7 +341,7 @@ where
 }
 
 /// checks if all elements of vec1 are contained in vec2
-pub fn is_subset<T>(vec1: &Vec<T>, vec2: &Vec<T>) -> bool
+pub fn is_subset<T>(vec1: &[T], vec2: &[T]) -> bool
 where
     T: PartialEq,
 {
@@ -422,14 +366,6 @@ pub fn space(s: &str, spacer_len: usize) -> String {
     result
 }
 
-/// splits string seperated by comma
-pub fn str_to_vec(s: &str) -> Vec<String> {
-    if s.is_empty() {
-        return vec![];
-    }
-    s.split(", ").map(|v| v.to_string()).collect()
-}
-
 /// joins vector with comma
 pub fn vec_to_str<T>(v: &Vec<T>) -> String
 where
@@ -446,17 +382,4 @@ where
         // remove last comma
         res.strip_suffix(", ").unwrap().to_string()
     }
-}
-
-/// removes prefix and suffix from raw metadata line
-pub fn extract_metadata(s: &str, prefix: &str) -> Result<String, error::ParseError> {
-    Ok(s.strip_prefix(prefix)
-        .ok_or(error::ParseError {
-            message: "Invalid metadata".to_string(),
-        })?
-        .strip_suffix("|")
-        .ok_or(error::ParseError {
-            message: "Invalid metadata".to_string(),
-        })?
-        .to_string())
 }

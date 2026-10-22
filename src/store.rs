@@ -4,19 +4,12 @@ pub use self::inner::MAX_DEPTH;
 
 pub mod inner {
     pub const MAX_DEPTH: usize = 10; /*std::usize::MAX*/
-    const MD_DELIMITER: &str = "\n---\n---\n---\n";
-    // Stand-in for MD_DELIMITER when it shows up inside an item's own content,
-    // so splitting the file on MD_DELIMITER can't mistake it for an item
-    // boundary. Distinguished by a zero-width space real content won't
-    // plausibly contain at that exact position.
-    const MD_DELIMITER_ESCAPED: &str = "\n-\u{200B}--\n---\n---\n";
 
+    use std::collections::{HashMap, HashSet};
     use std::error::Error;
-    use std::{collections::HashMap, str::FromStr};
+    use std::path::{Path, PathBuf};
 
     use crate::item::Item;
-    use crate::error::ParseError;
-    use serde::{Deserialize, Serialize};
 
     #[derive(Copy, Clone)]
     pub enum RecState {
@@ -32,9 +25,10 @@ pub mod inner {
         pub has_children: bool,
     }
 
-    #[derive(Serialize, Deserialize)]
     pub struct Store {
+        root: PathBuf,
         items: HashMap<String, Item>,
+        dirty: HashSet<String>,
     }
 
     impl Store {
@@ -64,111 +58,116 @@ pub mod inner {
             Ok(())
         }
 
-        fn set_relations(&mut self, item: &Item, add: bool) -> Result<(), Box<dyn Error>> {
+        fn set_relations(&mut self, item: &Item, add: bool) {
             for s in item.parents() {
-                if let Some(i) = self.get_item_mut(s) {
+                if let Some(i) = self.items.get_mut(s) {
                     if add {
-                        i.add_child(item);
+                        i.add_child(item.id());
                     } else {
-                        i.retain_child(item);
+                        i.retain_child(item.id());
                     }
                 }
             }
             for s in item.children() {
-                if let Some(i) = self.get_item_mut(s) {
+                if let Some(i) = self.items.get_mut(s) {
                     if add {
-                        i.add_parent(item);
+                        if let Some(old) = i.parents().first().cloned() {
+                            if let Some(o) = self.items.get_mut(&old) {
+                                o.retain_child(s);
+                            }
+                        }
+                        let i = self.items.get_mut(s).unwrap();
+                        i.set_parent(Some(item.id().to_owned()));
                     } else {
-                        i.retain_parent(item);
+                        i.set_parent(None);
                     }
+                    self.dirty.insert(s.to_owned());
                 }
             }
-            Ok(())
         }
 
-        pub fn new_from_json(file: &str) -> Result<Store, Box<dyn Error>> {
-            let serialized = match std::fs::read_to_string(file) {
-                Ok(f) => f,
-                Err(_err) => {
-                    return Ok(Store {
-                        items: HashMap::new(),
-                    })
-                }
-            };
-            let _store: Store = serde_json::from_str(&serialized)?;
-            Ok(_store)
+        fn items_dir(root: &Path) -> PathBuf {
+            root.join("items")
         }
 
-        pub fn write_json(&mut self, file: &str) -> Result<(), Box<dyn Error>> {
-            let serialized = serde_json::to_string_pretty(&self)?;
-            std::fs::write(file, serialized)?;
-            Ok(())
-        }
-
-        pub fn new_from_md(file: &str) -> Result<Store, ParseError> {
-            let serialized = match std::fs::read_to_string(file) {
-                Ok(f) => f,
-                Err(_err) => {
-                    return Ok(Store {
-                        items: HashMap::new(),
-                    })
-                }
-            };
+        /// loads all items/*.md, an empty store if the directory does not exist
+        pub fn new(root: &Path) -> Result<Store, Box<dyn Error>> {
             let mut items = HashMap::new();
-            let item_strs = serialized.split(MD_DELIMITER);
-            for itm_str in item_strs {
-                if itm_str.is_empty() {
-                    continue;
+            let dir = Self::items_dir(root);
+            if dir.is_dir() {
+                for entry in std::fs::read_dir(&dir)? {
+                    let path = entry?.path();
+                    if path.extension().map_or(true, |e| e != "md") {
+                        continue;
+                    }
+                    let stem = path.file_stem().unwrap().to_string_lossy().to_string();
+                    let created = std::fs::metadata(&path)?
+                        .modified()?
+                        .duration_since(std::time::UNIX_EPOCH)?
+                        .as_secs() as i64;
+                    let item = Item::from_markdown(&std::fs::read_to_string(&path)?, &stem, created)
+                        .map_err(|e| format!("{}: {}", path.display(), e))?;
+                    items.insert(item.id().to_owned(), item);
                 }
-                let unescaped = itm_str.replace(MD_DELIMITER_ESCAPED, MD_DELIMITER);
-                let item = Item::from_str(&unescaped)?;
-                items.insert(item.id().to_owned(), item);
             }
-            let _store: Store = Store { items };
-            Ok(_store)
+            let mut store = Store {
+                root: root.to_path_buf(),
+                items,
+                dirty: HashSet::new(),
+            };
+            let pairs: Vec<(String, String)> = store
+                .items
+                .values()
+                .flat_map(|i| i.parents().iter().map(|p| (p.to_owned(), i.id().to_owned())))
+                .collect();
+            for (parent, child) in pairs {
+                if let Some(p) = store.items.get_mut(&parent) {
+                    p.add_child(&child);
+                }
+            }
+            Ok(store)
         }
 
-        pub fn write_md(&mut self, file: &str) -> Result<(), Box<dyn Error>> {
-            let mut serialized: String = "".to_string();
-
-            let mut keys = self.items.keys().cloned().collect::<Vec<String>>();
-            // sort output from old to new
-            keys.sort_by(|a, b| {
-                self.items
-                    .get(a)
-                    .unwrap()
-                    .timestamp()
-                    .cmp(&self.items.get(b).unwrap().timestamp())
-            });
-            for (i, id) in keys.iter().enumerate() {
-                let text = self.get_item(id).unwrap().print_long(true);
-                serialized += &text.replace(MD_DELIMITER, MD_DELIMITER_ESCAPED);
-                if i + 1 < self.items.len() {
-                    // delimiter of entries
-                    serialized += MD_DELIMITER;
+        /// writes changed items, removes deleted ones, returns touched paths
+        pub fn save(&mut self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+            let dir = Self::items_dir(&self.root);
+            std::fs::create_dir_all(&dir)?;
+            let mut paths = vec![];
+            for id in self.dirty.drain() {
+                let path = dir.join(format!("{}.md", id));
+                match self.items.get(&id) {
+                    Some(item) => {
+                        let tmp = dir.join(format!(".{}.md.tmp", id));
+                        std::fs::write(&tmp, item.to_markdown())?;
+                        std::fs::rename(&tmp, &path)?;
+                    }
+                    None if path.exists() => std::fs::remove_file(&path)?,
+                    None => continue,
                 }
+                paths.push(path);
             }
-            std::fs::write(file, serialized)?;
-            Ok(())
+            Ok(paths)
         }
 
         // existence is checked in command
         pub fn edit(&mut self, mut item: Item, overwrite: bool) -> Result<(), Box<dyn Error>> {
-            // delete old relations
-            self.set_relations(&self.get_item(item.id()).unwrap().clone(), false)?;
+            let old = self.items.get(item.id()).unwrap().clone();
+            self.set_relations(&old, false);
+            let target = self.get_item_mut(item.id()).unwrap();
             if overwrite {
-                self.get_item_mut(item.id()).unwrap().set(item.clone());
+                target.set(item);
             } else {
-                self.get_item_mut(item.id()).unwrap().merge(&mut item);
+                target.merge(&mut item);
             }
-            // set new relations
-            self.set_relations(&self.get_item(item.id()).unwrap().clone(), true)?;
+            let new = self.items.get(old.id()).unwrap().clone();
+            self.set_relations(&new, true);
             Ok(())
         }
 
         // existence is checked in command
         pub fn add(&mut self, item: Item) -> Result<(), Box<dyn Error>> {
-            self.set_relations(&item, true)?;
+            self.set_relations(&item, true);
+            self.dirty.insert(item.id().to_owned());
             self.items.insert(item.id().to_owned(), item);
             Ok(())
         }
@@ -176,7 +175,8 @@ pub mod inner {
         pub fn remove(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
             match self.items.remove(id) {
                 Some(item) => {
-                    self.set_relations(&item, false)?;
+                    self.set_relations(&item, false);
+                    self.dirty.insert(id.to_owned());
                 }
                 None => return Err("Could not found id".into()),
             }
@@ -188,6 +188,7 @@ pub mod inner {
         }
 
         pub fn get_item_mut(&mut self, id: &str) -> Option<&mut Item> {
+            self.dirty.insert(id.to_owned());
             return self.items.get_mut(id);
         }
 
@@ -200,7 +201,7 @@ pub mod inner {
         /// @up to recursivly go through parents
         pub fn recursive_execute<'a>(
             &'a self,
-            items: &Vec<String>,
+            items: &[String],
             path: &mut Vec<String>,
             depth: usize,
             max_depth: usize,
@@ -261,37 +262,28 @@ pub mod inner {
         use super::*;
 
         fn empty_store() -> Store {
-            Store::new_from_json("/definitely/does/not/exist/cake-store-test.json").unwrap()
+            Store::new(Path::new("/definitely/does/not/exist/cake-store-test")).unwrap()
         }
 
-        fn item(id: &str, parents: Vec<&str>, children: Vec<&str>) -> Item {
+        fn item(id: &str, parent: Option<&str>, children: Vec<&str>) -> Item {
             Item::new(
                 id.to_string(),
                 children.into_iter().map(String::from).collect(),
-                parents.into_iter().map(String::from).collect(),
+                parent.map(String::from),
                 vec![],
             )
         }
 
         #[test]
-        fn new_from_json_returns_empty_store_for_missing_file() {
-            let store =
-                Store::new_from_json("/definitely/does/not/exist/cake-store-test.json").unwrap();
-            assert!(store.get().is_empty());
+        fn new_returns_empty_store_for_missing_dir() {
+            assert!(empty_store().get().is_empty());
         }
 
         #[test]
-        fn new_from_md_returns_empty_store_for_missing_file() {
-            let store =
-                Store::new_from_md("/definitely/does/not/exist/cake-store-test.md").unwrap();
-            assert!(store.get().is_empty());
-        }
-
-        #[test]
-        fn add_links_reciprocal_parent_and_child_relations() {
+        fn add_links_parent_and_derived_child_relations() {
             let mut store = empty_store();
-            store.add(item("parent", vec![], vec![])).unwrap();
-            store.add(item("child", vec!["parent"], vec![])).unwrap();
+            store.add(item("parent", None, vec![])).unwrap();
+            store.add(item("child", Some("parent"), vec![])).unwrap();
 
             assert!(store
                 .get_item("parent")
@@ -301,73 +293,75 @@ pub mod inner {
         }
 
         #[test]
-        fn remove_unlinks_reciprocal_relations() {
+        fn add_with_children_sets_their_single_parent() {
             let mut store = empty_store();
-            store.add(item("parent", vec![], vec![])).unwrap();
-            store.add(item("child", vec!["parent"], vec![])).unwrap();
+            store.add(item("old", None, vec![])).unwrap();
+            store.add(item("c", Some("old"), vec![])).unwrap();
+            store.add(item("new", None, vec!["c"])).unwrap();
+
+            assert_eq!(store.get_item("c").unwrap().parents(), ["new".to_string()]);
+            assert!(store.get_item("old").unwrap().children().is_empty());
+        }
+
+        #[test]
+        fn remove_unlinks_relations() {
+            let mut store = empty_store();
+            store.add(item("parent", None, vec![])).unwrap();
+            store.add(item("child", Some("parent"), vec![])).unwrap();
 
             store.remove("child").unwrap();
 
-            assert!(!store
-                .get_item("parent")
-                .unwrap()
-                .children()
-                .contains(&"child".to_string()));
+            assert!(store.get_item("parent").unwrap().children().is_empty());
         }
 
         #[test]
         fn check_existence_rejects_reference_to_missing_parent() {
             let store = empty_store();
-            let orphan = item("orphan", vec!["ghost"], vec![]);
-            assert!(store.check_existence(&orphan, false).is_err());
+            assert!(store
+                .check_existence(&item("orphan", Some("ghost"), vec![]), false)
+                .is_err());
         }
 
         #[test]
         fn check_existence_rejects_duplicate_id_when_not_editing() {
             let mut store = empty_store();
-            store.add(item("dup", vec![], vec![])).unwrap();
-            assert!(store
-                .check_existence(&item("dup", vec![], vec![]), false)
-                .is_err());
+            store.add(item("dup", None, vec![])).unwrap();
+            assert!(store.check_existence(&item("dup", None, vec![]), false).is_err());
         }
 
         #[test]
         fn check_existence_allows_known_id_when_editing() {
             let mut store = empty_store();
-            store.add(item("known", vec![], vec![])).unwrap();
-            assert!(store
-                .check_existence(&item("known", vec![], vec![]), true)
-                .is_ok());
+            store.add(item("known", None, vec![])).unwrap();
+            assert!(store.check_existence(&item("known", None, vec![]), true).is_ok());
         }
 
         #[test]
-        fn edit_without_overwrite_can_duplicate_an_already_present_tag() {
+        fn edit_without_overwrite_does_not_duplicate_tags() {
             let mut store = empty_store();
-            let mut initial = item("x", vec![], vec![]);
+            let mut initial = item("x", None, vec![]);
             initial.append_tags(vec!["dup".to_string()]);
             store.add(initial).unwrap();
 
-            let mut update = item("x", vec![], vec![]);
+            let mut update = item("x", None, vec![]);
             update.append_tags(vec!["dup".to_string()]);
             store.edit(update, false).unwrap();
 
-            // BUG: Item::merge appends tags unconditionally (unlike
-            // append_tags, which dedupes), so editing with a tag that's
-            // already present duplicates it instead of leaving it alone.
             let tags = store.get_item("x").unwrap().tags();
             assert_eq!(tags.iter().filter(|t| *t == "dup").count(), 1);
         }
 
         #[test]
         fn recursive_execute_terminates_on_a_cycle() {
-            let mut store = empty_store();
-            // children-graph cycle: a -> b -> a
-            store.add(item("a", vec![], vec!["b"])).unwrap();
-            store.add(item("b", vec![], vec!["a"])).unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let mut store = Store::new(dir.path()).unwrap();
+            store.add(item("a", Some("b"), vec![])).unwrap();
+            store.add(item("b", Some("a"), vec![])).unwrap();
+            store.save().unwrap();
+            let store = Store::new(dir.path()).unwrap();
 
-            let keys = vec!["a".to_string()];
             let mut path = vec![];
-            let views = store.recursive_execute(&keys, &mut path, 0, MAX_DEPTH, false);
+            let views = store.recursive_execute(&["a".to_string()], &mut path, 0, MAX_DEPTH, false);
 
             assert!(views.len() >= 2);
             assert!(matches!(views.last().unwrap().state, RecState::Reappearence));
@@ -378,78 +372,47 @@ pub mod inner {
             let mut store = empty_store();
             let n = MAX_DEPTH + 5;
             for i in 0..=n {
-                let children = if i < n {
-                    vec![(i + 1).to_string()]
-                } else {
-                    vec![]
-                };
+                let parent = if i > 0 { Some((i - 1).to_string()) } else { None };
                 store
-                    .add(Item::new(i.to_string(), children, vec![], vec![]))
+                    .add(Item::new(i.to_string(), vec![], parent, vec![]))
                     .unwrap();
             }
 
-            let keys = vec!["0".to_string()];
             let mut path = vec![];
-            let views = store.recursive_execute(&keys, &mut path, 0, MAX_DEPTH, false);
+            let views = store.recursive_execute(&["0".to_string()], &mut path, 0, MAX_DEPTH, false);
 
             assert_eq!(views.len(), MAX_DEPTH);
         }
 
         #[test]
-        fn json_and_markdown_formats_round_trip_to_equivalent_items() {
+        fn save_and_reload_round_trips_items_and_deletes_removed() {
             let dir = tempfile::tempdir().unwrap();
-            let json_path = dir.path().join("cake.json");
-            let md_path = dir.path().join("cake.md");
+            let mut store = Store::new(dir.path()).unwrap();
+            store.add(item("p", None, vec![])).unwrap();
+            store.add(item("c", Some("p"), vec![])).unwrap();
+            store.add(item("gone", None, vec![])).unwrap();
+            store.get_item_mut("c").unwrap().set_content("# hi\n".to_string());
+            store.save().unwrap();
+            store.remove("gone").unwrap();
+            assert_eq!(store.save().unwrap(), vec![dir.path().join("items/gone.md")]);
 
-            let mut store = empty_store();
-            store.add(item("root", vec![], vec![])).unwrap();
-            let mut child = item("kid", vec!["root"], vec![]);
-            child.append_tags(vec!["urgent".to_string(), "backend".to_string()]);
-            child.set_content("multi\nline\ncontent".to_string());
-            store.add(child).unwrap();
-
-            store.write_json(json_path.to_str().unwrap()).unwrap();
-            store.write_md(md_path.to_str().unwrap()).unwrap();
-
-            let from_json = Store::new_from_json(json_path.to_str().unwrap()).unwrap();
-            let from_md = Store::new_from_md(md_path.to_str().unwrap()).unwrap();
-
-            let mut json_ids: Vec<&String> = from_json.get().keys().collect();
-            let mut md_ids: Vec<&String> = from_md.get().keys().collect();
-            json_ids.sort();
-            md_ids.sort();
-            assert_eq!(json_ids, md_ids);
-
-            for id in json_ids {
-                assert_eq!(
-                    from_json.get_item(id).unwrap().print_long(true),
-                    from_md.get_item(id).unwrap().print_long(true),
-                );
-            }
+            let reloaded = Store::new(dir.path()).unwrap();
+            assert_eq!(reloaded.get().len(), 2);
+            assert_eq!(reloaded.get_item("p").unwrap().children(), &vec!["c".to_string()]);
+            assert_eq!(reloaded.get_item("c").unwrap().to_markdown(), store.get_item("c").unwrap().to_markdown());
         }
 
         #[test]
-        fn markdown_round_trip_preserves_content_containing_the_item_delimiter() {
+        fn foreign_file_is_read_leniently_and_not_rewritten_on_load() {
             let dir = tempfile::tempdir().unwrap();
-            let md_path = dir.path().join("cake.md");
+            std::fs::create_dir_all(dir.path().join("items")).unwrap();
+            let path = dir.path().join("items/buy milk.md");
+            std::fs::write(&path, "buy milk\n").unwrap();
 
-            let mut store = empty_store();
-            let mut poison = item("poison", vec![], vec![]);
-            // The markdown store separates items with the literal sequence
-            // "\n---\n---\n---\n" (MD_DELIMITER above). If that sequence shows
-            // up inside an item's own content, it should not be mistaken for
-            // a boundary between two items.
-            poison.set_content("before\n---\n---\n---\nafter".to_string());
-            store.add(poison).unwrap();
-
-            store.write_md(md_path.to_str().unwrap()).unwrap();
-            let reloaded = Store::new_from_md(md_path.to_str().unwrap()).unwrap();
-
-            assert_eq!(reloaded.get().len(), 1);
-            assert_eq!(
-                reloaded.get_item("poison").unwrap().content(),
-                "before\n---\n---\n---\nafter",
-            );
+            let mut store = Store::new(dir.path()).unwrap();
+            assert_eq!(store.get_item("buy milk").unwrap().content(), "buy milk\n");
+            assert!(store.save().unwrap().is_empty());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), "buy milk\n");
         }
     }
 }
