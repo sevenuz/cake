@@ -11,313 +11,180 @@ mod util;
 mod view;
 
 use crate::store::Store;
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use config::Config;
 use selector::Selector;
 use std::{env::args, error::Error, process::exit};
 use termimad::crossterm::style::Stylize;
 
 #[derive(Parser)]
-#[clap(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None)]
 pub struct Cli {
     /// Sets a custom input db file.
     /// Use an empty input path to write to the global save file.
     /// The format is determined by the file extension: json or md
-    #[clap(short, long, value_parser, value_name = "FILE")]
+    #[arg(short, long, value_name = "FILE")]
     pub input: Option<String>,
 
     /// Sets a custom output db file. If not set, the input file is used.
     /// The format is determined by the file extension: json or md
-    #[clap(short, long, value_parser, value_name = "FILE")]
+    #[arg(short, long, value_name = "FILE")]
     pub output: Option<String>,
 
     /// Turn debugging information on
-    #[clap(short, long, action = clap::ArgAction::Count)]
+    #[arg(short, long, action = clap::ArgAction::Count)]
     pub debug: u8,
 
     /// Activate git push and fetch for the following action.
     /// It only works if a cake branch exists, see 'cake help init'
-    #[clap(short, long)]
+    #[arg(short, long)]
     pub git: bool,
 
-    #[clap(subcommand)]
+    #[command(subcommand)]
     pub command: Option<Commands>,
+}
+
+#[derive(Args)]
+pub struct SelectorArgs {
+    /// Select by ids
+    ids: Option<String>,
+
+    /// Select by children
+    #[arg(short, long)]
+    children: Option<String>,
+
+    /// Select by parents
+    #[arg(short, long)]
+    parents: Option<String>,
+
+    /// Select by tags, use ~ to exclude tag e.g. -t ~some_tag
+    #[arg(short, long)]
+    tags: Option<String>,
+
+    /// Select by time before this duration from now
+    #[arg(short, long)]
+    before: Option<String>,
+
+    /// Select by time after this duration from now
+    #[arg(short, long)]
+    after: Option<String>,
+
+    /// Select started items
+    #[arg(long)]
+    started: bool,
+
+    /// Select stopped items
+    #[arg(long)]
+    stopped: bool,
+
+    /// recursive execution of the command. -r: children, -rr parents, -rrr both
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    recursive: u8,
+
+    /// Concatinate selectors with or instead of and
+    #[arg(long)]
+    or: bool,
+}
+
+impl SelectorArgs {
+    fn selector(&self, ids: &Option<String>) -> Result<Selector, Box<dyn Error>> {
+        Selector::new(
+            ids,
+            &self.children,
+            &self.parents,
+            &self.tags,
+            &self.before,
+            &self.after,
+            &self.started,
+            &self.stopped,
+            &self.recursive,
+            &self.or,
+        )
+    }
 }
 
 // TODO https://docs.rs/clap/latest/clap/builder/struct.Arg.html#method.value_delimiter
 #[derive(Subcommand)]
 pub enum Commands {
     /// add new items, alias edit: sets --edit
-    #[clap(alias("edit"))]
+    #[command(alias("edit"))]
     Add {
         /// a custom unique id for the item
-        #[clap(value_parser)]
         ids: Option<String>,
 
         /// the children items wich the new one is linked to
-        #[clap(short, long)]
+        #[arg(short, long)]
         children: Option<String>,
 
         /// the parent items the new one is linked to
-        #[clap(short, long)]
+        #[arg(short, long)]
         parents: Option<String>,
 
         /// Optional tags seperated by colon
-        #[clap(short, long)]
+        #[arg(short, long)]
         tags: Option<String>,
 
         /// the todo content, if non, editor is opened
-        #[clap(short, long)]
+        #[arg(short, long)]
         message: Option<String>,
 
         /// updates the item with the provided id if found
-        #[clap(short, long, action)]
+        #[arg(short, long)]
         edit: bool,
 
         /// overwrites the item with the provided id if found, edit flag is required
-        #[clap(short, long, action)]
+        #[arg(short, long)]
         overwrite: bool,
     },
     /// remove items, alias rm
-    #[clap(alias("rm"))]
+    #[command(alias("rm"))]
     Remove {
-        /// Select by ids
-        #[clap(value_parser)]
-        ids: Option<String>,
-
-        /// Select by children
-        #[clap(short, long)]
-        children: Option<String>,
-
-        /// Select by parents
-        #[clap(short, long)]
-        parents: Option<String>,
-
-        /// Select by tags
-        /// use ~ to exclude tag e.g. -t ~some_tag
-        #[clap(short, long)]
-        tags: Option<String>,
-
-        /// Select by time before this duration from now
-        #[clap(short, long)]
-        before: Option<String>,
-
-        /// Select by time after this duration from now
-        #[clap(short, long)]
-        after: Option<String>,
-
-        /// Select started items
-        #[clap(long, action)]
-        started: bool,
-
-        /// Select stopped items
-        #[clap(long, action)]
-        stopped: bool,
-
-        /// recursive execution of the command.
-        /// e.g. -r: children, -rr parents, -rrr both
-        #[clap(short, long, action = clap::ArgAction::Count)]
-        recursive: u8,
-
-        /// Concatinate selectors with or instead of and
-        #[clap(long, action)]
-        or: bool,
+        #[command(flatten)]
+        selector: SelectorArgs,
     },
     /// Tag items with selectors.
     /// Use ~tag to remove a tag.
     Tag {
-        /// Select by ids
-        #[clap(value_parser)]
-        ids: Option<String>,
+        #[command(flatten)]
+        selector: SelectorArgs,
 
         /// comma separated tags which will be assigned
-        #[clap(value_parser)]
         new_tags: Option<String>,
-
-        /// Select by children
-        #[clap(short, long)]
-        children: Option<String>,
-
-        /// Select by parents
-        #[clap(short, long)]
-        parents: Option<String>,
-
-        /// Select by tags
-        /// use ~ to exclude tag e.g. -t ~some_tag
-        #[clap(short, long)]
-        tags: Option<String>,
-
-        /// Select by time before this duration from now
-        #[clap(short, long)]
-        before: Option<String>,
-
-        /// Select by time after this duration from now
-        #[clap(short, long)]
-        after: Option<String>,
-
-        /// Select started items
-        #[clap(long, action)]
-        started: bool,
-
-        /// Select stopped items
-        #[clap(long, action)]
-        stopped: bool,
-
-        /// recursive execution of the command.
-        /// e.g. -r: children, -rr parents, -rrr both
-        #[clap(short, long, action = clap::ArgAction::Count)]
-        recursive: u8,
-
-        /// Concatinate selectors with or instead of and
-        #[clap(long, action)]
-        or: bool,
     },
     /// start timetracking for item
     Start {
-        /// Select by ids
-        #[clap(value_parser)]
-        ids: Option<String>,
-
-        /// Select by children
-        #[clap(short, long)]
-        children: Option<String>,
-
-        /// Select by parents
-        #[clap(short, long)]
-        parents: Option<String>,
-
-        /// Select by tags, use ~ to exclude tag e.g. -t ~some_tag
-        #[clap(short, long)]
-        tags: Option<String>,
-
-        /// Select by time before this duration from now
-        #[clap(short, long)]
-        before: Option<String>,
-
-        /// Select by time after this duration from now
-        #[clap(short, long)]
-        after: Option<String>,
-
-        /// Select started items
-        #[clap(long, action)]
-        started: bool,
-
-        /// Select stopped items
-        #[clap(long, action)]
-        stopped: bool,
-
-        /// recursive execution of the command. -r: children, -rr parents, -rrr both
-        #[clap(short, long, action = clap::ArgAction::Count)]
-        recursive: u8,
-
-        /// Concatinate selectors with or instead of and
-        #[clap(long, action)]
-        or: bool,
+        #[command(flatten)]
+        selector: SelectorArgs,
     },
     /// stop timetracking for item
     Stop {
-        /// Select by ids
-        #[clap(value_parser)]
-        ids: Option<String>,
-
-        /// Select by children
-        #[clap(short, long)]
-        children: Option<String>,
-
-        /// Select by parents
-        #[clap(short, long)]
-        parents: Option<String>,
-
-        /// Select by tags, use ~ to exclude tag e.g. -t ~some_tag
-        #[clap(short, long)]
-        tags: Option<String>,
-
-        /// Select by time before this duration from now
-        #[clap(short, long)]
-        before: Option<String>,
-
-        /// Select by time after this duration from now
-        #[clap(short, long)]
-        after: Option<String>,
-
-        /// Select started items
-        #[clap(long, action)]
-        started: bool,
-
-        /// Select stopped items
-        #[clap(long, action)]
-        stopped: bool,
-
-        /// recursive execution of the command. -r: children, -rr parents, -rrr both
-        #[clap(short, long, action = clap::ArgAction::Count)]
-        recursive: u8,
-
-        /// Concatinate selectors with or instead of and
-        #[clap(long, action)]
-        or: bool,
+        #[command(flatten)]
+        selector: SelectorArgs,
     },
     /// list items, alias ls
-    #[clap(alias("ls"))]
+    #[command(alias("ls"))]
     List {
-        /// Select by ids
-        #[clap(value_parser)]
-        ids: Option<String>,
-
-        /// Select by children
-        #[clap(short, long)]
-        children: Option<String>,
-
-        /// Select by parents
-        #[clap(short, long)]
-        parents: Option<String>,
-
-        /// Select by tags, use ~ to exclude tag e.g. -t ~some_tag
-        #[clap(short, long)]
-        tags: Option<String>,
-
-        /// Select by time before this duration from now
-        #[clap(short, long)]
-        before: Option<String>,
-
-        /// Select by time after this duration from now
-        #[clap(short, long)]
-        after: Option<String>,
-
-        /// Select started items
-        #[clap(long, action)]
-        started: bool,
-
-        /// Select stopped items
-        #[clap(long, action)]
-        stopped: bool,
-
-        /// recursive execution of the command. -r: children, -rr parents, -rrr both
-        #[clap(short, long, action = clap::ArgAction::Count)]
-        recursive: u8,
+        #[command(flatten)]
+        selector: SelectorArgs,
 
         /// detailed presentation of the items
-        #[clap(short, long, action)]
+        #[arg(short, long)]
         long: bool,
-
-        /// Concatinate selectors with or instead of and
-        #[clap(long, action)]
-        or: bool,
     },
     /// show a markdown file in terminal
     Show {
         /// Path to the file
-        #[clap(value_parser)]
         path: String,
     },
     /// Creates new cake save file in current directory, checkout `cake help init` for git options.
     Init {
         /// Creates new branch for the cake save file which is checked out
         /// before every cake operation.
-        #[clap(long, action)]
+        #[arg(long)]
         git: bool,
         /// Wether the cake branch should be pushed to remote or not.
         /// This option works only together with the git option.
-        #[clap(long, action)]
+        #[arg(long)]
         remote: bool,
     },
     /// Open config file in editor
@@ -437,110 +304,32 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             args[1] == "edit" || *edit, // auto edit flag only works if no flags are used before...
             *overwrite,
         )?,
-        Some(Commands::Remove {
-            ids,
-            children,
-            parents,
-            tags,
-            before,
-            after,
-            started,
-            stopped,
-            recursive,
-            or,
-        }) => commands::remove(
-            debug,
-            &mut &mut store,
-            Selector::new(
-                ids, children, parents, tags, before, after, started, stopped, recursive, or,
-            )?,
-        )?,
-        Some(Commands::Tag {
-            ids,
-            new_tags,
-            children,
-            parents,
-            tags,
-            before,
-            after,
-            started,
-            stopped,
-            recursive,
-            or,
-        }) => {
-            let mut i = ids;
+        Some(Commands::Remove { selector }) => {
+            commands::remove(debug, &mut &mut store, selector.selector(&selector.ids)?)?
+        }
+        Some(Commands::Tag { selector, new_tags }) => {
+            let mut i = &selector.ids;
             let mut nt = new_tags;
             // use ids for tags if only one option is set.
-            if ids.is_none() && new_tags.is_none() {
+            if i.is_none() && nt.is_none() {
                 return Err("You have to specify tags. [ids selector, optional] [tags]".into());
-            } else if new_tags.is_none() {
-                nt = ids;
+            } else if nt.is_none() {
+                nt = i;
                 i = new_tags;
             }
-            commands::tag(
-                debug,
-                &mut &mut store,
-                Selector::new(
-                    i, children, parents, tags, before, after, started, stopped, recursive, or,
-                )?,
-                nt,
-            )?
+            commands::tag(debug, &mut &mut store, selector.selector(i)?, nt)?
         }
-        Some(Commands::Start {
-            ids,
-            children,
-            parents,
-            tags,
-            before,
-            after,
-            started,
-            stopped,
-            recursive,
-            or,
-        }) => commands::start(
-            debug,
-            &mut &mut store,
-            Selector::new(
-                ids, children, parents, tags, before, after, started, stopped, recursive, or,
-            )?,
-        )?,
-        Some(Commands::Stop {
-            ids,
-            children,
-            parents,
-            tags,
-            before,
-            after,
-            started,
-            stopped,
-            recursive,
-            or,
-        }) => commands::stop(
-            debug,
-            &mut &mut store,
-            Selector::new(
-                ids, children, parents, tags, before, after, started, stopped, recursive, or,
-            )?,
-        )?,
-        Some(Commands::List {
-            ids,
-            children,
-            parents,
-            tags,
-            before,
-            after,
-            started,
-            stopped,
-            recursive,
-            long,
-            or,
-        }) => commands::list(
+        Some(Commands::Start { selector }) => {
+            commands::start(debug, &mut &mut store, selector.selector(&selector.ids)?)?
+        }
+        Some(Commands::Stop { selector }) => {
+            commands::stop(debug, &mut &mut store, selector.selector(&selector.ids)?)?
+        }
+        Some(Commands::List { selector, long }) => commands::list(
             debug,
             &config,
             &mut store,
-            Selector::new(
-                ids, children, parents, tags, before, after, started, stopped, recursive, or,
-            )?,
+            selector.selector(&selector.ids)?,
             *long,
         )?,
         Some(Commands::Show { path }) => commands::show(debug, &config, path)?,
@@ -585,4 +374,31 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     drop(stash_guard);
     config.write_json_if_dirty()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_definition_is_valid() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn tag_parses_ids_before_new_tags_and_flattened_selector_flags() {
+        let cli =
+            Cli::try_parse_from(["cake", "tag", "a,b", "x,y", "-t", "~z", "-rr", "--or"]).unwrap();
+        match cli.command {
+            Some(Commands::Tag { selector, new_tags }) => {
+                assert_eq!(selector.ids.as_deref(), Some("a,b"));
+                assert_eq!(new_tags.as_deref(), Some("x,y"));
+                assert_eq!(selector.tags.as_deref(), Some("~z"));
+                assert_eq!(selector.recursive, 2);
+                assert!(selector.or);
+            }
+            _ => panic!("expected tag command"),
+        }
+    }
 }
