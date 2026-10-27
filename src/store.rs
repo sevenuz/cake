@@ -36,9 +36,7 @@ pub mod inner {
             if itself && !self.items.contains_key(id) {
                 return Err("Item does not exist.");
             } else if !itself && self.items.contains_key(id) {
-                return Err(
-                    "Item already exists. Set the \"edit\" flag if you want to update the item.",
-                );
+                return Err("Item already exists, use cake edit.");
             }
             Ok(())
         }
@@ -157,16 +155,11 @@ pub mod inner {
             Ok(paths)
         }
 
-        // existence is checked in command
-        pub fn edit(&mut self, mut item: Item, overwrite: bool) -> Result<(), Box<dyn Error>> {
+        /// replaces an existing item, keeps derived children; existence is checked in command
+        pub fn edit(&mut self, item: Item) -> Result<(), Box<dyn Error>> {
             let old = self.items.get(item.id()).unwrap().clone();
             self.set_relations(&old, false);
-            let target = self.get_item_mut(item.id()).unwrap();
-            if overwrite {
-                target.set(item);
-            } else {
-                target.merge(&mut item);
-            }
+            self.get_item_mut(item.id()).unwrap().set(item);
             let new = self.items.get(old.id()).unwrap().clone();
             self.set_relations(&new, true);
             Ok(())
@@ -345,18 +338,19 @@ pub mod inner {
         }
 
         #[test]
-        fn edit_without_overwrite_does_not_duplicate_tags() {
+        fn edit_replaces_item_and_keeps_children() {
             let mut store = empty_store();
-            let mut initial = item("x", None, vec![]);
-            initial.append_tags(vec!["dup".to_string()]);
-            store.add(initial).unwrap();
+            store.add(item("p", None, vec![])).unwrap();
+            store.add(item("c", Some("p"), vec![])).unwrap();
 
-            let mut update = item("x", None, vec![]);
-            update.append_tags(vec!["dup".to_string()]);
-            store.edit(update, false).unwrap();
+            let mut update = item("p", None, vec![]);
+            update.append_tags(vec!["new".to_string()]);
+            store.edit(update).unwrap();
 
-            let tags = store.get_item("x").unwrap().tags();
-            assert_eq!(tags.iter().filter(|t| *t == "dup").count(), 1);
+            let p = store.get_item("p").unwrap();
+            assert_eq!(p.tags(), &vec!["new".to_string()]);
+            assert_eq!(p.children(), &vec!["c".to_string()]);
+            assert_eq!(store.get_item("c").unwrap().parents(), ["p".to_string()]);
         }
 
         #[test]

@@ -6,6 +6,7 @@ use crate::Selector;
 use crate::{git, util};
 use std::error::Error;
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use termimad::crossterm::style::Stylize;
@@ -16,52 +17,57 @@ pub fn add<F>(
     store: &mut Store,
     selector: Selector,
     content: String,
-    edit: bool,
-    overwrite: bool,
 ) -> Result<(), Box<dyn Error>>
 where
     F: Fn(&str),
 {
-    debug(
-        &format!(
-            "add {:?}, content: {:?}, edit: {:?}, overwrite: {:?}",
-            selector, content, edit, overwrite
-        )
-        .clone(),
-    );
-    let _id = if selector.ids.is_empty() {
+    debug(&format!("add {:?}, content: {:?}", selector, content));
+    let id = if selector.ids.is_empty() {
         util::generate_id()
     } else {
         selector.ids.first().unwrap().to_string()
     };
     let mut item = Item::new(
-        _id.clone(),
+        id.clone(),
         selector.children,
         selector.parents.first().cloned(),
         selector.tags,
     );
-    store.check_existence(&item, edit)?;
+    store.check_existence(&item, false)?;
     item.set_content(if content.is_empty() {
-        util::input_from_external_editor(
-            &config.editor,
-            if edit {
-                Some(&store.get_item(&_id.to_string()).unwrap().content())
-            } else {
-                None
-            },
-        )
-        .unwrap()
+        util::input_from_external_editor(&config.editor, None)?
     } else {
         content
     });
     debug(&item.content());
+    store.add(item)?;
+    view::print(&config, store.get_item(&id).unwrap().print_long(false))?;
+    Ok(())
+}
 
-    if edit {
-        store.edit(item, overwrite)?;
-    } else {
-        store.add(item)?;
+/// opens the whole item file (frontmatter and body) in the editor
+pub fn edit<F>(debug: F, config: &Config, store: &mut Store, id: &str) -> Result<(), Box<dyn Error>>
+where
+    F: Fn(&str),
+{
+    debug(&format!("edit {:?}", id));
+    let old = store.get_item(id).ok_or(format!("{} not found.", id))?;
+    if !std::io::stdin().is_terminal() {
+        return Err("cake edit needs a terminal.".into());
     }
-    view::print(&config, store.get_item(&_id).unwrap().print_long(false))?;
+    let text = old.to_markdown();
+    let edited = util::input_from_external_editor(&config.editor, Some(&text))?;
+    if edited == text {
+        println!("{} unchanged.", id);
+        return Ok(());
+    }
+    let item = Item::from_markdown(&edited, id, old.timestamp())?;
+    if item.id() != id {
+        return Err("Changing the id is not supported.".into());
+    }
+    store.check_existence(&item, true)?;
+    store.edit(item)?;
+    view::print(&config, store.get_item(id).unwrap().print_long(false))?;
     Ok(())
 }
 

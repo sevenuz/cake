@@ -51,3 +51,13 @@ fn changing_commands_refuse_empty_selector_and_unknown_ids() {
     }
     assert!(read_item(&d, "a").contains("status: todo"));
 }
+
+#[test]
+fn edit_needs_a_known_id_and_a_terminal() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "a", "-m", "# a"]);
+    assert!(env.cake_err(&d, &["edit", "nope"]).contains("nope not found"));
+    assert!(env.cake_err(&d, &["edit", "a"]).contains("terminal"));
+    assert!(env.cake_err(&d, &["add", "a", "-m", "# again"]).contains("cake edit"));
+}

@@ -437,12 +437,4 @@ impl Item {
         *self = item;
         self.children = children;
     }
-
-    pub fn merge(&mut self, item: &mut Item) {
-        self.content = item.content.to_string();
-        self.append_tags(std::mem::take(&mut item.tags));
-        if item.parent.is_some() {
-            self.parent = item.parent.take();
-        }
-    }
 }

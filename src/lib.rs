@@ -104,35 +104,30 @@ impl SelectorArgs {
 // TODO https://docs.rs/clap/latest/clap/builder/struct.Arg.html#method.value_delimiter
 #[derive(Subcommand)]
 pub enum Commands {
-    /// add new items, alias edit: sets --edit
-    #[command(alias("edit"))]
+    /// add a new item, opens the editor without -m
     Add {
-        /// a custom unique id for the item
+        /// custom id, default: random
         ids: Option<String>,
 
-        /// the children items wich the new one is linked to
+        /// children to move under the new item, comma separated
         #[arg(short, long)]
         children: Option<String>,
 
-        /// the parent items the new one is linked to
+        /// parent item
         #[arg(short, long)]
         parents: Option<String>,
 
-        /// Optional tags seperated by colon
+        /// tags, comma separated
         #[arg(short, long)]
         tags: Option<String>,
 
-        /// the todo content, if non, editor is opened
+        /// content, the first `# heading` is the title
         #[arg(short, long)]
         message: Option<String>,
-
-        /// updates the item with the provided id if found
-        #[arg(short, long)]
-        edit: bool,
-
-        /// overwrites the item with the provided id if found, edit flag is required
-        #[arg(short, long)]
-        overwrite: bool,
+    },
+    /// open the item file (frontmatter and body) in the editor
+    Edit {
+        id: String,
     },
     /// remove items, alias rm
     #[command(alias("rm"))]
@@ -216,6 +211,7 @@ impl Commands {
         matches!(
             self,
             Commands::Add { .. }
+                | Commands::Edit { .. }
                 | Commands::Remove { .. }
                 | Commands::Tag { .. }
                 | Commands::Start { .. }
@@ -291,8 +287,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             parents,
             message,
             tags,
-            edit,
-            overwrite,
         }) => commands::add(
             &debug,
             &config,
@@ -301,9 +295,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 ids, children, parents, tags, &None, &None, &false, &false, &0, &false,
             )?,
             message.to_owned().unwrap_or("".to_string()),
-            args[1] == "edit" || *edit, // auto edit flag only works if no flags are used before...
-            *overwrite,
         )?,
+        Some(Commands::Edit { id }) => commands::edit(&debug, &config, &mut store, id)?,
         Some(Commands::Remove { selector }) => {
             commands::remove(debug, &mut &mut store, selector.selector(&selector.ids)?)?
         }
