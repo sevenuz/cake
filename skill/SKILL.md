@@ -21,7 +21,9 @@ your session in `sessions`, your commits are tagged `[<agent>]`.
   create a child. Status and tags of the user's items only when asked.
 - **Implement only approved items** (status `todo`/`doing`) the user asked
   you to work on.
-- **Short:** titles ≤ 60 chars, bodies ≤ 5 bullets, no prose.
+- **Short but complete:** titles ≤ 60 chars, bodies as bullets, no prose.
+  Aim for 3–5 bullets, but use more rather than lose details; split into
+  children only when parts are worked on separately.
 - **No `cake sync`** unless asked. Cite items by id.
 
 ## Workflow
@@ -44,7 +46,7 @@ your session in `sessions`, your commits are tagged `[<agent>]`.
 
 - **Ideas:** `cake ls --mine --json` shows the user's ideas and what grew under
   them. Planned (no status) children are candidates for the user to approve.
-- **Plans:** one note per idea or deliverable under the idea, ≤ 5 bullets,
+- **Plans:** one note per idea or deliverable under the idea, bullets,
   `done when` included. Ordering with `--blocked-by`. Link with `[[id]]`.
 - **Docs:** your reference notes are top-level and tagged `doc`.
 - **Time:** start your timer on approved items you work on, stop it when you
