@@ -1,8 +1,9 @@
 ---
 id: 2wkhyp
-tags: [design, git]
+tags: [design, git, doc]
 created: 2026-10-27T12:30:10+01:00
 by: claude-code
+sessions: [69b1d969-f2c3-4f41-b58d-a996441f99e2]
 ---
 # Collaboration play-through (2026-10-27)
 
