@@ -309,6 +309,44 @@ pub mod inner {
             Some(serde_json::Value::Object(m))
         }
 
+        /// full id for an exact id or a unique prefix (at least 2 chars);
+        /// unknown input is returned unchanged, so the caller reports not_found
+        pub fn resolve(&self, input: &str) -> Result<String, Box<dyn Error>> {
+            if self.items.contains_key(input) || input.chars().count() < 2 {
+                return Ok(input.to_string());
+            }
+            let mut matches: Vec<&String> = self.items.keys().filter(|k| k.starts_with(input)).collect();
+            matches.sort();
+            match matches.len() {
+                0 => Ok(input.to_string()),
+                1 => Ok(matches[0].clone()),
+                _ => Err(error::coded(
+                    "ambiguous_id",
+                    format!("{} matches {}", input, matches.iter().map(|m| m.as_str()).collect::<Vec<_>>().join(", ")),
+                )),
+            }
+        }
+
+        /// resolves every id of a comma separated list
+        pub fn resolve_list(&self, input: &str) -> Result<String, Box<dyn Error>> {
+            Ok(input.split(',').map(|i| self.resolve(i.trim())).collect::<Result<Vec<_>, _>>()?.join(","))
+        }
+
+        /// shortest unique prefix of every id, at least 2 chars
+        pub fn short_ids(&self) -> HashMap<String, String> {
+            let mut ids: Vec<&String> = self.items.keys().collect();
+            ids.sort();
+            let common = |a: &str, b: &str| a.chars().zip(b.chars()).take_while(|(x, y)| x == y).count();
+            (0..ids.len())
+                .map(|n| {
+                    let before = if n > 0 { common(ids[n - 1], ids[n]) } else { 0 };
+                    let after = ids.get(n + 1).map_or(0, |next| common(ids[n], next));
+                    let len = (before.max(after) + 1).max(2);
+                    (ids[n].clone(), ids[n].chars().take(len).collect())
+                })
+                .collect()
+        }
+
         pub fn root(&self) -> &Path {
             &self.root
         }
@@ -530,6 +568,23 @@ pub mod inner {
 
             store.unblock("a", &["b".into()]).unwrap();
             assert_eq!(store.get_item("a").unwrap().blocked_by(), &vec!["c".to_string()]);
+        }
+
+        #[test]
+        fn prefixes_resolve_and_short_ids_are_unique() {
+            let mut store = empty_store();
+            for id in ["abcdef", "abxyzq", "kmnpqr", "x"] {
+                store.add(item(id, None, vec![])).unwrap();
+            }
+            assert_eq!(store.resolve("km").unwrap(), "kmnpqr");
+            assert_eq!(store.resolve("abc").unwrap(), "abcdef");
+            assert_eq!(error::code(store.resolve("ab").unwrap_err().as_ref()), "ambiguous_id");
+            assert_eq!(store.resolve("k").unwrap(), "k", "too short, stays unknown");
+            assert_eq!(store.resolve("x").unwrap(), "x", "exact match");
+            assert_eq!(store.resolve_list("km, abx").unwrap(), "kmnpqr,abxyzq");
+            let short = store.short_ids();
+            assert_eq!((short["abcdef"].as_str(), short["abxyzq"].as_str()), ("abc", "abx"));
+            assert_eq!((short["kmnpqr"].as_str(), short["x"].as_str()), ("km", "x"));
         }
 
         #[test]

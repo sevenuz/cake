@@ -116,7 +116,21 @@ pub struct SelectorArgs {
     childless: bool,
 }
 
+/// replaces id prefixes in `opt` (comma separated) by full ids
+fn resolve_opt(store: &Store, opt: &mut Option<String>) -> Result<(), Box<dyn Error>> {
+    if let Some(v) = opt {
+        *v = store.resolve_list(v)?;
+    }
+    Ok(())
+}
+
 impl SelectorArgs {
+    fn resolve(&mut self, store: &Store) -> Result<(), Box<dyn Error>> {
+        resolve_opt(store, &mut self.ids)?;
+        resolve_opt(store, &mut self.children)?;
+        resolve_opt(store, &mut self.parents)
+    }
+
     fn selector(&self, ids: &Option<String>) -> Result<Selector, Box<dyn Error>> {
         Selector::new(
             ids,
@@ -302,6 +316,51 @@ pub enum Commands {
 }
 
 impl Commands {
+    /// resolves id prefixes in all arguments that take ids
+    fn resolve_ids(&mut self, store: &Store) -> Result<(), Box<dyn Error>> {
+        let one = |id: &mut String| -> Result<(), Box<dyn Error>> {
+            *id = store.resolve(id)?;
+            Ok(())
+        };
+        match self {
+            Commands::Add { children, parents, blocked_by, .. } => {
+                resolve_opt(store, children)?;
+                resolve_opt(store, parents)?;
+                resolve_opt(store, blocked_by)?;
+            }
+            Commands::Edit { id, .. } => one(id)?,
+            Commands::Show { target } if store.resolve(target).map_or(false, |t| store.get_item(&t).is_some()) => {
+                one(target)?
+            }
+            Commands::Mv { id, parent } => {
+                one(id)?;
+                if parent != "-" {
+                    one(parent)?;
+                }
+            }
+            Commands::Block { id, by } | Commands::Unblock { id, by } => {
+                one(id)?;
+                *by = store.resolve_list(by)?;
+            }
+            // with one positional only, `tag` treats it as the tags
+            Commands::Tag { selector, new_tags } if new_tags.is_none() => {
+                resolve_opt(store, &mut selector.children)?;
+                resolve_opt(store, &mut selector.parents)?;
+            }
+            Commands::Remove { selector }
+            | Commands::Tag { selector, .. }
+            | Commands::Start { selector }
+            | Commands::Stop { selector }
+            | Commands::Done { selector }
+            | Commands::Drop { selector }
+            | Commands::Todo { selector }
+            | Commands::List { selector, .. }
+            | Commands::Ready { selector, .. } => selector.resolve(store)?,
+            _ => (),
+        }
+        Ok(())
+    }
+
     /// true for commands that change items
     fn writes(&self) -> bool {
         matches!(
@@ -435,7 +494,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         .after_help(format!("Aliases (config, store .cake/config.hjson):\n{}", alias_help))
         .try_get_matches_from(expand_alias(&args, &aliases)?)
         .and_then(|m| <Cli as clap::FromArgMatches>::from_arg_matches(&m));
-    let cli = match parsed {
+    let mut cli = match parsed {
         Ok(cli) => cli,
         Err(e) if args.iter().any(|a| a == "--json") && e.use_stderr() => {
             out::set_json(true);
@@ -521,6 +580,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     }
     let skip: Vec<PathBuf> = conflicted.iter().map(|f| root.join(f)).collect();
     let mut store = Store::new_except(&root, &skip)?;
+    if let Some(command) = cli.command.as_mut() {
+        command.resolve_ids(&store)?;
+    }
 
     let report = match &cli.command {
         Some(Commands::Add {

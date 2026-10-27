@@ -4,6 +4,13 @@ mod common;
 
 use common::*;
 
+/// ids in the order a command lists them, via --json
+fn json_ids(env: &Env, dir: &std::path::Path, args: &[&str]) -> Vec<String> {
+    let out = env.cake_ok(dir, &[args, &["--json"]].concat());
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    v["items"].as_array().unwrap().iter().map(|i| i["id"].as_str().unwrap().to_string()).collect()
+}
+
 #[test]
 fn done_drop_reopen_set_status_and_closed() {
     let env = Env::new();
@@ -129,13 +136,7 @@ fn ls_filters_by_text_status_and_blockers() {
     env.cake_ok(&d, &["add", "ddd", "-m", "# old"]);
     env.cake_ok(&d, &["done", "ddd"]);
 
-    let ids = |args: &[&str]| {
-        let out = env.cake_ok(&d, args);
-        ["aaa", "bbb", "ccc", "ddd"]
-            .into_iter()
-            .filter(|id| out.contains(id))
-            .collect::<Vec<_>>()
-    };
+    let ids = |args: &[&str]| json_ids(&env, &d, args);
     assert_eq!(ids(&["ls", "-s", "WORKTREE"]), vec!["aaa"]);
     assert_eq!(ids(&["ls", "--status", "none"]), vec!["bbb"]);
     assert_eq!(ids(&["ls", "--status", "done"]), vec!["ddd"]);
@@ -157,15 +158,11 @@ fn block_unblock_and_ready() {
     assert!(read_item(&d, "ccc").contains("blocked_by: [\"[[aaa]]\", \"[[bbb]]\"]\n"));
     assert!(env.cake_err(&d, &["block", "aaa", "--by", "ccc"]).contains("cycle"));
 
-    let out = env.cake_ok(&d, &["ready"]);
-    let (a, b) = (out.find("aaa").unwrap(), out.find("bbb").unwrap());
-    assert!(b < a, "prio 1 first: {}", out);
-    assert!(!out.contains("ccc"));
-    assert!(!out.contains("nnn"), "notes are never ready");
+    assert_eq!(json_ids(&env, &d, &["ready"]), vec!["bbb", "aaa"], "prio 1 first, no blocked, no notes");
 
     env.cake_ok(&d, &["done", "aaa"]);
     env.cake_ok(&d, &["unblock", "ccc", "--by", "bbb"]);
-    assert!(env.cake_ok(&d, &["ready"]).contains("ccc"));
+    assert!(json_ids(&env, &d, &["ready"]).contains(&"ccc".to_string()));
 }
 
 #[test]
@@ -396,4 +393,27 @@ fn empty_content_is_refused() {
     assert!(env.cake_err(&d, &["edit", "x", "-m", "  "]).contains("Empty content"));
     assert!(env.cake_err(&d, &["add", "y", "-m", ""]).contains("Empty content"));
     assert!(read_item(&d, "x").ends_with("# keep"));
+}
+
+#[test]
+fn id_prefixes_work_everywhere_and_ls_shows_short_ids() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "kmnpqr", "--todo", "-m", "# parent"]);
+    env.cake_ok(&d, &["add", "abcdef", "--todo", "-p", "km", "-m", "# one"]);
+    env.cake_ok(&d, &["add", "abxyzq", "--todo", "--blocked-by", "abc", "-m", "# two"]);
+    assert_eq!(env.cake_ok(&d, &["ls"]), "○ abx two\n○ km parent\n└─ ○ abc one\n");
+
+    env.cake_ok(&d, &["done", "abc"]);
+    env.cake_ok(&d, &["mv", "abx", "km"]);
+    env.cake_ok(&d, &["block", "km", "--by", "abx"]);
+    assert!(read_item(&d, "abcdef").contains("status: done"));
+    assert!(read_item(&d, "abxyzq").contains("parent: \"[[kmnpqr]]\""));
+    assert!(read_item(&d, "kmnpqr").contains("blocked_by: [\"[[abxyzq]]\"]"));
+    assert!(env.cake_ok(&d, &["show", "km"]).starts_with("*kmnpqr*"));
+
+    let err = env.cake_err(&d, &["todo", "ab"]);
+    assert!(err.contains("ab matches abcdef, abxyzq"), "{}", err);
+    let out = env.cake(&d, &["todo", "ab", "--json"]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("\"ambiguous_id\""));
 }

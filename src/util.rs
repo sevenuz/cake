@@ -104,7 +104,7 @@ mod tests {
     fn test_generate_id_uses_only_alphabet_characters_and_length_six() {
         let id = generate_id();
         assert_eq!(id.len(), 6);
-        assert!(id.chars().all(|c| "0123456789abcdefghjkmnpqrstvwxyz".contains(c)));
+        assert!(id.chars().all(|c| "abcdefghjkmnpqrstuvwxyz".contains(c)));
     }
 
     #[test]
@@ -128,7 +128,8 @@ mod tests {
 }
 
 pub fn generate_id() -> String {
-    let alphabet: Vec<char> = "0123456789abcdefghjkmnpqrstvwxyz".chars().collect();
+    // letters only, without i, l and o, which are easy to misread
+    let alphabet: Vec<char> = "abcdefghjkmnpqrstuvwxyz".chars().collect();
     nanoid!(6, &alphabet)
 }
 

@@ -95,6 +95,7 @@ pub struct EditOptions {
 /// lock, so other cake commands keep working meanwhile
 pub fn edit_in_editor(config: &Config, root: &Path, id: &str) -> Result<(String, String), Box<dyn Error>> {
     let store = Store::new_except(root, &[])?;
+    let id = &store.resolve(id)?;
     let text = store.get_item(id).ok_or_else(|| error::not_found(id))?.to_markdown();
     if !std::io::stdin().is_terminal() || out::json() {
         return Err(error::invalid("cake edit without -m/--prio/--due needs a terminal and no --json."));
@@ -388,8 +389,9 @@ where
         view::print(&config, text)?;
     } else if !out::json() {
         let color = std::io::stdout().is_terminal();
+        let short = store.short_ids();
         for (prefix, id) in &order {
-            println!("{}{}", prefix, line(store.get_item(id).unwrap(), color));
+            println!("{}{}", prefix, line(store.get_item(id).unwrap(), &short[id], color));
         }
     }
     let ids = order.into_iter().map(|(_, id)| id).collect();
@@ -401,7 +403,7 @@ where
 fn tree(store: &Store, ids: &HashSet<String>) -> Vec<(String, String)> {
     let key = |id: &String| {
         let i = store.get_item(id).unwrap();
-        (i.priority().unwrap_or(u64::MAX), i.due().is_none(), i.due().cloned(), i.timestamp())
+        (i.priority().unwrap_or(u64::MAX), i.due().is_none(), i.due().cloned(), i.timestamp(), id.clone())
     };
     let sorted = |mut v: Vec<String>| {
         v.sort_by_key(|id| key(id));
@@ -442,8 +444,8 @@ fn tree(store: &Store, ids: &HashSet<String>) -> Vec<(String, String)> {
     out
 }
 
-/// one list line: status marker, id, title, tags
-fn line(item: &Item, color: bool) -> String {
+/// one list line: status marker, short id, title, tags
+fn line(item: &Item, short: &str, color: bool) -> String {
     let marker = match item.status() {
         None => "·",
         Some(Status::Todo) => "○",
@@ -455,7 +457,7 @@ fn line(item: &Item, color: bool) -> String {
     let tags: String = item.tags().iter().map(|t| format!(" #{}", t)).collect();
     let open = item.status().map_or(true, |s| s.is_open());
     if !color {
-        return format!("{} {} {}{}", marker, item.id(), item.title(), tags);
+        return format!("{} {} {}{}", marker, short, item.title(), tags);
     }
     let marker = match marker {
         "▶" => marker.green().bold(),
@@ -463,7 +465,7 @@ fn line(item: &Item, color: bool) -> String {
         _ => marker.stylize(),
     };
     let title = if open { item.title().stylize() } else { item.title().dark_grey() };
-    let text = format!("{} {}", item.id().as_str().dark_grey(), title);
+    let text = format!("{} {}", short.dark_grey(), title);
     format!("{} {}{}", marker, text, tags.dark_grey())
 }
 
@@ -481,8 +483,9 @@ where
             if !children.is_empty() && !out::json() {
                 let color = std::io::stdout().is_terminal();
                 print!("{}", if item.content().ends_with('\n') { "\n" } else { "\n\n" });
+                let short = store.short_ids();
                 for (prefix, id) in children {
-                    println!("{}{}", prefix, line(store.get_item(&id).unwrap(), color));
+                    println!("{}{}", prefix, line(store.get_item(&id).unwrap(), &short[&id], color));
                 }
             }
             return Ok(Report::Items(vec![target.to_owned()]));
