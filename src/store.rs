@@ -91,13 +91,19 @@ pub mod inner {
         }
 
         /// loads all items/*.md, an empty store if the directory does not exist
+        #[cfg(test)]
         pub fn new(root: &Path) -> Result<Store, Box<dyn Error>> {
+            Self::new_except(root, &[])
+        }
+
+        /// like `new`, but skips the files in `skip` (e.g. conflicted items)
+        pub fn new_except(root: &Path, skip: &[PathBuf]) -> Result<Store, Box<dyn Error>> {
             let mut items = HashMap::new();
             let dir = Self::items_dir(root);
             if dir.is_dir() {
                 for entry in std::fs::read_dir(&dir)? {
                     let path = entry?.path();
-                    if path.extension().map_or(true, |e| e != "md") {
+                    if path.extension().map_or(true, |e| e != "md") || skip.contains(&path) {
                         continue;
                     }
                     let stem = path.file_stem().unwrap().to_string_lossy().to_string();
@@ -413,6 +419,20 @@ pub mod inner {
             assert_eq!(store.get_item("buy milk").unwrap().content(), "buy milk\n");
             assert!(store.save().unwrap().is_empty());
             assert_eq!(std::fs::read_to_string(&path).unwrap(), "buy milk\n");
+        }
+
+        #[test]
+        fn new_except_skips_given_files() {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(dir.path().join("items")).unwrap();
+            std::fs::write(dir.path().join("items/ok.md"), "ok\n").unwrap();
+            let broken = dir.path().join("items/broken.md");
+            std::fs::write(&broken, "---\n<<<<<<< HEAD\nid: [\n").unwrap();
+
+            assert!(Store::new(dir.path()).unwrap().get_item("broken").is_some());
+            let store = Store::new_except(dir.path(), &[broken]).unwrap();
+            assert!(store.get_item("ok").is_some());
+            assert!(store.get_item("broken").is_none());
         }
     }
 }

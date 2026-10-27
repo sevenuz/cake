@@ -194,6 +194,20 @@ pub enum Commands {
     Config {},
 }
 
+impl Commands {
+    /// true for commands that change items
+    fn writes(&self) -> bool {
+        matches!(
+            self,
+            Commands::Add { .. }
+                | Commands::Remove { .. }
+                | Commands::Tag { .. }
+                | Commands::Start { .. }
+                | Commands::Stop { .. }
+        )
+    }
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let cli = Cli::try_parse();
 
@@ -233,7 +247,21 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     {
         return commands::sync(debug, &config, &root, publish, *cont, *abort);
     }
-    let mut store = Store::new(&root)?;
+    // during an unresolved merge: reads skip conflicted items, writes are refused
+    let mut conflicted = vec![];
+    if !config.disable_git && git::is_store_repo(&root) && git::merge_in_progress(&root)? {
+        conflicted = git::conflicted_files(&root)?;
+        let msg = format!(
+            "store has an unresolved merge, conflicted: {}. Resolve, then `cake sync --continue` (or `--abort`).",
+            conflicted.join(", ")
+        );
+        if cli.command.as_ref().map_or(false, Commands::writes) {
+            return Err(msg.into());
+        }
+        eprintln!("{}", msg.yellow());
+    }
+    let skip: Vec<PathBuf> = conflicted.iter().map(|f| root.join(f)).collect();
+    let mut store = Store::new_except(&root, &skip)?;
 
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
@@ -330,6 +358,15 @@ mod tests {
         assert_eq!(publish(&["cake", "sync", "--publish"]).as_deref(), Some(""));
         assert_eq!(publish(&["cake", "sync", "--publish", "up"]).as_deref(), Some("up"));
         assert!(Cli::try_parse_from(["cake", "sync", "--continue", "--abort"]).is_err());
+    }
+
+    #[test]
+    fn only_item_changing_commands_write() {
+        let writes = |args: &[&str]| Cli::try_parse_from(args).unwrap().command.unwrap().writes();
+        assert!(writes(&["cake", "add", "-m", "x"]));
+        assert!(writes(&["cake", "start", "abc"]));
+        assert!(!writes(&["cake", "ls"]));
+        assert!(!writes(&["cake", "show", "x.md"]));
     }
 
     #[test]
