@@ -121,7 +121,7 @@ impl SelectorArgs {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// add a note, with --todo a task; the editor opens without -m or --body-file
+    /// add a note, with --todo a task; the editor opens without -m
     Add {
         /// custom id, default: random
         ids: Option<String>,
@@ -138,13 +138,9 @@ pub enum Commands {
         #[arg(short, long)]
         tags: Option<String>,
 
-        /// content; the first `# heading` is the title
-        #[arg(short, long, conflicts_with = "body_file")]
+        /// content, - reads stdin; the first `# heading` is the title
+        #[arg(short, long)]
         message: Option<String>,
-
-        /// read content from a file, - for stdin
-        #[arg(long, value_name = "FILE")]
-        body_file: Option<PathBuf>,
 
         /// a task (status todo) instead of a note
         #[arg(long)]
@@ -161,10 +157,6 @@ pub enum Commands {
         /// items that must be closed first
         #[arg(long, value_name = "IDS")]
         blocked_by: Option<String>,
-
-        /// related items
-        #[arg(long, value_name = "IDS")]
-        related: Option<String>,
     },
     /// edit the item file in the editor
     Edit { id: String },
@@ -347,12 +339,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             parents,
             message,
             tags,
-            body_file,
             todo,
             due,
             prio,
             blocked_by,
-            related,
         }) => commands::add(
             &debug,
             &config,
@@ -360,17 +350,15 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             Selector::new(
                 ids, children, parents, tags, &None, &None, &false, &false, &0, &false,
             )?,
-            match body_file {
-                Some(f) if f.as_os_str() == "-" => Some(std::io::read_to_string(std::io::stdin())?),
-                Some(f) => Some(std::fs::read_to_string(f)?),
-                None => message.to_owned(),
+            match message.as_deref() {
+                Some("-") => Some(std::io::read_to_string(std::io::stdin())?),
+                m => m.map(String::from),
             },
             commands::AddOptions {
                 todo: *todo,
                 due: due.to_owned(),
                 priority: *prio,
                 blocked_by: util::split_comma_cleanup(blocked_by.to_owned().unwrap_or_default()),
-                related: util::split_comma_cleanup(related.to_owned().unwrap_or_default()),
             },
         )?,
         Some(Commands::Edit { id }) => commands::edit(&debug, &config, &mut store, id)?,

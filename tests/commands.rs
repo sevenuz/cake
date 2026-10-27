@@ -67,15 +67,14 @@ fn add_with_all_fields_and_body_from_stdin() {
     let env = Env::new();
     let d = env.plain_store();
     env.cake_ok(&d, &["add", "b", "-m", "# b"]);
-    env.cake_ok(&d, &["add", "c", "-m", "# c"]);
 
     env.cake_stdin(
         &d,
-        &["add", "a", "--todo", "--body-file", "-", "--due", "2026-10-30", "--prio", "1", "--blocked-by", "b", "--related", "c"],
+        &["add", "a", "--todo", "-m", "-", "--due", "2026-10-30", "--prio", "1", "--blocked-by", "b"],
         "# from stdin\n\nbody\n",
     );
     let a = read_item(&d, "a");
-    assert!(a.contains("blocked_by: [\"[[b]]\"]\nrelated: [\"[[c]]\"]\n"), "{}", a);
+    assert!(a.contains("blocked_by: [\"[[b]]\"]\n"), "{}", a);
     assert!(a.contains("due: 2026-10-30\npriority: 1\n"), "{}", a);
     assert!(a.ends_with("---\n# from stdin\n\nbody\n"), "{}", a);
 
@@ -92,7 +91,7 @@ fn add_with_all_fields_and_body_from_stdin() {
 fn add_rejects_bad_input_without_writing() {
     let env = Env::new();
     let d = env.plain_store();
-    assert!(env.cake_err(&d, &["add", "x"]).contains("--body-file"));
+    assert!(env.cake_err(&d, &["add", "x"]).contains("-m TEXT"));
     assert!(env.cake_err(&d, &["add", "x", "-m", "x", "--prio", "5"]).contains("priority"));
     assert!(env.cake_err(&d, &["add", "x", "-m", "x", "--due", "soon"]).contains("due"));
     assert!(env.cake_err(&d, &["add", "x", "-m", "x", "--blocked-by", "nope"]).contains("nope not found"));
@@ -180,6 +179,6 @@ fn help_exits_zero_and_usage_errors_fail() {
     let env = Env::new();
     let d = env.plain_store();
     assert!(env.cake_ok(&d, &["--help"]).contains("Usage: cake"));
-    assert!(env.cake_ok(&d, &["help", "add"]).contains("--body-file"));
+    assert!(env.cake_ok(&d, &["help", "add"]).contains("--todo"));
     assert!(env.cake_err(&d, &["bogus"]).contains("unrecognized subcommand"));
 }

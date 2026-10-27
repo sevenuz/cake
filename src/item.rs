@@ -47,7 +47,6 @@ pub struct Item {
     tags: Vec<String>,
     parent: Option<String>,
     blocked_by: Vec<String>,
-    related: Vec<String>,
     timestamp: i64, // creation timestamp
     closed: Option<i64>,
     due: Option<String>,
@@ -95,7 +94,7 @@ fn list(v: &[String], f: fn(&str) -> String) -> String {
 }
 
 fn take_str(m: &mut Mapping, key: &str) -> Result<Option<String>, ParseError> {
-    match m.remove(key) {
+    match m.shift_remove(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => Ok(Some(s)),
         Some(Value::Number(n)) => Ok(Some(n.to_string())),
@@ -105,7 +104,7 @@ fn take_str(m: &mut Mapping, key: &str) -> Result<Option<String>, ParseError> {
 }
 
 fn take_list(m: &mut Mapping, key: &str) -> Result<Vec<String>, ParseError> {
-    match m.remove(key) {
+    match m.shift_remove(key) {
         None | Some(Value::Null) => Ok(vec![]),
         Some(Value::Sequence(seq)) => seq
             .into_iter()
@@ -134,7 +133,6 @@ impl Item {
             tags,
             parent,
             blocked_by: vec![],
-            related: vec![],
             timestamp: util::timestamp(),
             closed: None,
             due: None,
@@ -163,18 +161,17 @@ impl Item {
             serde_yaml_ng::from_str(&front).map_err(|e| err(e.to_string()))?
         };
         let id = take_str(&mut m, "id")?.unwrap_or(fallback_id.to_string());
-        m.remove("kind"); // written by older versions, a status replaces it
+        m.shift_remove("kind"); // written by older versions, a status replaces it
         let status = take_str(&mut m, "status")?
             .map(|s| Status::parse(&s).map_err(err))
             .transpose()?;
         let tags = take_list(&mut m, "tags")?;
         let parent = take_str(&mut m, "parent")?.map(|p| unlink(&p));
         let blocked_by = take_list(&mut m, "blocked_by")?.iter().map(|s| unlink(s)).collect();
-        let related = take_list(&mut m, "related")?.iter().map(|s| unlink(s)).collect();
         let timestamp = take_time(&mut m, "created")?.unwrap_or(fallback_created);
         let closed = take_time(&mut m, "closed")?;
         let due = take_str(&mut m, "due")?;
-        let priority = match m.remove("priority") {
+        let priority = match m.shift_remove("priority") {
             None | Some(Value::Null) => None,
             Some(Value::Number(n)) if n.as_u64().is_some() => n.as_u64(),
             Some(_) => return Err(err("'priority' must be a number".to_string())),
@@ -197,7 +194,6 @@ impl Item {
             tags,
             parent,
             blocked_by,
-            related,
             timestamp,
             closed,
             due,
@@ -222,9 +218,6 @@ impl Item {
         }
         if !self.blocked_by.is_empty() {
             s += &format!("blocked_by: {}\n", list(&self.blocked_by, link));
-        }
-        if !self.related.is_empty() {
-            s += &format!("related: {}\n", list(&self.related, link));
         }
         s += &format!("created: {}\n", util::format_timestamp(self.timestamp));
         if let Some(c) = self.closed {
@@ -449,10 +442,6 @@ impl Item {
 
     pub fn set_blocked_by(&mut self, ids: Vec<String>) {
         self.blocked_by = ids;
-    }
-
-    pub fn set_related(&mut self, ids: Vec<String>) {
-        self.related = ids;
     }
 
     /// replaces the item but keeps the derived children
