@@ -42,6 +42,11 @@ use cake::{print_error, run};
 */
 
 fn main() {
+    // exit quietly when the reader goes away, e.g. cake ls | head
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     if let Err(e) = run() {
         print_error(&e);
         std::process::exit(1);
