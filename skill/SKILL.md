@@ -8,8 +8,9 @@ description: Track tasks, plans and notes with the cake CLI (markdown items in a
 cake stores tasks and notes as one markdown file per item in `.cake/items/`
 (project store, its own git branch) or `~/.local/share/cake` (personal global
 store, `-g`). Every change through `cake` is committed to the store
-automatically. Items you create get `by: claude-code` and your commits are
-tagged `[claude-code]` without you doing anything.
+automatically. Items you create get `by: <agent>` (from `AI_AGENT`), items
+you change record your session id in `sessions`, and your commits are tagged
+`[<agent>]`, all without you doing anything.
 
 ## Rules
 
@@ -20,12 +21,17 @@ tagged `[claude-code]` without you doing anything.
   inside `.cake/`. Everything through `cake`, so commits stay consistent.
 - **No loose plan files:** when a store exists, don't create `PLAN.md`,
   `TODO.md` or similar in the repo. Put them into the store.
-- **Edit only your own items** (`by` is `claude-code`, or another agent name
-  you run as). Never change the body, priority or due of items others created.
-  To add to someone else's item, create a child: `cake add -p <id> …`.
-  Status (`todo`/`done`/`drop`) and tags on others' items only when the user
-  asks or agreed to the change.
-- **Timers belong to the user:** don't `start`/`stop` unless asked.
+- **Edit only your own items** (`by` is your agent name, e.g. `claude-code`).
+  Never change body, priority, due, status or tags of items others created,
+  unless the user asks. To add to someone else's item, create a child:
+  `cake add -p <id> …`.
+- **Track your time:** `cake start <id>` when you begin work on your task,
+  `cake stop <id>` when you pause or finish. Only on your own items; the
+  owner of an item tracks its time.
+- **Never close your tasks:** when finished, stop the timer and tag `review`.
+  The user closes them.
+- **Short:** titles ≤ 60 chars; bodies ≤ 5 bullets, no prose. Bigger → split
+  into child items.
 - **No `cake sync`** unless the user asks (network, may conflict).
 - **Cite items by id** and, after changes, list what you created or changed.
 
@@ -60,6 +66,7 @@ cake show <id> --json                   # one item with body
 cake add --json [--todo] [-p ID] [-t TAGS] [--blocked-by IDS] [--prio N] [--due D] -m TEXT
 cake edit <id> --json -m -              # replace the body (frontmatter stays), from stdin
 cake edit <id> --json --prio 1 --due 2026-10-30   # 0 / - clear them
+cake start|stop <id> --json            # your timer; start sets doing
 cake todo|done|drop <ids> --json        # set status; done/drop set `closed`
 cake tag <ids> a,~b --json              # add a, remove b
 cake mv <id> <parent|-> --json          # re-parent / detach
@@ -69,7 +76,7 @@ cake rm <ids> --json
 
 Selectors (combine with and, `--or` for or): ids `a,b`, `-s TEXT` (title or
 body), `--status todo,doing` (also `done`, `dropped`, `none` = notes), `-t tag,~not`,
-`-p PARENT`, `--ready`, `--blocked`, `--by NAME`, `-r` (with children).
+`-p PARENT`, `--ready`, `--blocked`, `--by NAME`, `--childless`, `-r` (with children).
 
 Multi-line content:
 
@@ -88,7 +95,7 @@ EOF
   `-l`; use `show <id>` for one item's body.
 - Item: `id`, `title`, `body`, `status` (null = note), `tags`, `parent`,
   `children`, `blocked_by`, `blocks`, `ready`, `due`, `priority`, `created`,
-  `closed`, `by`, `running`, `tracked_seconds`, `time`, `path`.
+  `closed`, `by`, `sessions`, `running`, `tracked_seconds`, `time`, `path`.
 - Error: `{"v": 1, "error": {"code", "message"}}`, exit code 1.
 
 | code | do |
@@ -99,26 +106,39 @@ EOF
 | `not_published` | only from sync; tell the user about `cake sync --publish` |
 | `git`, `other` | report the message |
 
-## Workflows
+## Workflow with the user
 
-**Session start / "what next?"** — `cake ready --json`, propose from that
-list (not from everything open). For background on a topic:
-`cake ls --json -s <topic>` and `cake show <id> --json` on relevant notes.
-Reuse existing items instead of adding duplicates.
+Tags: one area tag (`git`, `tui`, …) plus `ask` and `review`.
 
-**Plan non-trivial work** — write the plan as a note under the task it
-belongs to: `cake add --json -p <task> -t <area> -m - <<'EOF' …`. Split
-deliverables into `--todo` children of the task, one per deliverable.
-Ordering constraints → `cake block <later> --by <earlier>`. Update your own
-plan note with `cake edit <id> --json -m -` when it changes; for a plan
-someone else wrote, add a child note instead.
+```
+idea      (user,  note)   stays as the user wrote it
+├─ plan   (agent, note)   decisions, ≤ 5 bullets
+├─ task   (agent, todo)   one deliverable
+│  └─ sub (agent, todo)   divide and conquer
+├─ task   (agent, todo)   --blocked-by the first
+└─ Q      (agent, note, tag ask)
+```
 
-**Found work mid-task** — `cake add --json --todo -p <current> -m "# …"` for
-a subtask; unrelated → top level with a tag. Don't silently expand scope;
-mention what you added.
+1. **New ideas** — `cake ls --json --status none --childless`; the user's
+   notes among them (`by` is not you) are not worked out yet.
+2. **Discuss** in chat. Propose the breakdown as bullets; write nothing
+   until the user agrees.
+3. **Write down** — under the idea: one plan note, then one `--todo` per
+   deliverable. Split big tasks into children; order with `--blocked-by`.
+   Priority only when the user names one.
+4. **Work** — pick from `cake ready --json`. `cake start <id>`; write each
+   task once, show progress with status and tags. New findings → child
+   items. A decision needed → child note tagged `ask`; remove the tag when
+   answered.
+5. **Finish** — `cake stop <id>`, `cake tag <id> review`; tell the user what
+   is ready for review and what became unblocked (`blocks`, `cake ready`).
+   The user closes with `cake done`.
 
-**Finish** — before `cake done <id> --json`, read its `blocks`; afterwards
-run `cake ready --json` and tell the user what became ready.
+**Context** — `cake ls --json -s <topic>`, `cake show <id> --json` on
+relevant notes. Reuse items instead of adding duplicates.
+
+**Sessions** — `sessions` lists the agent sessions that changed an item;
+resume one to see how a task was done (Claude Code: `claude --resume <id>`).
 
 **Personal note** — `cake -g add --json -m "# …"`; find later with
 `cake -g ls --json -s …`.
