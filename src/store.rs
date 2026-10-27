@@ -222,6 +222,21 @@ pub mod inner {
             Ok(())
         }
 
+        /// open item with at least one open blocker
+        pub fn is_blocked(&self, id: &str) -> bool {
+            self.items.get(id).is_some_and(|i| {
+                i.is_open()
+                    && i.blocked_by()
+                        .iter()
+                        .any(|b| self.items.get(b).is_some_and(|b| b.is_open()))
+            })
+        }
+
+        /// open item without open blockers
+        pub fn is_ready(&self, id: &str) -> bool {
+            self.items.get(id).is_some_and(|i| i.is_open()) && !self.is_blocked(id)
+        }
+
         pub fn get_item(&self, id: &str) -> Option<&Item> {
             return self.items.get(id);
         }

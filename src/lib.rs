@@ -82,6 +82,26 @@ pub struct SelectorArgs {
     /// Concatinate selectors with or instead of and
     #[arg(long)]
     or: bool,
+
+    /// Select by text in title or body, case-insensitive
+    #[arg(short, long, value_name = "TEXT")]
+    search: Option<String>,
+
+    /// Select by kind: task|note
+    #[arg(long)]
+    kind: Option<String>,
+
+    /// Select by status: todo|doing|done|dropped, comma separated
+    #[arg(long)]
+    status: Option<String>,
+
+    /// Select open items without open blockers
+    #[arg(long)]
+    ready: bool,
+
+    /// Select open items with open blockers
+    #[arg(long)]
+    blocked: bool,
 }
 
 impl SelectorArgs {
@@ -97,7 +117,8 @@ impl SelectorArgs {
             &self.stopped,
             &self.recursive,
             &self.or,
-        )
+        )?
+        .with_filters(&self.search, &self.kind, &self.status, self.ready, self.blocked)
     }
 }
 

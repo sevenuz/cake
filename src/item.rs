@@ -13,6 +13,16 @@ pub enum Kind {
     Note,
 }
 
+impl Kind {
+    pub fn parse(s: &str) -> Result<Kind, String> {
+        match s {
+            "task" => Ok(Kind::Task),
+            "note" => Ok(Kind::Note),
+            _ => Err(format!("unknown kind '{}', use task|note", s)),
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Status {
     Todo,
@@ -171,10 +181,9 @@ impl Item {
             serde_yaml_ng::from_str(&front).map_err(|e| err(e.to_string()))?
         };
         let id = take_str(&mut m, "id")?.unwrap_or(fallback_id.to_string());
-        let kind = match take_str(&mut m, "kind")?.as_deref() {
-            None | Some("task") => Kind::Task,
-            Some("note") => Kind::Note,
-            Some(k) => return Err(err(format!("unknown kind '{}'", k))),
+        let kind = match take_str(&mut m, "kind")? {
+            None => Kind::Task,
+            Some(k) => Kind::parse(&k).map_err(err)?,
         };
         let status = match take_str(&mut m, "status")?.as_deref() {
             None if kind == Kind::Task => Some(Status::Todo),
@@ -407,6 +416,19 @@ impl Item {
         } else {
             Err(format!("{} is not running.", self.id))
         }
+    }
+
+    pub fn kind(&self) -> Kind {
+        self.kind
+    }
+
+    pub fn blocked_by(&self) -> &Vec<String> {
+        &self.blocked_by
+    }
+
+    /// todo or doing
+    pub fn is_open(&self) -> bool {
+        self.status.is_some_and(|s| s.is_open())
     }
 
     pub fn status(&self) -> Option<Status> {

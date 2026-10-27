@@ -1,3 +1,4 @@
+use crate::item::{Kind, Status};
 use crate::store::{Store, MAX_DEPTH};
 use crate::util;
 use std::error::Error;
@@ -17,6 +18,11 @@ pub struct Selector {
     pub rparents: bool,  // recursive for parents
     pub rchildren: bool, // recursive for children
     or: bool,            // use or concatination of selectors
+    pub search: Option<String>, // lowercase substring of the content
+    pub kind: Option<Kind>,
+    pub status: Vec<Status>,
+    pub ready: bool,
+    pub blocked: bool,
 }
 
 impl Selector {
@@ -45,7 +51,32 @@ impl Selector {
             rparents: *recursive > 1, // -rr only parents, -rrr both
             rchildren: *recursive == 1 || *recursive > 2, // -r only children, -rrr both
             or: *or,
+            search: None,
+            kind: None,
+            status: vec![],
+            ready: false,
+            blocked: false,
         })
+    }
+
+    /// sets the filters that are not part of `new`
+    pub fn with_filters(
+        mut self,
+        search: &Option<String>,
+        kind: &Option<String>,
+        status: &Option<String>,
+        ready: bool,
+        blocked: bool,
+    ) -> Result<Selector, Box<dyn Error>> {
+        self.search = search.as_ref().map(|s| s.to_lowercase());
+        self.kind = kind.as_deref().map(Kind::parse).transpose()?;
+        self.status = util::split_comma_cleanup(status.to_owned().unwrap_or_default())
+            .iter()
+            .map(|s| Status::parse(s))
+            .collect::<Result<_, _>>()?;
+        self.ready = ready;
+        self.blocked = blocked;
+        Ok(self)
     }
 
     /// check if selector is empty, except exclude_tags
@@ -57,7 +88,22 @@ impl Selector {
             && self.before.is_none()
             && self.after.is_none()
             && !self.started
-            && !self.stopped;
+            && !self.stopped
+            && self.search.is_none()
+            && self.kind.is_none()
+            && self.status.is_empty()
+            && !self.ready
+            && !self.blocked;
+    }
+
+    fn matches_search(&self, content: &str) -> bool {
+        self.search
+            .as_ref()
+            .is_some_and(|s| content.to_lowercase().contains(s))
+    }
+
+    fn matches_status(&self, status: Option<Status>) -> bool {
+        status.is_some_and(|s| self.status.contains(&s))
     }
 
     /// checks if item should be excluded
@@ -114,6 +160,11 @@ impl Selector {
                     || self.after.is_some() && item.timestamp() > self.after.unwrap()
                     || item.is_started() && self.started
                     || item.is_stopped() && self.stopped
+                    || self.matches_search(item.content())
+                    || self.kind == Some(item.kind())
+                    || self.matches_status(item.status())
+                    || self.ready && store.is_ready(key)
+                    || self.blocked && store.is_blocked(key)
             })
             .map(|s| s.to_owned())
             .collect::<Vec<String>>();
@@ -135,6 +186,11 @@ impl Selector {
                     && (self.after.is_none() || item.timestamp() > self.after.unwrap())
                     && (!self.started || item.is_started())
                     && (!self.stopped || item.is_stopped())
+                    && (self.search.is_none() || self.matches_search(item.content()))
+                    && (self.kind.is_none() || self.kind == Some(item.kind()))
+                    && (self.status.is_empty() || self.matches_status(item.status()))
+                    && (!self.ready || store.is_ready(key))
+                    && (!self.blocked || store.is_blocked(key))
             })
             .map(|s| s.to_owned())
             .collect::<Vec<_>>();
@@ -210,6 +266,56 @@ mod tests {
         ]);
         let result = selector("work,~blocked", false).get(&store, false);
         assert_eq!(result, vec!["a".to_string()]);
+    }
+
+    fn filtered(search: Option<&str>, kind: Option<&str>, status: Option<&str>, ready: bool, blocked: bool) -> Selector {
+        let none = Selector::new(&None, &None, &None, &None, &None, &None, &false, &false, &0, &false);
+        none.unwrap()
+            .with_filters(
+                &search.map(String::from),
+                &kind.map(String::from),
+                &status.map(String::from),
+                ready,
+                blocked,
+            )
+            .unwrap()
+    }
+
+    fn sorted(mut v: Vec<String>) -> Vec<String> {
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn search_kind_and_status_filters() {
+        let mut note = Item::new("n".into(), vec![], None, vec![]);
+        note.set_note();
+        note.set_content("# Meeting NOTES".into());
+        let mut done = Item::new("d".into(), vec![], None, vec![]);
+        done.set_status(Status::Done).unwrap();
+        let store = store_with(vec![note, done, tagged("t", &[])]);
+
+        assert_eq!(filtered(Some("meeting notes"), None, None, false, false).get(&store, false), vec!["n"]);
+        assert_eq!(filtered(None, Some("note"), None, false, false).get(&store, false), vec!["n"]);
+        assert_eq!(sorted(filtered(None, None, Some("todo,done"), false, false).get(&store, false)), vec!["d", "t"]);
+        assert!(Selector::new(&None, &None, &None, &None, &None, &None, &false, &false, &0, &false)
+            .unwrap()
+            .with_filters(&None, &None, &Some("closed".into()), false, false)
+            .is_err());
+    }
+
+    #[test]
+    fn ready_and_blocked_follow_open_blockers() {
+        let mut blocked = Item::new("a".into(), vec![], None, vec![]);
+        blocked.set_blocked_by(vec!["b".into()]);
+        let mut unblocked = Item::new("c".into(), vec![], None, vec![]);
+        unblocked.set_blocked_by(vec!["d".into()]);
+        let mut done = Item::new("d".into(), vec![], None, vec![]);
+        done.set_status(Status::Done).unwrap();
+        let store = store_with(vec![blocked, tagged("b", &[]), unblocked, done]);
+
+        assert_eq!(filtered(None, None, None, false, true).get(&store, false), vec!["a"]);
+        assert_eq!(sorted(filtered(None, None, None, true, false).get(&store, false)), vec!["b", "c"]);
     }
 
     #[test]

@@ -109,3 +109,28 @@ fn mv_reparents_refuses_cycles_and_detaches() {
     env.cake_ok(&d, &["mv", "c", "-"]);
     assert!(!read_item(&d, "c").contains("parent:"));
 }
+
+#[test]
+fn ls_filters_by_text_kind_status_and_blockers() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "aaa", "-m", "# Worktree sync"]);
+    env.cake_ok(&d, &["add", "bbb", "--note", "-m", "# Design notes"]);
+    env.cake_ok(&d, &["add", "ccc", "--blocked-by", "aaa", "-m", "# TUI"]);
+    env.cake_ok(&d, &["add", "ddd", "-m", "# old"]);
+    env.cake_ok(&d, &["done", "ddd"]);
+
+    let ids = |args: &[&str]| {
+        let out = env.cake_ok(&d, args);
+        ["aaa", "bbb", "ccc", "ddd"]
+            .into_iter()
+            .filter(|id| out.contains(id))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids(&["ls", "-s", "WORKTREE"]), vec!["aaa"]);
+    assert_eq!(ids(&["ls", "--kind", "note"]), vec!["bbb"]);
+    assert_eq!(ids(&["ls", "--status", "done"]), vec!["ddd"]);
+    assert_eq!(ids(&["ls", "--ready"]), vec!["aaa"]);
+    assert_eq!(ids(&["ls", "--blocked"]), vec!["ccc"]);
+    assert!(env.cake_err(&d, &["ls", "--status", "closed"]).contains("unknown status"));
+}
