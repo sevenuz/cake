@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::item::Item;
+use crate::item::{Item, Status};
 use crate::store::{inner::ItemView, RecState, Store, MAX_DEPTH};
 use crate::view;
 use crate::Selector;
@@ -65,12 +65,24 @@ where
     Ok(())
 }
 
+/// ids for commands that change items: refuses an empty selector (it would
+/// match everything) and unknown ids
+fn select(store: &Store, selector: &Selector) -> Result<Vec<String>, Box<dyn Error>> {
+    if selector.is_empty() {
+        return Err("No items selected, give ids or selectors.".into());
+    }
+    if let Some(id) = selector.ids.iter().find(|id| store.get_item(id).is_none()) {
+        return Err(format!("{} not found.", id).into());
+    }
+    Ok(selector.get(store, true))
+}
+
 pub fn remove<F>(debug: F, store: &mut Store, selector: Selector) -> Result<(), Box<dyn Error>>
 where
     F: Fn(&str),
 {
     debug(&format!("remove {:?}", selector));
-    let ids = selector.get(store, true);
+    let ids = select(store, &selector)?;
     for id in &ids {
         store.remove(id)?;
     }
@@ -88,7 +100,7 @@ where
     F: Fn(&str),
 {
     debug(&format!("tag {:?} new_tags {:?}", selector, tags));
-    let ids = selector.get(store, true);
+    let ids = select(store, &selector)?;
     for id in &ids {
         store
             .get_item_mut(id)
@@ -109,7 +121,7 @@ where
     F: Fn(&str),
 {
     debug(&format!("start {:?}", selector));
-    let ids = selector.get(store, true);
+    let ids = select(store, &selector)?;
     for id in &ids {
         store
             .get_item_mut(id)
@@ -120,16 +132,38 @@ where
     Ok(())
 }
 
-pub fn stop<F>(debug: F, store: &mut Store, selector: Selector) -> Result<(), Box<dyn Error>>
+/// stops the selected items, without selector the running ones
+pub fn stop<F>(debug: F, store: &mut Store, mut selector: Selector) -> Result<(), Box<dyn Error>>
 where
     F: Fn(&str),
 {
     debug(&format!("stop {:?}", selector));
-    let ids = selector.get(store, true);
+    if selector.is_empty() {
+        selector.started = true;
+    }
+    let ids = select(store, &selector)?;
     for id in &ids {
         store.get_item_mut(id).expect("Could not found id").stop()?;
     }
     println!("{} stopped.", ids.len());
+    Ok(())
+}
+
+pub fn set_status<F>(
+    debug: F,
+    store: &mut Store,
+    selector: Selector,
+    status: Status,
+) -> Result<(), Box<dyn Error>>
+where
+    F: Fn(&str),
+{
+    debug(&format!("set_status {:?} {:?}", selector, status));
+    let ids = select(store, &selector)?;
+    for id in &ids {
+        store.get_item_mut(id).unwrap().set_status(status)?;
+    }
+    println!("{} {}.", ids.len(), status.as_str());
     Ok(())
 }
 

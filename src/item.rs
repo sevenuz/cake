@@ -22,7 +22,21 @@ pub enum Status {
 }
 
 impl Status {
-    fn as_str(&self) -> &'static str {
+    pub fn parse(s: &str) -> Result<Status, String> {
+        match s {
+            "todo" => Ok(Status::Todo),
+            "doing" => Ok(Status::Doing),
+            "done" => Ok(Status::Done),
+            "dropped" => Ok(Status::Dropped),
+            _ => Err(format!("unknown status '{}', use todo|doing|done|dropped", s)),
+        }
+    }
+
+    pub fn is_open(&self) -> bool {
+        matches!(self, Status::Todo | Status::Doing)
+    }
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             Status::Todo => "todo",
             Status::Doing => "doing",
@@ -165,11 +179,7 @@ impl Item {
         let status = match take_str(&mut m, "status")?.as_deref() {
             None if kind == Kind::Task => Some(Status::Todo),
             None => None,
-            Some("todo") => Some(Status::Todo),
-            Some("doing") => Some(Status::Doing),
-            Some("done") => Some(Status::Done),
-            Some("dropped") => Some(Status::Dropped),
-            Some(s) => return Err(err(format!("unknown status '{}'", s))),
+            Some(s) => Some(Status::parse(s).map_err(err)?),
         };
         let tags = take_list(&mut m, "tags")?;
         let parent = take_str(&mut m, "parent")?.map(|p| unlink(&p));
@@ -300,7 +310,7 @@ impl Item {
         format!(
             "| id | {}|\n|---|---|\n| status | {}|\n| created | {}|\n| tags | {}|\n| timetrack | {}|\n| parent | {}|\n| children | {}|\n| blocked by | {}|\n\n{}",
             self.id,
-            self.status.map(|s| s.as_str()).unwrap_or("note"),
+            self.status().map(|s| s.as_str()).unwrap_or("note"),
             util::format_timestamp(self.timestamp),
             util::vec_to_str(&self.tags),
             util::vec_to_str(&tt),
@@ -397,6 +407,28 @@ impl Item {
         } else {
             Err(format!("{} is not running.", self.id))
         }
+    }
+
+    pub fn status(&self) -> Option<Status> {
+        self.status
+    }
+
+    /// sets the task status: done/dropped stop a running timer and set
+    /// `closed`, todo/doing remove it
+    pub fn set_status(&mut self, status: Status) -> Result<(), String> {
+        if self.kind == Kind::Note {
+            return Err(format!("{} is a note, notes have no status.", self.id));
+        }
+        if status.is_open() {
+            self.closed = None;
+        } else {
+            if self.is_started() {
+                self.stop()?;
+            }
+            self.closed = Some(util::timestamp());
+        }
+        self.status = Some(status);
+        Ok(())
     }
 
     /// replaces the item but keeps the derived children

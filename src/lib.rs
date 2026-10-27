@@ -13,6 +13,7 @@ mod view;
 use crate::store::Store;
 use clap::{Args, Parser, Subcommand};
 use config::Config;
+use item::Status;
 use selector::Selector;
 use std::{
     env::{args, current_dir},
@@ -153,8 +154,23 @@ pub enum Commands {
         #[command(flatten)]
         selector: SelectorArgs,
     },
-    /// stop timetracking for item
+    /// stop timetracking for item, without selector the running ones
     Stop {
+        #[command(flatten)]
+        selector: SelectorArgs,
+    },
+    /// mark tasks done: stops the timer, sets closed
+    Done {
+        #[command(flatten)]
+        selector: SelectorArgs,
+    },
+    /// mark tasks dropped: stops the timer, sets closed
+    Drop {
+        #[command(flatten)]
+        selector: SelectorArgs,
+    },
+    /// set tasks back to todo
+    Reopen {
         #[command(flatten)]
         selector: SelectorArgs,
     },
@@ -204,6 +220,9 @@ impl Commands {
                 | Commands::Tag { .. }
                 | Commands::Start { .. }
                 | Commands::Stop { .. }
+                | Commands::Done { .. }
+                | Commands::Drop { .. }
+                | Commands::Reopen { .. }
         )
     }
 }
@@ -305,6 +324,18 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
         Some(Commands::Stop { selector }) => {
             commands::stop(debug, &mut &mut store, selector.selector(&selector.ids)?)?
+        }
+        Some(Commands::Done { selector }) => {
+            commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Done)?
+        }
+        Some(Commands::Drop { selector }) => commands::set_status(
+            debug,
+            &mut store,
+            selector.selector(&selector.ids)?,
+            Status::Dropped,
+        )?,
+        Some(Commands::Reopen { selector }) => {
+            commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Todo)?
         }
         Some(Commands::List { selector, long }) => commands::list(
             debug,

@@ -72,3 +72,30 @@ fn print_uses_backslash_border_when_item_has_children() {
     let item = Item::new("abc".to_string(), vec![], None, vec![]);
     assert!(item.print(5, true).starts_with('\\'));
 }
+
+#[test]
+fn done_stops_timer_and_sets_closed_reopen_clears_it() {
+    let mut item = Item::new("a".into(), vec![], None, vec![]);
+    item.start().unwrap();
+    item.set_status(Status::Done).unwrap();
+    assert!(item.is_stopped());
+    assert!(item.to_markdown().contains("status: done\n"));
+    assert!(item.to_markdown().contains("\nclosed: "));
+
+    item.set_status(Status::Todo).unwrap();
+    assert!(!item.to_markdown().contains("closed:"));
+    assert_eq!(item.status(), Some(Status::Todo));
+}
+
+#[test]
+fn notes_have_no_status() {
+    let mut item = Item::from_markdown("---\nkind: note\n---\nx\n", "n", 0).unwrap();
+    assert!(item.set_status(Status::Done).is_err());
+    assert_eq!(item.status(), None);
+}
+
+#[test]
+fn status_parse_rejects_unknown() {
+    assert_eq!(Status::parse("dropped"), Ok(Status::Dropped));
+    assert!(Status::parse("closed").is_err());
+}
