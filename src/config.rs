@@ -23,12 +23,11 @@ pub struct Config {
     pub editor: String,
     /// disable all git actions
     pub disable_git: bool,
-    /// git branch name for cake init --git
-    pub git_branch_name: String,
-    /// git branch remote name for cake init --git
+    /// branch of the project store worktree
+    #[serde(default = "default_git_branch")]
+    pub git_branch: String,
+    /// remote used by cake init and cake sync --publish
     pub git_remote_name: String,
-    /// push and fetch by default on the cake branch
-    pub git_push_fetch: bool,
     /// searches in config dir for skin file (hjson)
     skin_file_name: String,
     /// When output has more lines than the threshold, then show it in scrollview
@@ -58,6 +57,10 @@ horizontal-rule: "~ #00cafe"
 table: "#540 left"
 scrollbar: "red yellow""###;
 
+fn default_git_branch() -> String {
+    "cake/main".to_string()
+}
+
 impl Config {
     pub fn new() -> Result<Config, Box<dyn Error>> {
         if let Ok(serialized) = std::fs::read_to_string(util::config_file()?) {
@@ -68,9 +71,8 @@ impl Config {
                 dirty: true,
                 editor: std::env::var("EDITOR").unwrap_or("vim".to_string()),
                 disable_git: false,
-                git_branch_name: "cake".to_string(),
+                git_branch: default_git_branch(),
                 git_remote_name: "origin".to_string(),
-                git_push_fetch: false,
                 skin_file_name: "gruvbox.hjson".to_string(),
                 scrollview_threshold: 30,
             })
@@ -125,10 +127,9 @@ mod tests {
     fn new_returns_sane_defaults_when_no_config_file_exists() {
         let _sandbox = Sandbox::new();
         let config = Config::new().unwrap();
-        assert_eq!(config.git_branch_name, "cake");
+        assert_eq!(config.git_branch, "cake/main");
         assert_eq!(config.git_remote_name, "origin");
         assert!(!config.disable_git);
-        assert!(!config.git_push_fetch);
     }
 
     #[test]

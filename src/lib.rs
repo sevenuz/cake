@@ -33,11 +33,6 @@ pub struct Cli {
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub debug: u8,
 
-    /// Activate git push and fetch for the following action.
-    /// It only works if a cake branch exists, see 'cake help init'
-    #[arg(short, long)]
-    pub git: bool,
-
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -174,17 +169,8 @@ pub enum Commands {
         /// Path to the file
         path: String,
     },
-    /// Creates new cake save file in current directory, checkout `cake help init` for git options.
-    Init {
-        /// Creates new branch for the cake save file which is checked out
-        /// before every cake operation.
-        #[arg(long)]
-        git: bool,
-        /// Wether the cake branch should be pushed to remote or not.
-        /// This option works only together with the git option.
-        #[arg(long)]
-        remote: bool,
-    },
+    /// Creates a new store (.cake) in the current directory
+    Init {},
     /// Open config file in editor
     Config {},
 }
@@ -212,45 +198,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     debug(&format!("{:?}", args));
 
     let config = Config::new()?;
-    let mut current_branch = "".to_string();
-    let mut stash_guard: Option<git::StashGuard> = None;
-    if git::is_repo() && !config.disable_git {
-        current_branch = git::current_branch_name()?;
-        if git::check_if_branch_exists(&config)? {
-            debug(&format!(
-                "detected git repo and cake branch. current branch: {:?}",
-                current_branch
-            ));
-            debug(&format!("git stash"));
-            stash_guard = Some(git::StashGuard::new(&current_branch)?);
-            debug(&format!("git checkout {:?}", config.git_branch_name));
-            git::checkout_branch(&config.git_branch_name)?;
-            if config.git_push_fetch || cli.git {
-                if !git::check_if_remote_branch_exists(&config)? {
-                    return Err(Box::from(
-                        "There is no remote branch for '".to_owned()
-                            + &config.git_branch_name
-                            + "'. You need to set it yourself. Abort...",
-                    ));
-                }
-                debug(&format!("git fetch"));
-                println!("{}", "Fetching...".to_string().grey().italic());
-                git::fetch(&config)?;
-                debug(&format!("git rebase"));
-                git::rebase()?;
-                if git::check_conflicts()? {
-                    debug(&format!("git rebase --abourt"));
-                    git::rebase_abort()?;
-                    // stash_guard drops here: checks out `current_branch` and pops the stash
-                    return Err(Box::from(
-                        "There are merge conflicts on branch '".to_owned()
-                            + &config.git_branch_name
-                            + "'. You need to resolve them, sorry. Abort...",
-                    ));
-                }
-            }
-        }
-    }
     let root = match &cli.store {
         Some(p) => p.to_owned(),
         None => util::find_store(&current_dir()?)?,
@@ -309,7 +256,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             *long,
         )?,
         Some(Commands::Show { path }) => commands::show(debug, &config, path)?,
-        Some(Commands::Init { git, remote }) => commands::init(debug, &config, *git, *remote)?,
+        Some(Commands::Init {}) => commands::init(debug)?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         None => {
             println!("Nothing happed o.0");
@@ -317,32 +264,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     }
 
     let changed = store.save()?;
-    if git::is_repo() && !config.disable_git {
-        if git::check_if_branch_exists(&config)? {
-            for path in &changed {
-                debug(&format!("git add {:?}", path));
-                git::add(path)?;
-            }
-            debug(&format!("git commit"));
-            let args: String = std::env::args().collect::<Vec<_>>().join(" ");
-            git::commit(&args)?;
-            if config.git_push_fetch || cli.git {
-                if !git::check_if_remote_branch_exists(&config)? {
-                    return Err(Box::from(
-                        "There is no remote branch for '".to_owned()
-                            + &config.git_branch_name
-                            + "'. You need to set it yourself. Abort...",
-                    ));
-                }
-                println!("{}", "Pushing...".to_string().grey().italic());
-                debug(&format!("git push"));
-                git::push(&config)?;
-            }
-            debug(&format!("git checkout {:?}", current_branch));
-            debug(&format!("git stash pop"));
-        }
+    if !config.disable_git && git::is_store_repo(&root) {
+        let message = format!("cake {}", args[1..].join(" "));
+        debug(&format!("git commit {:?}: {}", changed, message));
+        git::commit(&root, &changed, &message)?;
     }
-    drop(stash_guard);
     config.write_json_if_dirty()?;
     Ok(())
 }

@@ -3,7 +3,7 @@ use crate::item::Item;
 use crate::store::{inner::ItemView, RecState, Store, MAX_DEPTH};
 use crate::view;
 use crate::Selector;
-use crate::{git, util};
+use crate::util;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
@@ -258,58 +258,17 @@ where
     Ok(())
 }
 
-pub fn init<F>(debug: F, config: &Config, git: bool, remote: bool) -> Result<(), Box<dyn Error>>
+pub fn init<F>(debug: F) -> Result<(), Box<dyn Error>>
 where
     F: Fn(&str),
 {
-    debug(&format!("init: git {:?}, remote {:?}", git, remote));
-    if git {
-        if config.disable_git {
-            return Err(Box::from(
-                "You have git support disabled. Check 'cake config'.",
-            ));
-        }
-        if !git::is_repo() {
-            return Err(Box::from(
-                "You can use 'cake init --git' only in an existing repository.",
-            ));
-        }
-        if git::check_if_branch_exists(config)? {
-            return Err(Box::from(
-                "The branch '".to_owned() + &config.git_branch_name + "' already exists. Abort...",
-            ));
-        }
-        let current_branch = git::current_branch_name()?;
-        debug(&format!("init: current branch {:?}", current_branch));
-        debug(&format!("init: stash"));
-        let _stash_guard = git::StashGuard::new(&current_branch)?;
-        debug(&format!("init: create {}", config.git_branch_name));
-        git::create_branch(config)?;
-        debug(&format!("init: checkout {}", config.git_branch_name));
-        git::checkout_branch(&config.git_branch_name)?;
-        let p = Path::new(util::STORE_DIR).join("items");
-        debug(&format!("init: new store {:?}", p));
-        fs::create_dir_all(&p)?;
-        println!("New store {} created at branch {} :)", util::STORE_DIR, config.git_branch_name);
-        if remote {
-            debug(&format!(
-                "init: push --set-upstream {} {}",
-                config.git_remote_name, config.git_branch_name
-            ));
-            git::push_set_upstream(config)?;
-        }
-        debug(&format!("init: checkout {}", current_branch));
-        debug(&format!("init: stash pop"));
-        // _stash_guard drops here: checks out `current_branch` and pops the stash
-    } else {
-        let p = Path::new(util::STORE_DIR).join("items");
-        debug(&format!("init: new store {:?}", p));
-        if p.is_dir() {
-            return Err("There is already a store here.".into());
-        }
-        fs::create_dir_all(&p)?;
-        println!("New store {} created :)", util::STORE_DIR);
+    let p = Path::new(util::STORE_DIR).join("items");
+    debug(&format!("init: new store {:?}", p));
+    if p.is_dir() {
+        return Err("There is already a store here.".into());
     }
+    fs::create_dir_all(&p)?;
+    println!("New store {} created :)", util::STORE_DIR);
     Ok(())
 }
 

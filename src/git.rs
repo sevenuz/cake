@@ -1,170 +1,65 @@
 use std::{
     error::Error,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Output},
 };
-
-use crate::config::Config;
 
 #[cfg(test)]
 mod tests;
 
-pub fn is_repo() -> bool {
-    Command::new("git")
-        .arg("rev-parse")
-        .arg("--is-inside-work-tree")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+fn run(dir: &Path, args: &[&str]) -> Result<Output, Box<dyn Error>> {
+    Ok(Command::new("git").arg("-C").arg(dir).args(args).output()?)
 }
 
-pub fn check_if_branch_exists(config: &Config) -> Result<bool, Box<dyn Error>> {
-    let output = String::from_utf8(
-        Command::new("git")
-            .arg("branch")
-            .arg("--list")
-            .arg(&config.git_branch_name)
-            .output()?
-            .stdout,
-    )?;
-    Ok(!output.trim().is_empty())
+/// runs git in `dir`, returns trimmed stdout or an error with git's stderr
+fn git(dir: &Path, args: &[&str]) -> Result<String, Box<dyn Error>> {
+    let out = run(dir, args)?;
+    if !out.status.success() {
+        return Err(format!(
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        )
+        .into());
+    }
+    Ok(String::from_utf8(out.stdout)?.trim().to_string())
 }
 
-pub fn check_if_remote_branch_exists(config: &Config) -> Result<bool, Box<dyn Error>> {
-    let output = String::from_utf8(
-        Command::new("git")
-            .arg("branch")
-            .arg("--all")
-            .arg("--list")
-            .arg(format!(
-                "{}/{}",
-                &config.git_remote_name, &config.git_branch_name
-            ))
-            .output()?
-            .stdout,
-    )?;
-    Ok(!output.trim().is_empty())
+/// runs git in `dir`, true on exit code 0, false otherwise
+fn git_ok(dir: &Path, args: &[&str]) -> Result<bool, Box<dyn Error>> {
+    Ok(run(dir, args)?.status.success())
 }
 
-pub fn check_conflicts() -> Result<bool, Box<dyn Error>> {
-    let output = String::from_utf8(
-        Command::new("git")
-            .arg("status")
-            .arg("--porcelain")
-            .output()?
-            .stdout,
-    )?;
-    // an unmerged (conflicted) path is reported with a `U` in either the
-    // staged or unstaged status column, e.g. "UU", "AU", "UD"
-    Ok(output
-        .lines()
-        .any(|line| line.get(0..2).is_some_and(|xy| xy.contains('U'))))
+pub fn is_repo(dir: &Path) -> bool {
+    git_ok(dir, &["rev-parse", "--is-inside-work-tree"]).unwrap_or(false)
 }
 
-pub fn stash() -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new("git").arg("stash").output()?)
+/// root of the working tree containing `dir`
+pub fn toplevel(dir: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    Ok(PathBuf::from(git(dir, &["rev-parse", "--show-toplevel"])?))
 }
 
-pub fn stash_pop() -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new("git").arg("stash").arg("pop").output()?)
-}
-
-/// Stashes uncommitted changes on creation; checks `original_branch` back
-/// out and restores the stash on drop, including on early return via `?`.
-pub struct StashGuard {
-    original_branch: String,
-}
-
-impl StashGuard {
-    pub fn new(original_branch: &str) -> Result<Self, Box<dyn Error>> {
-        stash()?;
-        Ok(Self {
-            original_branch: original_branch.to_string(),
-        })
+/// true if `dir` is the root of a git working tree (main or linked worktree),
+/// i.e. a store whose changes get committed. A plain `.cake` dir inside a code
+/// repo is not, so cake never commits to the code branch.
+pub fn is_store_repo(dir: &Path) -> bool {
+    match (toplevel(dir), dir.canonicalize()) {
+        (Ok(top), Ok(dir)) => top.canonicalize().map_or(false, |t| t == dir),
+        _ => false,
     }
 }
 
-impl Drop for StashGuard {
-    fn drop(&mut self) {
-        let _ = checkout_branch(&self.original_branch);
-        let _ = stash_pop();
+/// stages `paths` (also deletions) and commits them, no-op if nothing changed
+pub fn commit(dir: &Path, paths: &[PathBuf], message: &str) -> Result<(), Box<dyn Error>> {
+    if paths.is_empty() {
+        return Ok(());
     }
-}
-
-pub fn create_branch(config: &Config) -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new("git")
-        .arg("branch")
-        .arg(&config.git_branch_name)
-        .output()?)
-}
-
-pub fn current_branch_name() -> Result<String, Box<dyn Error>> {
-    let mut s = String::from_utf8(
-        Command::new("git")
-            .arg("rev-parse")
-            .arg("--abbrev-ref")
-            .arg("HEAD")
-            .output()?
-            .stdout,
-    )?;
-    if s.ends_with('\n') {
-        s.pop();
-        if s.ends_with('\r') {
-            s.pop();
-        }
+    let mut args = vec!["add", "-A", "--"];
+    args.extend(paths.iter().map(|p| p.to_str().unwrap()));
+    git(dir, &args)?;
+    if git_ok(dir, &["diff", "--cached", "--quiet"])? {
+        return Ok(());
     }
-    Ok(s)
-}
-
-pub fn checkout_branch(branch: &str) -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new("git").arg("checkout").arg(branch).output()?)
-}
-
-pub fn add(path: &Path) -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new("git")
-        .arg("add")
-        .arg(path)
-        .output()?)
-}
-
-pub fn commit(message: &str) -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new("git")
-        .arg("commit")
-        .arg("-m")
-        .arg(message)
-        .output()?)
-}
-
-pub fn fetch(config: &Config) -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new("git")
-        .arg("fetch")
-        .arg(&config.git_remote_name)
-        .arg(&config.git_branch_name)
-        .output()?)
-}
-
-pub fn rebase() -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new("git").arg("rebase").output()?)
-}
-
-pub fn rebase_abort() -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new("git").arg("rebase").arg("--abort").output()?)
-}
-
-pub fn push(config: &Config) -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new("git")
-        .arg("push")
-        .arg(&config.git_remote_name)
-        .arg(&config.git_branch_name)
-        .output()?)
-}
-
-pub fn push_set_upstream(config: &Config) -> Result<Output, Box<dyn Error>> {
-    //git push --set-upstream origin someti
-    Ok(Command::new("git")
-        .arg("push")
-        .arg("--set-upstream")
-        .arg(&config.git_remote_name)
-        .arg(&config.git_branch_name)
-        .output()?)
+    git(dir, &["commit", "-q", "-m", message])?;
+    Ok(())
 }
