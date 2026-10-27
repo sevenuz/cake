@@ -318,6 +318,41 @@ fn create_store_files(root: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     Ok(vec![gitignore])
 }
 
+pub fn sync<F>(
+    debug: F,
+    config: &Config,
+    root: &Path,
+    publish: &Option<String>,
+    cont: bool,
+    abort: bool,
+) -> Result<(), Box<dyn Error>>
+where
+    F: Fn(&str),
+{
+    if config.disable_git || !git::is_store_repo(root) {
+        return Err(format!("{} is not a git store, see `cake help init`.", root.display()).into());
+    }
+    if abort {
+        debug("sync: abort");
+        git::sync_abort(root)?;
+        println!("Merge aborted.");
+    } else if cont {
+        debug("sync: continue");
+        git::sync_continue(root)?;
+        println!("Synced.");
+    } else if let Some(remote) = publish {
+        let remote = if remote.is_empty() { &config.git_remote_name } else { remote };
+        debug(&format!("sync: publish to {}", remote));
+        git::publish(root, remote)?;
+        println!("Published to {}.", remote);
+    } else {
+        debug("sync");
+        git::sync(root)?;
+        println!("Synced.");
+    }
+    Ok(())
+}
+
 pub fn config<F>(debug: F, config: &Config) -> Result<(), Box<dyn Error>>
 where
     F: Fn(&str),

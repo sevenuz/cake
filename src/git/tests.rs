@@ -174,3 +174,111 @@ fn exclude_appends_once() {
     let content = fs::read_to_string(".git/info/exclude").unwrap();
     assert_eq!(content.matches("/.cake/").count(), 1);
 }
+
+/// code repo with remote and a published store, plus a second clone with an
+/// attached store; returns (store_a, store_b)
+fn two_published_stores(sandbox: &Sandbox) -> (PathBuf, PathBuf) {
+    sandbox.init_git_repo();
+    let remote = sandbox.path().join("remote.git");
+    init_bare_remote(&remote);
+    git("remote", &["add", "origin", remote.to_str().unwrap()]);
+    let a = sandbox.path().join(".cake");
+    add_worktree(sandbox.path(), &a, "cake/main", "origin").unwrap();
+    write_and_commit(&a, "item.md", "base\n");
+    publish(&a, "origin").unwrap();
+
+    let clone = sandbox.path().join("clone");
+    git("clone", &["-q", remote.to_str().unwrap(), clone.to_str().unwrap()]);
+    let b = clone.join(".cake");
+    add_worktree(&clone, &b, "cake/main", "origin").unwrap();
+    (a, b)
+}
+
+#[test]
+#[serial]
+fn sync_errors_when_never_published() {
+    let sandbox = Sandbox::new();
+    sandbox.init_git_repo();
+    let store = sandbox.path().join(".cake");
+    add_worktree(sandbox.path(), &store, "cake/main", "origin").unwrap();
+    write_and_commit(&store, "a.md", "a\n");
+    let err = sync(&store).unwrap_err().to_string();
+    assert!(err.contains("--publish"), "{}", err);
+}
+
+#[test]
+#[serial]
+fn sync_merges_and_pushes_both_ways() {
+    let sandbox = Sandbox::new();
+    let (a, b) = two_published_stores(&sandbox);
+    write_and_commit(&a, "from_a.md", "a\n");
+    write_and_commit(&b, "from_b.md", "b\n");
+
+    sync(&a).unwrap();
+    sync(&b).unwrap();
+    sync(&a).unwrap();
+
+    for store in [&a, &b] {
+        assert!(store.join("from_a.md").exists());
+        assert!(store.join("from_b.md").exists());
+    }
+    assert_eq!(
+        super::git(&a, &["rev-parse", "HEAD"]).unwrap(),
+        super::git(&b, &["rev-parse", "HEAD"]).unwrap()
+    );
+}
+
+#[test]
+#[serial]
+fn sync_conflict_is_left_in_progress_until_continue() {
+    let sandbox = Sandbox::new();
+    let (a, b) = two_published_stores(&sandbox);
+    write_and_commit(&a, "item.md", "from a\n");
+    sync(&a).unwrap();
+    write_and_commit(&b, "item.md", "from b\n");
+
+    let err = sync(&b).unwrap_err().to_string();
+    assert!(err.contains("item.md"), "{}", err);
+    assert!(merge_in_progress(&b).unwrap());
+    assert_eq!(conflicted_files(&b).unwrap(), vec!["item.md"]);
+    assert!(sync(&b).is_err(), "sync refuses while merging");
+
+    let err = sync_continue(&b).unwrap_err().to_string();
+    assert!(err.contains("markers"), "{}", err);
+
+    fs::write(b.join("item.md"), "from a and b\n").unwrap();
+    sync_continue(&b).unwrap();
+    assert!(!merge_in_progress(&b).unwrap());
+
+    sync(&a).unwrap();
+    assert_eq!(fs::read_to_string(a.join("item.md")).unwrap(), "from a and b\n");
+}
+
+#[test]
+#[serial]
+fn sync_abort_restores_local_state() {
+    let sandbox = Sandbox::new();
+    let (a, b) = two_published_stores(&sandbox);
+    write_and_commit(&a, "item.md", "from a\n");
+    sync(&a).unwrap();
+    write_and_commit(&b, "item.md", "from b\n");
+    assert!(sync(&b).is_err());
+
+    sync_abort(&b).unwrap();
+    assert!(!merge_in_progress(&b).unwrap());
+    assert_eq!(fs::read_to_string(b.join("item.md")).unwrap(), "from b\n");
+}
+
+#[test]
+#[serial]
+fn sync_continue_without_merge_errors() {
+    let sandbox = Sandbox::new();
+    sandbox.init_git_repo();
+    assert!(sync_continue(sandbox.path()).is_err());
+}
+
+#[test]
+fn conflict_markers_detected_only_at_line_start() {
+    assert!(has_conflict_markers("a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> x\n"));
+    assert!(!has_conflict_markers("a\n`<<<<<<< `\n==\n"));
+}

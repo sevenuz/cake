@@ -176,6 +176,20 @@ pub enum Commands {
     /// Creates a new store (.cake). In a git repo it is a worktree of an orphan
     /// branch (config git_branch), attached if the branch exists on the remote.
     Init {},
+    /// Fetch, merge and push the store. Only runs when invoked.
+    Sync {
+        /// Push the store for the first time and set the upstream (default remote: config git_remote_name)
+        #[arg(long, value_name = "REMOTE", num_args = 0..=1, default_missing_value = "", group = "mode")]
+        publish: Option<String>,
+
+        /// Commit the resolved merge and push
+        #[arg(long = "continue", group = "mode")]
+        cont: bool,
+
+        /// Abort the merge in progress
+        #[arg(long, group = "mode")]
+        abort: bool,
+    },
     /// Open config file in editor
     Config {},
 }
@@ -209,6 +223,16 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         None => util::find_store(&current_dir()?)?,
     };
     debug(&format!("Store: {}", root.display()));
+
+    // before loading: conflicted items may not parse
+    if let Some(Commands::Sync {
+        publish,
+        cont,
+        abort,
+    }) = &cli.command
+    {
+        return commands::sync(debug, &config, &root, publish, *cont, *abort);
+    }
     let mut store = Store::new(&root)?;
 
     // You can check for the existence of subcommands, and if found use their
@@ -264,6 +288,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Show { path }) => commands::show(debug, &config, path)?,
         Some(Commands::Init {}) => commands::init(debug, &config, cli.global)?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
+        Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
         None => {
             println!("Nothing happed o.0");
         }
@@ -293,6 +318,18 @@ mod tests {
     fn global_flag_parses_and_conflicts_with_store() {
         assert!(Cli::try_parse_from(["cake", "-g", "init"]).unwrap().global);
         assert!(Cli::try_parse_from(["cake", "-g", "--store", "x", "ls"]).is_err());
+    }
+
+    #[test]
+    fn sync_publish_takes_an_optional_remote_and_modes_conflict() {
+        let publish = |args: &[&str]| match Cli::try_parse_from(args).unwrap().command {
+            Some(Commands::Sync { publish, .. }) => publish,
+            _ => panic!("expected sync"),
+        };
+        assert_eq!(publish(&["cake", "sync"]), None);
+        assert_eq!(publish(&["cake", "sync", "--publish"]).as_deref(), Some(""));
+        assert_eq!(publish(&["cake", "sync", "--publish", "up"]).as_deref(), Some("up"));
+        assert!(Cli::try_parse_from(["cake", "sync", "--continue", "--abort"]).is_err());
     }
 
     #[test]

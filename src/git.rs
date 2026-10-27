@@ -134,3 +134,99 @@ pub fn init_repo(dir: &Path) -> Result<(), Box<dyn Error>> {
     git(dir, &["init", "-q", "-b", "main"])?;
     Ok(())
 }
+
+fn current_branch(dir: &Path) -> Result<String, Box<dyn Error>> {
+    git(dir, &["symbolic-ref", "--short", "HEAD"])
+}
+
+/// remote the current branch tracks, None if it was never published
+fn upstream_remote(dir: &Path) -> Result<Option<String>, Box<dyn Error>> {
+    let key = format!("branch.{}.remote", current_branch(dir)?);
+    let out = run(dir, &["config", "--get", &key])?;
+    Ok(out
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string()))
+}
+
+pub fn merge_in_progress(dir: &Path) -> Result<bool, Box<dyn Error>> {
+    git_ok(dir, &["rev-parse", "-q", "--verify", "MERGE_HEAD"])
+}
+
+/// unmerged paths, relative to `dir`
+pub fn conflicted_files(dir: &Path) -> Result<Vec<String>, Box<dyn Error>> {
+    Ok(git(dir, &["diff", "--name-only", "--diff-filter=U"])?
+        .lines()
+        .map(|l| l.to_string())
+        .collect())
+}
+
+fn conflict_error(dir: &Path) -> Box<dyn Error> {
+    let files = conflicted_files(dir).unwrap_or_default();
+    format!(
+        "merge conflict in: {}. Resolve them, then run `cake sync --continue` (or `--abort`).",
+        files.join(", ")
+    )
+    .into()
+}
+
+/// fetch, merge the upstream (no rebase) and push; leaves a conflicted merge
+/// in progress and returns an error listing the conflicted files
+pub fn sync(dir: &Path) -> Result<(), Box<dyn Error>> {
+    let remote = upstream_remote(dir)?
+        .ok_or("store is local-only; run `cake sync --publish [remote]`")?;
+    if merge_in_progress(dir)? {
+        return Err(conflict_error(dir));
+    }
+    git(dir, &["fetch", "-q", &remote])?;
+    if let Err(e) = git(dir, &["merge", "-q", "--no-edit", "@{u}"]) {
+        return Err(if merge_in_progress(dir)? { conflict_error(dir) } else { e });
+    }
+    git(dir, &["push", "-q", &remote, "HEAD"])?;
+    Ok(())
+}
+
+/// pushes the current branch to `remote` and sets it as upstream
+pub fn publish(dir: &Path, remote: &str) -> Result<(), Box<dyn Error>> {
+    git(dir, &["push", "-q", "-u", remote, "HEAD"])?;
+    Ok(())
+}
+
+fn has_conflict_markers(content: &str) -> bool {
+    content
+        .lines()
+        .any(|l| l.starts_with("<<<<<<< ") || l.starts_with(">>>>>>> ") || l == "=======")
+}
+
+/// commits a resolved merge and pushes it
+pub fn sync_continue(dir: &Path) -> Result<(), Box<dyn Error>> {
+    if !merge_in_progress(dir)? {
+        return Err("no merge in progress".into());
+    }
+    let files = conflicted_files(dir)?;
+    let unresolved: Vec<&String> = files
+        .iter()
+        .filter(|f| {
+            std::fs::read_to_string(dir.join(f)).map_or(false, |c| has_conflict_markers(&c))
+        })
+        .collect();
+    if !unresolved.is_empty() {
+        return Err(format!(
+            "conflict markers left in: {}",
+            unresolved.iter().map(|f| f.as_str()).collect::<Vec<_>>().join(", ")
+        )
+        .into());
+    }
+    let mut args = vec!["add", "-A", "--"];
+    args.extend(files.iter().map(|f| f.as_str()));
+    if !files.is_empty() {
+        git(dir, &args)?;
+    }
+    git(dir, &["commit", "-q", "--no-edit"])?;
+    sync(dir)
+}
+
+pub fn sync_abort(dir: &Path) -> Result<(), Box<dyn Error>> {
+    git(dir, &["merge", "--abort"])?;
+    Ok(())
+}
