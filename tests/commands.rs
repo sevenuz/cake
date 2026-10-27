@@ -206,3 +206,15 @@ fn by_records_the_creator_and_agents_tag_commits() {
     env.cake_ok(&a, &["add", "plain", "-m", "# x"]);
     assert!(read_item(&a, "plain").contains("\nby: "), "falls back to git user or $USER");
 }
+
+#[test]
+fn edit_with_message_replaces_only_the_body() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "a", "--todo", "-t", "x", "-m", "# old"]);
+    env.cake_stdin(&d, &["edit", "a", "-m", "-"], "# new\n\nbody\n");
+    let a = read_item(&d, "a");
+    assert!(a.contains("status: todo\ntags: [x]\n"), "{}", a);
+    assert!(a.ends_with("---\n# new\n\nbody\n"), "{}", a);
+    assert!(env.cake_err(&d, &["edit", "nope", "-m", "x"]).contains("not found"));
+}

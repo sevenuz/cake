@@ -167,8 +167,14 @@ pub enum Commands {
         #[arg(long, value_name = "IDS")]
         blocked_by: Option<String>,
     },
-    /// edit the item file in the editor
-    Edit { id: String },
+    /// edit the item file in the editor, or replace its body with -m
+    Edit {
+        id: String,
+
+        /// replace the body, - reads stdin; frontmatter stays
+        #[arg(short, long)]
+        message: Option<String>,
+    },
     /// show an item, or any markdown file
     Show {
         /// item id or file path
@@ -322,6 +328,14 @@ fn print_report(store: &Store, report: commands::Report) {
     println!("{}", json);
 }
 
+/// -m value, "-" reads stdin
+fn read_message(message: &Option<String>) -> Result<Option<String>, Box<dyn Error>> {
+    Ok(match message.as_deref() {
+        Some("-") => Some(std::io::read_to_string(std::io::stdin())?),
+        m => m.map(String::from),
+    })
+}
+
 /// one-line commit subject from the command line, at most 72 chars plus the agent tag
 fn commit_message(args: &[String], agent: Option<String>) -> String {
     let line = format!("cake {}", args.join(" ").split_whitespace().collect::<Vec<_>>().join(" "));
@@ -412,10 +426,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             Selector::new(
                 ids, children, parents, tags, &None, &None, &false, &false, &0, &false,
             )?,
-            match message.as_deref() {
-                Some("-") => Some(std::io::read_to_string(std::io::stdin())?),
-                m => m.map(String::from),
-            },
+            read_message(message)?,
             commands::AddOptions {
                 todo: *todo,
                 due: due.to_owned(),
@@ -423,7 +434,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 blocked_by: util::split_comma_cleanup(blocked_by.to_owned().unwrap_or_default()),
             },
         )?,
-        Some(Commands::Edit { id }) => commands::edit(&debug, &config, &mut store, id)?,
+        Some(Commands::Edit { id, message }) => {
+            commands::edit(&debug, &config, &mut store, id, read_message(message)?)?
+        }
         Some(Commands::Remove { selector }) => {
             commands::remove(debug, &mut &mut store, selector.selector(&selector.ids)?)?
         }

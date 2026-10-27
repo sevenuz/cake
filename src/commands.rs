@@ -82,15 +82,27 @@ where
     Ok(Report::Items(vec![id]))
 }
 
-/// opens the whole item file (frontmatter and body) in the editor
-pub fn edit<F>(debug: F, config: &Config, store: &mut Store, id: &str) -> Result<Report, Box<dyn Error>>
+/// replaces the body with `body`, without it opens the whole item file
+/// (frontmatter and body) in the editor
+pub fn edit<F>(
+    debug: F,
+    config: &Config,
+    store: &mut Store,
+    id: &str,
+    body: Option<String>,
+) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
-    debug(&format!("edit {:?}", id));
+    debug(&format!("edit {:?} body {:?}", id, body));
     let old = store.get_item(id).ok_or_else(|| error::not_found(id))?;
+    if let Some(body) = body {
+        store.get_item_mut(id).unwrap().set_content(body);
+        view::print(&config, store.get_item(id).unwrap().print_long(false))?;
+        return Ok(Report::Items(vec![id.to_owned()]));
+    }
     if !std::io::stdin().is_terminal() || out::json() {
-        return Err(error::invalid("cake edit needs a terminal and no --json."));
+        return Err(error::invalid("cake edit without -m needs a terminal and no --json."));
     }
     let text = old.to_markdown();
     let edited = util::input_from_external_editor(&config.editor, Some(&text))?;
