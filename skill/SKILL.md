@@ -20,6 +20,11 @@ tagged `[claude-code]` without you doing anything.
   inside `.cake/`. Everything through `cake`, so commits stay consistent.
 - **No loose plan files:** when a store exists, don't create `PLAN.md`,
   `TODO.md` or similar in the repo. Put them into the store.
+- **Edit only your own items** (`by` is `claude-code`, or another agent name
+  you run as). Never change the body, priority or due of items others created.
+  To add to someone else's item, create a child: `cake add -p <id> …`.
+  Status (`todo`/`done`/`drop`) and tags on others' items only when the user
+  asks or agreed to the change.
 - **Timers belong to the user:** don't `start`/`stop` unless asked.
 - **No `cake sync`** unless the user asks (network, may conflict).
 - **Cite items by id** and, after changes, list what you created or changed.
@@ -54,6 +59,7 @@ cake ls --json [selectors]              # list; selectors below
 cake show <id> --json                   # one item with body
 cake add --json [--todo] [-p ID] [-t TAGS] [--blocked-by IDS] [--prio N] [--due D] -m TEXT
 cake edit <id> --json -m -              # replace the body (frontmatter stays), from stdin
+cake edit <id> --json --prio 1 --due 2026-10-30   # 0 / - clear them
 cake todo|done|drop <ids> --json        # set status; done/drop set `closed`
 cake tag <ids> a,~b --json              # add a, remove b
 cake mv <id> <parent|-> --json          # re-parent / detach
@@ -103,8 +109,9 @@ Reuse existing items instead of adding duplicates.
 **Plan non-trivial work** — write the plan as a note under the task it
 belongs to: `cake add --json -p <task> -t <area> -m - <<'EOF' …`. Split
 deliverables into `--todo` children of the task, one per deliverable.
-Ordering constraints → `cake block <later> --by <earlier>`. Update the plan
-note with `cake edit <id> --json -m -` when it changes.
+Ordering constraints → `cake block <later> --by <earlier>`. Update your own
+plan note with `cake edit <id> --json -m -` when it changes; for a plan
+someone else wrote, add a child note instead.
 
 **Found work mid-task** — `cake add --json --todo -p <current> -m "# …"` for
 a subtask; unrelated → top level with a tag. Don't silently expand scope;

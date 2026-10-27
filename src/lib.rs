@@ -167,13 +167,21 @@ pub enum Commands {
         #[arg(long, value_name = "IDS")]
         blocked_by: Option<String>,
     },
-    /// edit the item file in the editor, or replace its body with -m
+    /// edit the item file in the editor, or change body/priority/due directly
     Edit {
         id: String,
 
         /// replace the body, - reads stdin; frontmatter stays
         #[arg(short, long)]
         message: Option<String>,
+
+        /// priority 1 (high) .. 3 (low), 0 clears
+        #[arg(long, value_name = "N")]
+        prio: Option<u64>,
+
+        /// due date, e.g. 2026-10-30, - clears
+        #[arg(long, value_name = "DATE")]
+        due: Option<String>,
     },
     /// show an item, or any markdown file
     Show {
@@ -445,9 +453,22 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 blocked_by: util::split_comma_cleanup(blocked_by.to_owned().unwrap_or_default()),
             },
         )?,
-        Some(Commands::Edit { id, message }) => {
-            commands::edit(&debug, &config, &mut store, id, read_message(message)?)?
-        }
+        Some(Commands::Edit {
+            id,
+            message,
+            prio,
+            due,
+        }) => commands::edit(
+            &debug,
+            &config,
+            &mut store,
+            id,
+            commands::EditOptions {
+                body: read_message(message)?,
+                priority: *prio,
+                due: due.to_owned(),
+            },
+        )?,
         Some(Commands::Remove { selector }) => {
             commands::remove(debug, &mut &mut store, selector.selector(&selector.ids)?)?
         }

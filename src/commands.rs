@@ -84,27 +84,44 @@ where
     Ok(Report::Items(vec![id]))
 }
 
-/// replaces the body with `body`, without it opens the whole item file
-/// (frontmatter and body) in the editor
+/// changes without an editor; `priority` 0 and `due` "-" clear the field
+pub struct EditOptions {
+    pub body: Option<String>,
+    pub priority: Option<u64>,
+    pub due: Option<String>,
+}
+
+/// applies `options`; without any it opens the whole item file (frontmatter
+/// and body) in the editor
 pub fn edit<F>(
     debug: F,
     config: &Config,
     store: &mut Store,
     id: &str,
-    body: Option<String>,
+    options: EditOptions,
 ) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
-    debug(&format!("edit {:?} body {:?}", id, body));
+    debug(&format!("edit {:?}", id));
     let old = store.get_item(id).ok_or_else(|| error::not_found(id))?;
-    if let Some(body) = body {
-        store.get_item_mut(id).unwrap().set_content(body);
+    if options.body.is_some() || options.priority.is_some() || options.due.is_some() {
+        let mut item = old.clone();
+        if let Some(body) = options.body {
+            item.set_content(body);
+        }
+        if let Some(p) = options.priority {
+            item.set_priority(Some(p).filter(|p| *p != 0)).map_err(error::invalid)?;
+        }
+        if let Some(d) = options.due {
+            item.set_due(Some(d).filter(|d| d != "-")).map_err(error::invalid)?;
+        }
+        store.get_item_mut(id).unwrap().set(item);
         view::print(&config, store.get_item(id).unwrap().print_long(false))?;
         return Ok(Report::Items(vec![id.to_owned()]));
     }
     if !std::io::stdin().is_terminal() || out::json() {
-        return Err(error::invalid("cake edit without -m needs a terminal and no --json."));
+        return Err(error::invalid("cake edit without -m/--prio/--due needs a terminal and no --json."));
     }
     let text = old.to_markdown();
     let edited = util::input_from_external_editor(&config.editor, Some(&text))?;

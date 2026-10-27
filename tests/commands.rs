@@ -218,3 +218,17 @@ fn edit_with_message_replaces_only_the_body() {
     assert!(a.ends_with("---\n# new\n\nbody\n"), "{}", a);
     assert!(env.cake_err(&d, &["edit", "nope", "-m", "x"]).contains("not found"));
 }
+
+#[test]
+fn edit_sets_and_clears_priority_and_due() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "a", "--todo", "-m", "# a"]);
+    env.cake_ok(&d, &["edit", "a", "--prio", "1", "--due", "2026-10-30"]);
+    assert!(read_item(&d, "a").contains("due: 2026-10-30\npriority: 1\n"));
+    assert!(env.cake_err(&d, &["edit", "a", "--prio", "1", "--due", "soon"]).contains("due"));
+    assert!(read_item(&d, "a").contains("priority: 1\n"), "nothing written on error");
+    env.cake_ok(&d, &["edit", "a", "--prio", "0", "--due", "-"]);
+    let a = read_item(&d, "a");
+    assert!(!a.contains("priority:") && !a.contains("due:") && a.ends_with("# a"), "{}", a);
+}
