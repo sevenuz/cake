@@ -168,3 +168,12 @@ fn show_takes_an_id_or_a_file() {
     assert!(env.cake_ok(&d, &["show", "README.md"]).contains("readme title"));
     assert!(env.cake_err(&d, &["show", "nope"]).contains("no item id or file"));
 }
+
+#[test]
+fn help_exits_zero_and_usage_errors_fail() {
+    let env = Env::new();
+    let d = env.plain_store();
+    assert!(env.cake_ok(&d, &["--help"]).contains("Usage: cake"));
+    assert!(env.cake_ok(&d, &["help", "add"]).contains("--body-file"));
+    assert!(env.cake_err(&d, &["bogus"]).contains("unrecognized subcommand"));
+}

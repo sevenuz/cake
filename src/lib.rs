@@ -11,7 +11,7 @@ mod util;
 mod view;
 
 use crate::store::Store;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use config::Config;
 use item::Status;
 use selector::Selector;
@@ -19,22 +19,22 @@ use std::{
     env::{args, current_dir},
     error::Error,
     path::PathBuf,
-    process::exit,
 };
 use termimad::crossterm::style::Stylize;
 
+/// Tasks, time tracking and notes as markdown files, synced with git.
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(version)]
 pub struct Cli {
-    /// Use the store at this path instead of the nearest .cake or the global store
+    /// store directory, default: nearest .cake, else the global store
     #[arg(long, value_name = "DIR", env = "CAKE_STORE")]
     pub store: Option<PathBuf>,
 
-    /// Use the global store, also inside a project
+    /// use the global store, also inside a project
     #[arg(short, long, conflicts_with = "store")]
     pub global: bool,
 
-    /// Turn debugging information on
+    /// print debug output
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub debug: u8,
 
@@ -43,63 +43,64 @@ pub struct Cli {
 }
 
 #[derive(Args)]
+#[command(next_help_heading = "Selectors (combined with and)")]
 pub struct SelectorArgs {
-    /// Select by ids
+    /// item ids, comma separated
     ids: Option<String>,
 
-    /// Select by children
-    #[arg(short, long)]
+    /// items with these children
+    #[arg(short, long, value_name = "IDS")]
     children: Option<String>,
 
-    /// Select by parents
-    #[arg(short, long)]
+    /// items under these parents
+    #[arg(short, long, value_name = "IDS")]
     parents: Option<String>,
 
-    /// Select by tags, use ~ to exclude tag e.g. -t ~some_tag
+    /// items with these tags, ~tag excludes
     #[arg(short, long)]
     tags: Option<String>,
 
-    /// Select by time before this duration from now
-    #[arg(short, long)]
+    /// created more than this long ago, e.g. 2d, 1w3h
+    #[arg(short, long, value_name = "DURATION")]
     before: Option<String>,
 
-    /// Select by time after this duration from now
-    #[arg(short, long)]
+    /// created less than this long ago
+    #[arg(short, long, value_name = "DURATION")]
     after: Option<String>,
 
-    /// Select started items
+    /// timer running
     #[arg(long)]
     started: bool,
 
-    /// Select stopped items
+    /// timer not running
     #[arg(long)]
     stopped: bool,
 
-    /// recursive execution of the command. -r: children, -rr parents, -rrr both
+    /// also children (-r), parents (-rr) or both (-rrr)
     #[arg(short, long, action = clap::ArgAction::Count)]
     recursive: u8,
 
-    /// Concatinate selectors with or instead of and
+    /// combine selectors with or
     #[arg(long)]
     or: bool,
 
-    /// Select by text in title or body, case-insensitive
+    /// text in title or body, case-insensitive
     #[arg(short, long, value_name = "TEXT")]
     search: Option<String>,
 
-    /// Select by kind: task|note
+    /// task|note
     #[arg(long)]
     kind: Option<String>,
 
-    /// Select by status: todo|doing|done|dropped, comma separated
+    /// todo|doing|done|dropped
     #[arg(long)]
     status: Option<String>,
 
-    /// Select open items without open blockers
+    /// open, no open blockers
     #[arg(long)]
     ready: bool,
 
-    /// Select open items with open blockers
+    /// open, with open blockers
     #[arg(long)]
     blocked: bool,
 }
@@ -122,118 +123,95 @@ impl SelectorArgs {
     }
 }
 
-// TODO https://docs.rs/clap/latest/clap/builder/struct.Arg.html#method.value_delimiter
 #[derive(Subcommand)]
 pub enum Commands {
-    /// add a new item, opens the editor without -m
+    /// add an item; the editor opens without -m or --body-file
     Add {
         /// custom id, default: random
         ids: Option<String>,
 
-        /// children to move under the new item, comma separated
-        #[arg(short, long)]
+        /// move these items under the new one
+        #[arg(short, long, value_name = "IDS")]
         children: Option<String>,
 
         /// parent item
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "ID")]
         parents: Option<String>,
 
-        /// tags, comma separated
+        /// tags
         #[arg(short, long)]
         tags: Option<String>,
 
-        /// content, the first `# heading` is the title
+        /// content; the first `# heading` is the title
         #[arg(short, long, conflicts_with = "body_file")]
         message: Option<String>,
 
-        /// read the content from a file, - for stdin
+        /// read content from a file, - for stdin
         #[arg(long, value_name = "FILE")]
         body_file: Option<PathBuf>,
 
-        /// add a note instead of a task
+        /// a note instead of a task
         #[arg(long)]
         note: bool,
 
         /// due date, e.g. 2026-10-30
-        #[arg(long)]
+        #[arg(long, value_name = "DATE")]
         due: Option<String>,
 
         /// priority, 1 (high) .. 3 (low)
-        #[arg(long)]
+        #[arg(long, value_name = "N")]
         prio: Option<u64>,
 
-        /// items that must be closed first, comma separated
+        /// items that must be closed first
         #[arg(long, value_name = "IDS")]
         blocked_by: Option<String>,
 
-        /// related items, comma separated
+        /// related items
         #[arg(long, value_name = "IDS")]
         related: Option<String>,
     },
-    /// open the item file (frontmatter and body) in the editor
-    Edit {
-        id: String,
+    /// edit the item file in the editor
+    Edit { id: String },
+    /// show an item, or any markdown file
+    Show {
+        /// item id or file path
+        target: String,
     },
-    /// remove items, alias rm
-    #[command(alias("rm"))]
-    Remove {
-        #[command(flatten)]
-        selector: SelectorArgs,
-    },
-    /// Tag items with selectors.
-    /// Use ~tag to remove a tag.
-    Tag {
+    /// list items
+    #[command(visible_alias("ls"))]
+    List {
         #[command(flatten)]
         selector: SelectorArgs,
 
-        /// comma separated tags which will be assigned
-        new_tags: Option<String>,
-    },
-    /// start timetracking for item
-    Start {
-        #[command(flatten)]
-        selector: SelectorArgs,
-    },
-    /// stop timetracking for item, without selector the running ones
-    Stop {
-        #[command(flatten)]
-        selector: SelectorArgs,
-    },
-    /// move an item under a new parent, - detaches it
-    Mv {
-        id: String,
-        /// new parent id or -
-        parent: String,
-    },
-    /// add items that must be closed before this one
-    Block {
-        id: String,
-        /// blocking ids, comma separated
-        #[arg(long, value_name = "IDS")]
-        by: String,
-    },
-    /// remove blockers
-    Unblock {
-        id: String,
-        /// blocking ids, comma separated
-        #[arg(long, value_name = "IDS")]
-        by: String,
+        /// all fields and the body
+        #[arg(short, long)]
+        long: bool,
     },
     /// list open items without open blockers, by priority and due
     Ready {
         #[command(flatten)]
         selector: SelectorArgs,
 
-        /// detailed presentation of the items
+        /// all fields and the body
         #[arg(short, long)]
         long: bool,
     },
-    /// mark tasks done: stops the timer, sets closed
+    /// start the timer, sets status doing
+    Start {
+        #[command(flatten)]
+        selector: SelectorArgs,
+    },
+    /// stop the timer, default: the running items
+    Stop {
+        #[command(flatten)]
+        selector: SelectorArgs,
+    },
+    /// close tasks as done
     Done {
         #[command(flatten)]
         selector: SelectorArgs,
     },
-    /// mark tasks dropped: stops the timer, sets closed
+    /// close tasks as dropped
     Drop {
         #[command(flatten)]
         selector: SelectorArgs,
@@ -243,39 +221,55 @@ pub enum Commands {
         #[command(flatten)]
         selector: SelectorArgs,
     },
-    /// list items, alias ls
-    #[command(alias("ls"))]
-    List {
+    /// add tags, ~tag removes: cake tag [IDS] TAGS
+    Tag {
         #[command(flatten)]
         selector: SelectorArgs,
 
-        /// detailed presentation of the items
-        #[arg(short, long)]
-        long: bool,
+        /// tags to add, ~tag to remove
+        new_tags: Option<String>,
     },
-    /// show an item, or any markdown file
-    Show {
-        /// item id or file path
-        target: String,
+    /// move an item under a parent
+    Mv {
+        id: String,
+        /// parent id, - detaches
+        parent: String,
     },
-    /// Creates a new store (.cake). In a git repo it is a worktree of an orphan
-    /// branch (config git_branch), attached if the branch exists on the remote.
-    Init {},
-    /// Fetch, merge and push the store. Only runs when invoked.
+    /// add items that must be closed first
+    Block {
+        id: String,
+        #[arg(long, value_name = "IDS")]
+        by: String,
+    },
+    /// remove blockers
+    Unblock {
+        id: String,
+        #[arg(long, value_name = "IDS")]
+        by: String,
+    },
+    /// remove items
+    #[command(visible_alias("rm"))]
+    Remove {
+        #[command(flatten)]
+        selector: SelectorArgs,
+    },
+    /// fetch, merge and push the store
     Sync {
-        /// Push the store for the first time and set the upstream (default remote: config git_remote_name)
+        /// first push, sets the upstream; default remote from config
         #[arg(long, value_name = "REMOTE", num_args = 0..=1, default_missing_value = "", group = "mode")]
         publish: Option<String>,
 
-        /// Commit the resolved merge and push
+        /// commit the resolved merge and push
         #[arg(long = "continue", group = "mode")]
         cont: bool,
 
-        /// Abort the merge in progress
+        /// abort the merge
         #[arg(long, group = "mode")]
         abort: bool,
     },
-    /// Open config file in editor
+    /// create a store; in a git repo on its own branch, attached if it exists on the remote
+    Init {},
+    /// open the config file in the editor
     Config {},
 }
 
@@ -301,15 +295,7 @@ impl Commands {
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::try_parse();
-
-    if let Err(err) = cli {
-        // TODO search for commands in settings
-        println!("Sheesh, a {}", err);
-        exit(1);
-    }
-
-    let cli = cli.unwrap();
+    let cli = Cli::parse();
 
     // You can see how many times a particular flag or argument occurred
     // Note, only flags can have multiple occurrences
@@ -443,9 +429,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Init {}) => commands::init(debug, &config, cli.global)?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
-        None => {
-            println!("Nothing happed o.0");
-        }
+        None => Cli::command().print_help()?,
     }
 
     let changed = store.save()?;
