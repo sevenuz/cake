@@ -131,7 +131,7 @@ Order:
 1. `--store <path>` flag / `CAKE_STORE` env.
 2. Walk up from `$PWD`: first dir containing `.cake/items/` → project store.
 3. Inside a git repo whose remote has `cake/main` but no `.cake/`
-   worktree yet → hint to run `cake init` (attach, see §3).
+   worktree yet → hint to run `cake init` (attach, see [[56gwt9]]).
 4. Fallback: global store `$XDG_DATA_HOME/cake` (`~/.local/share/cake`),
    itself a plain git repo on `main` (optional remote).
 
