@@ -6,7 +6,7 @@ created: 2026-10-27T12:28:19+01:00
 by: claude-code
 sessions: [69b1d969-f2c3-4f41-b58d-a996441f99e2]
 ---
-# Design: data model and store discovery
+# Data model: one markdown file per item, store discovery
 
 ### Directory layout
 
