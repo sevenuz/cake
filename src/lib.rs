@@ -456,7 +456,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     };
     debug(&format!("Store: {}", root.display()));
 
-    // editors run before taking the lock, so other commands are not blocked meanwhile
+    // editors and stdin are read before taking the lock, so other commands are
+    // not blocked meanwhile and `cake show x --json | … | cake edit x -m -` works
     let mut message = None;
     let mut edited = None;
     match &cli.command {
@@ -472,6 +473,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             prio: None,
             due: None,
         }) => edited = Some(commands::edit_in_editor(&config, &root, id)?),
+        // stdin may come from another cake command that needs the lock
+        Some(Commands::Edit { message: m, .. }) => message = read_message(m)?,
         _ => (),
     }
 
@@ -539,19 +542,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 blocked_by: util::split_comma_cleanup(blocked_by.to_owned().unwrap_or_default()),
             },
         )?,
-        Some(Commands::Edit {
-            id,
-            message,
-            prio,
-            due,
-        }) => commands::edit(
+        Some(Commands::Edit { id, prio, due, .. }) => commands::edit(
             &debug,
             &config,
             &mut store,
             id,
             commands::EditOptions {
                 edited,
-                body: read_message(message)?,
+                body: message,
                 priority: *prio,
                 due: due.to_owned(),
             },

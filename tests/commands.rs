@@ -362,3 +362,28 @@ fn show_has_a_meta_line_and_lists_children() {
     assert!(first.starts_with("*t* · todo · #x · by ") && first.ends_with(" · prio 1"), "{}", first);
     assert!(out.ends_with("- bullet\n\n· n review note\n"), "{}", out);
 }
+
+#[test]
+fn piping_one_cake_command_into_another_does_not_deadlock() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "x", "-m", "# old"]);
+    let bin = env!("CARGO_BIN_EXE_cake");
+    for _ in 0..2 {
+        let out = std::process::Command::new("timeout")
+            .arg("5")
+            .arg("sh")
+            .arg("-c")
+            .arg(format!("(sleep 0.2; {b} show x --json) | jq -r .items[0].body | sed s/old/new/ | {b} edit x -m -", b = bin))
+            .current_dir(&d)
+            .env("XDG_CONFIG_HOME", env.path("config"))
+            .env("XDG_DATA_HOME", env.path("data"))
+            .env_remove("AI_AGENT")
+            .env_remove("CAKE_SESSION")
+            .env_remove("CLAUDE_CODE_SESSION_ID")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", stderr(&out));
+    }
+    assert!(read_item(&d, "x").contains("---\n# new"), "{}", read_item(&d, "x"));
+}
