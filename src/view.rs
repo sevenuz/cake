@@ -55,7 +55,11 @@ fn scroll_view(skin: termimad::MadSkin, text: String) -> Result<(), termimad::Er
     Ok(())
 }
 
+/// renders markdown, silent in `--json` mode
 pub fn print(config: &Config, text: String) -> Result<(), Box<dyn Error>> {
+    if crate::out::json() {
+        return Ok(());
+    }
     let skin = config.build_skin()?;
     if config.scrollview_threshold > -1
         && text.lines().count() > config.scrollview_threshold.try_into()?

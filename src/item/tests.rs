@@ -121,3 +121,22 @@ fn add_fields_validate_and_serialize() {
     assert!(md.contains("blocked_by: [\"[[b]]\"]\n"), "{}", md);
     assert!(md.contains("due: \"2026-10-30T12:00:00+01:00\"\npriority: 1\n"), "{}", md);
 }
+
+#[test]
+fn title_and_json_fields() {
+    let mut item = Item::from_markdown(FULL, "x", 0).unwrap();
+    assert_eq!(item.title(), "File per item");
+    let json = item.to_json();
+    assert_eq!(json["status"], "doing");
+    assert_eq!(json["parent"], "p0x7qe");
+    assert_eq!(json["running"], true);
+    assert_eq!(json["time"][0]["end"], "2026-10-22T10:40:00+02:00");
+    assert!(json["time"][1]["end"].is_null());
+    assert_eq!(json["extra"]["custom"], "kept");
+    assert!(json["tracked_seconds"].as_i64().unwrap() > 85 * 60);
+
+    item.set_content("\nplain first line\nmore".into());
+    assert_eq!(item.title(), "plain first line");
+    let note = Item::new("n".into(), vec![], None, vec![]);
+    assert!(note.to_json()["status"].is_null());
+}

@@ -460,6 +460,62 @@ impl Item {
         self.blocked_by = ids;
     }
 
+    /// first `# heading`, else the first non-empty line
+    pub fn title(&self) -> String {
+        let lines = || self.content.lines().map(|l| l.trim());
+        lines()
+            .find_map(|l| l.strip_prefix("# "))
+            .or_else(|| lines().find(|l| !l.is_empty()))
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    }
+
+    /// tracked time, a running interval counts until now
+    pub fn tracked_seconds(&self) -> i64 {
+        self.timetrack
+            .chunks(2)
+            .map(|p| p.get(1).copied().unwrap_or_else(util::timestamp) - p[0])
+            .sum()
+    }
+
+    /// stored fields plus title, body and time stats; derived relations are added by the store
+    pub fn to_json(&self) -> serde_json::Map<String, serde_json::Value> {
+        let time: Vec<_> = self
+            .timetrack
+            .chunks(2)
+            .map(|p| {
+                serde_json::json!({
+                    "start": util::format_timestamp(p[0]),
+                    "end": p.get(1).map(|t| util::format_timestamp(*t)),
+                })
+            })
+            .collect();
+        let json = serde_json::json!({
+            "id": self.id,
+            "status": self.status.map(|s| s.as_str()),
+            "tags": self.tags,
+            "parent": self.parent,
+            "blocked_by": self.blocked_by,
+            "created": util::format_timestamp(self.timestamp),
+            "by": self.by,
+            "closed": self.closed.map(util::format_timestamp),
+            "due": self.due,
+            "priority": self.priority,
+            "time": time,
+            "tracked_seconds": self.tracked_seconds(),
+            "running": self.is_started(),
+            "extra": serde_json::to_value(&self.extra).unwrap_or_default(),
+            "title": self.title(),
+            "body": self.content,
+            "children": self.children,
+        });
+        match json {
+            serde_json::Value::Object(m) => m,
+            _ => unreachable!(),
+        }
+    }
+
     /// replaces the item but keeps the derived children
     pub fn set(&mut self, item: Item) {
         let children = std::mem::take(&mut self.children);

@@ -4,6 +4,8 @@ use std::{
     process::{Command, Output},
 };
 
+use crate::error;
+
 #[cfg(test)]
 mod tests;
 
@@ -15,12 +17,11 @@ fn run(dir: &Path, args: &[&str]) -> Result<Output, Box<dyn Error>> {
 fn git(dir: &Path, args: &[&str]) -> Result<String, Box<dyn Error>> {
     let out = run(dir, args)?;
     if !out.status.success() {
-        return Err(format!(
+        return Err(error::git(format!(
             "git {} failed: {}",
             args.join(" "),
             String::from_utf8_lossy(&out.stderr).trim()
-        )
-        .into());
+        )));
     }
     Ok(String::from_utf8(out.stdout)?.trim().to_string())
 }
@@ -83,12 +84,11 @@ fn remote_branch_exists(dir: &Path, remote: &str, branch: &str) -> Result<bool, 
     match out.status.code() {
         Some(0) => Ok(true),
         Some(2) => Ok(false),
-        _ => Err(format!(
+        _ => Err(error::git(format!(
             "git ls-remote {} failed: {}",
             remote,
             String::from_utf8_lossy(&out.stderr).trim()
-        )
-        .into()),
+        ))),
     }
 }
 
@@ -168,18 +168,17 @@ pub fn conflicted_files(dir: &Path) -> Result<Vec<String>, Box<dyn Error>> {
 
 fn conflict_error(dir: &Path) -> Box<dyn Error> {
     let files = conflicted_files(dir).unwrap_or_default();
-    format!(
+    error::conflict(format!(
         "merge conflict in: {}. Resolve them, then run `cake sync --continue` (or `--abort`).",
         files.join(", ")
-    )
-    .into()
+    ))
 }
 
 /// fetch, merge the upstream (no rebase) and push; leaves a conflicted merge
 /// in progress and returns an error listing the conflicted files
 pub fn sync(dir: &Path) -> Result<(), Box<dyn Error>> {
     let remote = upstream_remote(dir)?
-        .ok_or("store is local-only; run `cake sync --publish [remote]`")?;
+        .ok_or_else(|| error::not_published("store is local-only; run `cake sync --publish [remote]`"))?;
     if merge_in_progress(dir)? {
         return Err(conflict_error(dir));
     }
@@ -206,7 +205,7 @@ fn has_conflict_markers(content: &str) -> bool {
 /// commits a resolved merge and pushes it
 pub fn sync_continue(dir: &Path) -> Result<(), Box<dyn Error>> {
     if !merge_in_progress(dir)? {
-        return Err("no merge in progress".into());
+        return Err(error::invalid("no merge in progress"));
     }
     let files = conflicted_files(dir)?;
     let unresolved: Vec<&String> = files
@@ -216,11 +215,10 @@ pub fn sync_continue(dir: &Path) -> Result<(), Box<dyn Error>> {
         })
         .collect();
     if !unresolved.is_empty() {
-        return Err(format!(
+        return Err(error::conflict(format!(
             "conflict markers left in: {}",
             unresolved.iter().map(|f| f.as_str()).collect::<Vec<_>>().join(", ")
-        )
-        .into());
+        )));
     }
     let mut args = vec!["add", "-A", "--"];
     args.extend(files.iter().map(|f| f.as_str()));

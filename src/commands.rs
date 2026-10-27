@@ -3,7 +3,7 @@ use crate::item::{Item, Status};
 use crate::store::{inner::ItemView, RecState, Store, MAX_DEPTH};
 use crate::view;
 use crate::Selector;
-use crate::{git, util};
+use crate::{error, git, out, say, util};
 use std::error::Error;
 use std::fs;
 use std::io::IsTerminal;
@@ -20,6 +20,20 @@ pub struct AddOptions {
 }
 
 /// adds an item; without content the editor opens, which needs a terminal
+/// what a command reports, printed as json with `--json`
+pub enum Report {
+    None,
+    /// items after the command, by id
+    Items(Vec<String>),
+    /// ids of removed items
+    Removed(Vec<String>),
+    Value(serde_json::Value),
+}
+
+fn store_report(root: &Path) -> Report {
+    Report::Value(serde_json::json!({ "store": root }))
+}
+
 pub fn add<F>(
     debug: F,
     config: &Config,
@@ -27,7 +41,7 @@ pub fn add<F>(
     selector: Selector,
     content: Option<String>,
     options: AddOptions,
-) -> Result<(), Box<dyn Error>>
+) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
@@ -46,67 +60,67 @@ where
     store.check_existence(&item, false)?;
     if let Some(missing) = options.blocked_by.iter().find(|i| store.get_item(i).is_none())
     {
-        return Err(format!("{} not found.", missing).into());
+        return Err(error::not_found(missing));
     }
     if options.todo {
         item.set_status(Status::Todo)?;
     }
-    item.set_due(options.due)?;
-    item.set_priority(options.priority)?;
+    item.set_due(options.due).map_err(error::invalid)?;
+    item.set_priority(options.priority).map_err(error::invalid)?;
     item.set_blocked_by(options.blocked_by);
     item.set_by(util::author(store.root()));
     item.set_content(match content {
         Some(c) => c,
-        None if std::io::stdin().is_terminal() => {
+        None if std::io::stdin().is_terminal() && !out::json() => {
             util::input_from_external_editor(&config.editor, None)?
         }
-        None => return Err("No content, use -m TEXT (- for stdin).".into()),
+        None => return Err(error::invalid("No content, use -m TEXT (- for stdin).")),
     });
     debug(&item.content());
     store.add(item)?;
     view::print(&config, store.get_item(&id).unwrap().print_long(false))?;
-    Ok(())
+    Ok(Report::Items(vec![id]))
 }
 
 /// opens the whole item file (frontmatter and body) in the editor
-pub fn edit<F>(debug: F, config: &Config, store: &mut Store, id: &str) -> Result<(), Box<dyn Error>>
+pub fn edit<F>(debug: F, config: &Config, store: &mut Store, id: &str) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
     debug(&format!("edit {:?}", id));
-    let old = store.get_item(id).ok_or(format!("{} not found.", id))?;
-    if !std::io::stdin().is_terminal() {
-        return Err("cake edit needs a terminal.".into());
+    let old = store.get_item(id).ok_or_else(|| error::not_found(id))?;
+    if !std::io::stdin().is_terminal() || out::json() {
+        return Err(error::invalid("cake edit needs a terminal and no --json."));
     }
     let text = old.to_markdown();
     let edited = util::input_from_external_editor(&config.editor, Some(&text))?;
     if edited == text {
-        println!("{} unchanged.", id);
-        return Ok(());
+        say!("{} unchanged.", id);
+        return Ok(Report::Items(vec![id.to_owned()]));
     }
     let item = Item::from_markdown(&edited, id, old.timestamp())?;
     if item.id() != id {
-        return Err("Changing the id is not supported.".into());
+        return Err(error::invalid("Changing the id is not supported."));
     }
     store.check_existence(&item, true)?;
     store.edit(item)?;
     view::print(&config, store.get_item(id).unwrap().print_long(false))?;
-    Ok(())
+    Ok(Report::Items(vec![id.to_owned()]))
 }
 
 /// ids for commands that change items: refuses an empty selector (it would
 /// match everything) and unknown ids
 fn select(store: &Store, selector: &Selector) -> Result<Vec<String>, Box<dyn Error>> {
     if selector.is_empty() {
-        return Err("No items selected, give ids or selectors.".into());
+        return Err(error::invalid("No items selected, give ids or selectors."));
     }
     if let Some(id) = selector.ids.iter().find(|id| store.get_item(id).is_none()) {
-        return Err(format!("{} not found.", id).into());
+        return Err(error::not_found(id));
     }
     Ok(selector.get(store, true))
 }
 
-pub fn remove<F>(debug: F, store: &mut Store, selector: Selector) -> Result<(), Box<dyn Error>>
+pub fn remove<F>(debug: F, store: &mut Store, selector: Selector) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
@@ -115,8 +129,8 @@ where
     for id in &ids {
         store.remove(id)?;
     }
-    println!("{} removed.", ids.len());
-    Ok(())
+    say!("{} removed.", ids.len());
+    Ok(Report::Removed(ids))
 }
 
 pub fn tag<F>(
@@ -124,7 +138,7 @@ pub fn tag<F>(
     store: &mut Store,
     selector: Selector,
     tags: &Option<String>,
-) -> Result<(), Box<dyn Error>>
+) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
@@ -141,11 +155,11 @@ where
                 tags.to_owned().unwrap_or("".to_string()),
             ));
     }
-    println!("{} tagged.", ids.len());
-    Ok(())
+    say!("{} tagged.", ids.len());
+    Ok(Report::Items(ids))
 }
 
-pub fn start<F>(debug: F, store: &mut Store, selector: Selector) -> Result<(), Box<dyn Error>>
+pub fn start<F>(debug: F, store: &mut Store, selector: Selector) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
@@ -157,12 +171,12 @@ where
             .expect("Could not found id")
             .start()?;
     }
-    println!("{} started.", ids.len());
-    Ok(())
+    say!("{} started.", ids.len());
+    Ok(Report::Items(ids))
 }
 
 /// stops the selected items, without selector the running ones
-pub fn stop<F>(debug: F, store: &mut Store, mut selector: Selector) -> Result<(), Box<dyn Error>>
+pub fn stop<F>(debug: F, store: &mut Store, mut selector: Selector) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
@@ -174,12 +188,12 @@ where
     for id in &ids {
         store.get_item_mut(id).expect("Could not found id").stop()?;
     }
-    println!("{} stopped.", ids.len());
-    Ok(())
+    say!("{} stopped.", ids.len());
+    Ok(Report::Items(ids))
 }
 
 /// re-parents an item, "-" detaches it
-pub fn mv<F>(debug: F, store: &mut Store, id: &str, parent: &str) -> Result<(), Box<dyn Error>>
+pub fn mv<F>(debug: F, store: &mut Store, id: &str, parent: &str) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
@@ -187,10 +201,10 @@ where
     let parent = if parent == "-" { None } else { Some(parent) };
     store.move_item(id, parent)?;
     match parent {
-        Some(p) => println!("{} moved under {}.", id, p),
-        None => println!("{} detached.", id),
+        Some(p) => say!("{} moved under {}.", id, p),
+        None => say!("{} detached.", id),
     }
-    Ok(())
+    Ok(Report::Items(vec![id.to_owned()]))
 }
 
 /// adds or removes blockers of `id`
@@ -200,7 +214,7 @@ pub fn block<F>(
     id: &str,
     by: &str,
     remove: bool,
-) -> Result<(), Box<dyn Error>>
+) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
@@ -212,8 +226,8 @@ where
         store.block(id, &blockers)?;
     }
     let left = store.get_item(id).unwrap().blocked_by();
-    println!("{} blocked by: {}", id, util::vec_to_str(left));
-    Ok(())
+    say!("{} blocked by: {}", id, util::vec_to_str(left));
+    Ok(Report::Items(vec![id.to_owned()]))
 }
 
 pub fn set_status<F>(
@@ -221,7 +235,7 @@ pub fn set_status<F>(
     store: &mut Store,
     selector: Selector,
     status: Status,
-) -> Result<(), Box<dyn Error>>
+) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
@@ -230,8 +244,8 @@ where
     for id in &ids {
         store.get_item_mut(id).unwrap().set_status(status)?;
     }
-    println!("{} {}.", ids.len(), status.as_str());
-    Ok(())
+    say!("{} {}.", ids.len(), status.as_str());
+    Ok(Report::Items(ids))
 }
 
 pub fn list<F>(
@@ -240,7 +254,7 @@ pub fn list<F>(
     store: &mut Store,
     selector: Selector,
     long: bool,
-) -> Result<(), Box<dyn Error>>
+) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
@@ -314,7 +328,7 @@ where
                 b.item.id().len()
             }
         });
-        for item_view in item_views {
+        for item_view in item_views.iter() {
             match item_view.state {
                 RecState::Normal => {
                     text = text
@@ -350,30 +364,39 @@ where
         }
     }
     view::print(&config, text)?;
+    let mut ids: Vec<String> = vec![];
+    for iv in &item_views {
+        if !ids.contains(iv.item.id()) {
+            ids.push(iv.item.id().to_owned());
+        }
+    }
 
-    Ok(())
+    Ok(Report::Items(ids))
 }
 
 /// shows an item by id, or any markdown file by path
-pub fn show<F>(debug: F, config: &Config, store: &Store, target: &str) -> Result<(), Box<dyn Error>>
+pub fn show<F>(debug: F, config: &Config, store: &Store, target: &str) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
     debug(&format!("show: {:?}", target));
     let data = match store.get_item(target) {
-        Some(item) => item.print_long(false),
+        Some(item) => {
+            view::print(&config, item.print_long(false))?;
+            return Ok(Report::Items(vec![target.to_owned()]));
+        }
         None if Path::new(target).is_file() => fs::read_to_string(target)?,
-        None => return Err(format!("{} is no item id or file.", target).into()),
+        None => return Err(error::coded("not_found", format!("{} is no item id or file.", target))),
     };
-    view::print(&config, data)?;
-    Ok(())
+    view::print(&config, data.clone())?;
+    Ok(Report::Value(serde_json::json!({ "path": target, "content": data })))
 }
 
 /// Creates the store: inside a git repo a worktree of `config.git_branch` at
 /// `<repo>/.cake` (attached if the branch exists locally or on the remote),
 /// otherwise a plain `.cake` dir in the current directory.
 /// With `global`, the global store becomes a git repo on `main`.
-pub fn init<F>(debug: F, config: &Config, global: bool) -> Result<(), Box<dyn Error>>
+pub fn init<F>(debug: F, config: &Config, global: bool) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
@@ -386,7 +409,7 @@ where
             git::is_store_repo(&p)
         };
         if exists {
-            return Err(format!("There is already a store at {}.", p.display()).into());
+            return Err(error::invalid(format!("There is already a store at {}.", p.display())));
         }
         // an existing plain global store is adopted with its items
         let mut files = create_store_files(&p)?;
@@ -397,37 +420,37 @@ where
             git::init_repo(&p)?;
             git::commit(&p, &files, "cake: init")?;
         }
-        println!("New global store {} created :)", p.display());
-        return Ok(());
+        say!("New global store {} created :)", p.display());
+        return Ok(store_report(&p));
     }
     let cwd = std::env::current_dir()?;
     if config.disable_git || !git::is_repo(&cwd) {
         let p = cwd.join(util::STORE_DIR);
         debug(&format!("init: new store {:?}", p));
         if p.join("items").is_dir() {
-            return Err("There is already a store here.".into());
+            return Err(error::invalid("There is already a store here."));
         }
         create_store_files(&p)?;
-        println!("New store {} created :)", p.display());
-        return Ok(());
+        say!("New store {} created :)", p.display());
+        return Ok(store_report(&p));
     }
     let repo = git::toplevel(&cwd)?;
     let p = repo.join(util::STORE_DIR);
     if p.exists() {
-        return Err(format!("{} already exists.", p.display()).into());
+        return Err(error::invalid(format!("{} already exists.", p.display())));
     }
     debug(&format!("init: worktree {:?} on {}", p, config.git_branch));
     let attached = git::add_worktree(&repo, &p, &config.git_branch, &config.git_remote_name)?;
     git::exclude(&repo, &format!("/{}/", util::STORE_DIR))?;
     if attached {
         fs::create_dir_all(p.join("items"))?;
-        println!("Attached store {} on branch {} :)", p.display(), config.git_branch);
+        say!("Attached store {} on branch {} :)", p.display(), config.git_branch);
     } else {
         let files = create_store_files(&p)?;
         git::commit(&p, &files, "cake: init")?;
-        println!("New store {} created on branch {} :)", p.display(), config.git_branch);
+        say!("New store {} created on branch {} :)", p.display(), config.git_branch);
     }
-    Ok(())
+    Ok(store_report(&p))
 }
 
 /// creates `items/` and `.gitignore` in `root`, returns the files to commit
@@ -445,38 +468,43 @@ pub fn sync<F>(
     publish: &Option<String>,
     cont: bool,
     abort: bool,
-) -> Result<(), Box<dyn Error>>
+) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
     if config.disable_git || !git::is_store_repo(root) {
-        return Err(format!("{} is not a git store, see `cake help init`.", root.display()).into());
+        return Err(error::invalid(format!("{} is not a git store, see `cake help init`.", root.display())));
     }
     if abort {
         debug("sync: abort");
         git::sync_abort(root)?;
-        println!("Merge aborted.");
+        say!("Merge aborted.");
+        return Ok(Report::Value(serde_json::json!({ "aborted": true })));
     } else if cont {
         debug("sync: continue");
         git::sync_continue(root)?;
-        println!("Synced.");
+        say!("Synced.");
     } else if let Some(remote) = publish {
         let remote = if remote.is_empty() { &config.git_remote_name } else { remote };
         debug(&format!("sync: publish to {}", remote));
         git::publish(root, remote)?;
-        println!("Published to {}.", remote);
+        say!("Published to {}.", remote);
+        return Ok(Report::Value(serde_json::json!({ "published": remote })));
     } else {
         debug("sync");
         git::sync(root)?;
-        println!("Synced.");
+        say!("Synced.");
     }
-    Ok(())
+    Ok(Report::Value(serde_json::json!({ "synced": true })))
 }
 
-pub fn config<F>(debug: F, config: &Config) -> Result<(), Box<dyn Error>>
+pub fn config<F>(debug: F, config: &Config) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
+    if out::json() {
+        return Err(error::invalid("cake config opens an editor, it has no --json output."));
+    }
     debug(&format!(
         "config: open editor {:?} with file {:?}",
         config.editor,
@@ -485,5 +513,5 @@ where
     Command::new(&config.editor)
         .arg(util::config_file()?)
         .status()?;
-    Ok(())
+    Ok(Report::None)
 }

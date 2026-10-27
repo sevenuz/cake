@@ -9,6 +9,7 @@ pub mod inner {
     use std::error::Error;
     use std::path::{Path, PathBuf};
 
+    use crate::error;
     use crate::item::Item;
 
     #[derive(Copy, Clone)]
@@ -32,25 +33,25 @@ pub mod inner {
     }
 
     impl Store {
-        pub fn check_id(&self, id: &String, itself: bool) -> Result<(), &'static str> {
+        pub fn check_id(&self, id: &String, itself: bool) -> Result<(), Box<dyn Error>> {
             if itself && !self.items.contains_key(id) {
-                return Err("Item does not exist.");
+                return Err(error::not_found(id));
             } else if !itself && self.items.contains_key(id) {
-                return Err("Item already exists, use cake edit.");
+                return Err(error::invalid(format!("{} already exists, use cake edit.", id)));
             }
             Ok(())
         }
 
-        pub fn check_existence(&self, item: &Item, itself: bool) -> Result<(), &'static str> {
+        pub fn check_existence(&self, item: &Item, itself: bool) -> Result<(), Box<dyn Error>> {
             self.check_id(&item.id(), itself)?;
             for id in item.children() {
                 if !self.items.contains_key(id) {
-                    return Err("Not all children exist.");
+                    return Err(error::not_found(id));
                 }
             }
             for id in item.parents() {
                 if !self.items.contains_key(id) {
-                    return Err("Not all parents exist.");
+                    return Err(error::not_found(id));
                 }
             }
             Ok(())
@@ -179,7 +180,7 @@ pub mod inner {
                     self.set_relations(&item, false);
                     self.dirty.insert(id.to_owned());
                 }
-                None => return Err("Could not found id".into()),
+                None => return Err(error::not_found(id)),
             }
             Ok(())
         }
@@ -203,14 +204,14 @@ pub mod inner {
         /// re-parents `id` under `parent`, None detaches; refuses cycles
         pub fn move_item(&mut self, id: &str, parent: Option<&str>) -> Result<(), Box<dyn Error>> {
             if !self.items.contains_key(id) {
-                return Err(format!("{} not found.", id).into());
+                return Err(error::not_found(id));
             }
             if let Some(p) = parent {
                 if !self.items.contains_key(p) {
-                    return Err(format!("{} not found.", p).into());
+                    return Err(error::not_found(p));
                 }
                 if self.is_ancestor(id, p) {
-                    return Err(format!("{} is {} or below it, that would be a cycle.", p, id).into());
+                    return Err(error::invalid(format!("{} is {} or below it, that would be a cycle.", p, id)));
                 }
             }
             let item = self.items.get(id).unwrap().clone();
@@ -243,12 +244,12 @@ pub mod inner {
         pub fn block(&mut self, id: &str, blockers: &[String]) -> Result<(), Box<dyn Error>> {
             for b in std::iter::once(&id.to_owned()).chain(blockers) {
                 if !self.items.contains_key(b) {
-                    return Err(format!("{} not found.", b).into());
+                    return Err(error::not_found(b));
                 }
             }
             for b in blockers {
                 if self.waits_on(b, id) {
-                    return Err(format!("{} waits on {}, that would be a cycle.", b, id).into());
+                    return Err(error::invalid(format!("{} waits on {}, that would be a cycle.", b, id)));
                 }
             }
             let item = self.get_item_mut(id).unwrap();
@@ -259,7 +260,7 @@ pub mod inner {
         }
 
         pub fn unblock(&mut self, id: &str, blockers: &[String]) -> Result<(), Box<dyn Error>> {
-            let item = self.get_item_mut(id).ok_or(format!("{} not found.", id))?;
+            let item = self.get_item_mut(id).ok_or_else(|| error::not_found(id))?;
             let ids = item.blocked_by().iter().filter(|b| !blockers.contains(b)).cloned().collect();
             item.set_blocked_by(ids);
             Ok(())
@@ -278,6 +279,24 @@ pub mod inner {
         /// open item without open blockers
         pub fn is_ready(&self, id: &str) -> bool {
             self.items.get(id).is_some_and(|i| i.is_open()) && !self.is_blocked(id)
+        }
+
+        /// item json with derived blocks, ready and path
+        pub fn item_json(&self, id: &str) -> Option<serde_json::Value> {
+            let item = self.items.get(id)?;
+            let mut m = item.to_json();
+            let mut blocks: Vec<&String> = self
+                .items
+                .values()
+                .filter(|i| i.blocked_by().iter().any(|b| b == id))
+                .map(|i| i.id())
+                .collect();
+            blocks.sort();
+            m.insert("blocks".into(), serde_json::json!(blocks));
+            m.insert("ready".into(), self.is_ready(id).into());
+            let path = Self::items_dir(&self.root).join(format!("{}.md", id));
+            m.insert("path".into(), path.to_string_lossy().into());
+            Some(serde_json::Value::Object(m))
         }
 
         pub fn root(&self) -> &Path {

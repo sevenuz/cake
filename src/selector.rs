@@ -1,3 +1,4 @@
+use crate::error;
 use crate::item::Status;
 use crate::store::{Store, MAX_DEPTH};
 use crate::util;
@@ -75,7 +76,8 @@ impl Selector {
                 "none" => Ok(None),
                 s => Status::parse(s).map(Some),
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<_, _>>()
+            .map_err(|e| error::invalid(e + ", none for notes"))?;
         self.ready = ready;
         self.blocked = blocked;
         self.by = by.to_owned();

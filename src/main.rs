@@ -1,5 +1,4 @@
-use cake::run;
-use termimad::crossterm::style::Stylize;
+use cake::{print_error, run};
 
 /*
 * # Lifetimes
@@ -44,7 +43,7 @@ use termimad::crossterm::style::Stylize;
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("That wasn't working o.0 \n {}", e.to_string().red().italic());
+        print_error(&e);
         std::process::exit(1);
     }
 }

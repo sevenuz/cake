@@ -3,6 +3,7 @@ mod config;
 mod error;
 mod git;
 mod item;
+mod out;
 mod selector;
 mod store;
 #[cfg(test)]
@@ -34,9 +35,13 @@ pub struct Cli {
     #[arg(short, long, conflicts_with = "store")]
     pub global: bool,
 
-    /// print debug output
+    /// print debug output (stderr)
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub debug: u8,
+
+    /// print one JSON document on stdout, errors too; never opens an editor
+    #[arg(long, global = true)]
+    pub json: bool,
 
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -287,14 +292,52 @@ impl Commands {
     }
 }
 
+/// prints an error from `run`: json on stdout with `--json`, else text on stderr
+pub fn print_error(e: &Box<dyn Error>) {
+    if out::json() {
+        let json = serde_json::json!({
+            "v": 1,
+            "error": { "code": error::code(e.as_ref()), "message": e.to_string() },
+        });
+        println!("{}", json);
+    } else {
+        eprintln!("That wasn't working o.0 \n {}", e.to_string().red().italic());
+    }
+}
+
+fn print_report(store: &Store, report: commands::Report) {
+    let json = match report {
+        commands::Report::None => serde_json::json!({ "v": 1 }),
+        commands::Report::Items(ids) => serde_json::json!({
+            "v": 1,
+            "items": ids.iter().filter_map(|id| store.item_json(id)).collect::<Vec<_>>(),
+        }),
+        commands::Report::Removed(ids) => serde_json::json!({ "v": 1, "removed": ids }),
+        commands::Report::Value(serde_json::Value::Object(mut m)) => {
+            m.insert("v".into(), 1.into());
+            serde_json::Value::Object(m)
+        }
+        commands::Report::Value(v) => serde_json::json!({ "v": 1, "value": v }),
+    };
+    println!("{}", json);
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) if args().any(|a| a == "--json") && e.use_stderr() => {
+            out::set_json(true);
+            return Err(error::invalid(e.to_string().trim()));
+        }
+        Err(e) => e.exit(),
+    };
+    out::set_json(cli.json);
 
     // You can see how many times a particular flag or argument occurred
     // Note, only flags can have multiple occurrences
     let debug = |s: &str| match cli.debug {
         0 => (),
-        _ => println!("{}", s.yellow()),
+        _ => eprintln!("{}", s.yellow()),
     };
     debug(&format!("debug mode is on."));
 
@@ -316,7 +359,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         abort,
     }) = &cli.command
     {
-        return commands::sync(debug, &config, &root, publish, *cont, *abort);
+        let report = commands::sync(debug, &config, &root, publish, *cont, *abort)?;
+        if out::json() {
+            print_report(&Store::new_except(&root, &[])?, report);
+        }
+        return Ok(());
     }
     // during an unresolved merge: reads skip conflicted items, writes are refused
     let mut conflicted = vec![];
@@ -327,16 +374,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             conflicted.join(", ")
         );
         if cli.command.as_ref().map_or(false, Commands::writes) {
-            return Err(msg.into());
+            return Err(error::conflict(msg));
         }
         eprintln!("{}", msg.yellow());
     }
     let skip: Vec<PathBuf> = conflicted.iter().map(|f| root.join(f)).collect();
     let mut store = Store::new_except(&root, &skip)?;
 
-    // You can check for the existence of subcommands, and if found use their
-    // matches just as you would the top level cmd
-    match &cli.command {
+    let report = match &cli.command {
         Some(Commands::Add {
             ids,
             children,
@@ -374,7 +419,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             let mut nt = new_tags;
             // use ids for tags if only one option is set.
             if i.is_none() && nt.is_none() {
-                return Err("You have to specify tags. [ids selector, optional] [tags]".into());
+                return Err(error::invalid("You have to specify tags: cake tag [IDS] TAGS"));
             } else if nt.is_none() {
                 nt = i;
                 i = new_tags;
@@ -418,8 +463,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Init {}) => commands::init(debug, &config, cli.global)?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
-        None => Cli::command().print_help()?,
-    }
+        None => {
+            if !out::json() {
+                Cli::command().print_help()?;
+            }
+            commands::Report::None
+        }
+    };
 
     let changed = store.save()?;
     if !config.disable_git && git::is_store_repo(&root) {
@@ -431,6 +481,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         git::commit(&root, &changed, &message)?;
     }
     config.write_json_if_dirty()?;
+    if out::json() {
+        print_report(&store, report);
+    }
     Ok(())
 }
 
