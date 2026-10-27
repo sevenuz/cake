@@ -24,6 +24,7 @@ pub struct Selector {
     pub ready: bool,
     pub blocked: bool,
     pub by: Option<String>,
+    pub childless: bool,
 }
 
 impl Selector {
@@ -57,6 +58,7 @@ impl Selector {
             ready: false,
             blocked: false,
             by: None,
+            childless: false,
         })
     }
 
@@ -98,7 +100,8 @@ impl Selector {
             && self.status.is_empty()
             && !self.ready
             && !self.blocked
-            && self.by.is_none();
+            && self.by.is_none()
+            && !self.childless;
     }
 
     fn matches_search(&self, content: &str) -> bool {
@@ -170,6 +173,7 @@ impl Selector {
                     || self.ready && store.is_ready(key)
                     || self.blocked && store.is_blocked(key)
                     || self.by.is_some() && item.by() == self.by.as_ref()
+                    || self.childless && item.children().is_empty()
             })
             .map(|s| s.to_owned())
             .collect::<Vec<String>>();
@@ -196,6 +200,7 @@ impl Selector {
                     && (!self.ready || store.is_ready(key))
                     && (!self.blocked || store.is_blocked(key))
                     && (self.by.is_none() || item.by() == self.by.as_ref())
+                    && (!self.childless || item.children().is_empty())
             })
             .map(|s| s.to_owned())
             .collect::<Vec<_>>();
@@ -328,6 +333,15 @@ mod tests {
 
         assert_eq!(filtered(None, None, false, true).get(&store, false), vec!["a"]);
         assert_eq!(sorted(filtered(None, None, true, false).get(&store, false)), vec!["b", "c"]);
+    }
+
+    #[test]
+    fn childless_selects_items_without_children() {
+        let mut store = store_with(vec![tagged("p", &[]), tagged("q", &[])]);
+        store.add(Item::new("c".into(), vec![], Some("p".into()), vec![])).unwrap();
+        let mut s = filtered(None, None, false, false);
+        s.childless = true;
+        assert_eq!(sorted(s.get(&store, false)), vec!["c", "q"]);
     }
 
     #[test]

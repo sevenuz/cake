@@ -109,6 +109,10 @@ pub struct SelectorArgs {
     /// created by, e.g. a git user name or claude-code
     #[arg(long, value_name = "NAME")]
     by: Option<String>,
+
+    /// items without children, e.g. ideas not worked out yet
+    #[arg(long)]
+    childless: bool,
 }
 
 impl SelectorArgs {
@@ -126,6 +130,10 @@ impl SelectorArgs {
             &self.or,
         )?
         .with_filters(&self.search, &self.status, self.ready, self.blocked, &self.by)
+        .map(|mut s| {
+            s.childless = self.childless;
+            s
+        })
     }
 }
 
