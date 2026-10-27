@@ -114,6 +114,10 @@ pub struct SelectorArgs {
     /// items without children, e.g. ideas not worked out yet
     #[arg(long)]
     childless: bool,
+
+    /// items you created (git user.name or CAKE_AUTHOR)
+    #[arg(long, conflicts_with = "by")]
+    mine: bool,
 }
 
 /// replaces id prefixes in `opt` (comma separated) by full ids
@@ -125,7 +129,11 @@ fn resolve_opt(store: &Store, opt: &mut Option<String>) -> Result<(), Box<dyn Er
 }
 
 impl SelectorArgs {
-    fn resolve(&mut self, store: &Store) -> Result<(), Box<dyn Error>> {
+    /// resolves id prefixes and --mine
+    fn resolve(&mut self, store: &Store, user: &str) -> Result<(), Box<dyn Error>> {
+        if self.mine {
+            self.by = Some(user.to_string());
+        }
         resolve_opt(store, &mut self.ids)?;
         resolve_opt(store, &mut self.children)?;
         resolve_opt(store, &mut self.parents)
@@ -317,7 +325,7 @@ pub enum Commands {
 
 impl Commands {
     /// resolves id prefixes in all arguments that take ids
-    fn resolve_ids(&mut self, store: &Store) -> Result<(), Box<dyn Error>> {
+    fn resolve_ids(&mut self, store: &Store, user: &str) -> Result<(), Box<dyn Error>> {
         let one = |id: &mut String| -> Result<(), Box<dyn Error>> {
             *id = store.resolve(id)?;
             Ok(())
@@ -355,7 +363,7 @@ impl Commands {
             | Commands::Drop { selector }
             | Commands::Todo { selector }
             | Commands::List { selector, .. }
-            | Commands::Ready { selector, .. } => selector.resolve(store)?,
+            | Commands::Ready { selector, .. } => selector.resolve(store, user)?,
             _ => (),
         }
         Ok(())
@@ -581,7 +589,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let skip: Vec<PathBuf> = conflicted.iter().map(|f| root.join(f)).collect();
     let mut store = Store::new_except(&root, &skip)?;
     if let Some(command) = cli.command.as_mut() {
-        command.resolve_ids(&store)?;
+        command.resolve_ids(&store, &config.user(&root))?;
     }
 
     let report = match &cli.command {

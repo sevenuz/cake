@@ -325,13 +325,14 @@ fn status_shows_your_timers_others_ready_and_configured_tags() {
     run(&["start", "ab"], &jul);
     run(&["start", "cd"], &other);
     run(&["add", "ef", "--todo", "-m", "# e"], &jul);
-    assert_eq!(run(&["status"], &agent), "▶ ab a task with a rather lon… 0h00 · ▶ 1 others · ready 3\n");
+    assert_eq!(run(&["status"], &agent), "▶ ab a task with a rather lon… 0h00 · ▶ 1 others · ready 3 · review 1\n");
 
     let user = env.path("config/cake/config.hjson");
     let cfg = std::fs::read_to_string(&user).unwrap();
-    let cfg = cfg.replace("\"status\": [\n    \"mine\",", "\"status\": [\n    \"tag:review\",\n    \"mine\",");
-    std::fs::write(&user, cfg).unwrap();
-    assert!(run(&["status"], &jul).starts_with("review 1 · ▶ ab"), "{}", run(&["status"], &jul));
+    let start = cfg.find("\"status\": [").unwrap();
+    let end = start + cfg[start..].find(']').unwrap() + 1;
+    std::fs::write(&user, format!("{}\"status\": [\"ready\", \"tag:review\"]{}", &cfg[..start], &cfg[end..])).unwrap();
+    assert_eq!(run(&["status"], &jul), "ready 3 · review 1\n");
     let json: serde_json::Value = serde_json::from_str(&run(&["status", "--json"], &jul)).unwrap();
     assert_eq!((json["user"].as_str(), json["others"].as_u64(), json["ready"].as_u64()), (Some("jul"), Some(1), Some(3)));
     assert_eq!(json["tags"]["review"], 1);
@@ -425,4 +426,23 @@ fn id_prefixes_work_everywhere_and_ls_shows_short_ids() {
     assert!(err.contains("ab matches abcdef, abxyzq"), "{}", err);
     let out = env.cake(&d, &["todo", "ab", "--json"]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("\"ambiguous_id\""));
+}
+
+#[test]
+fn mine_selects_your_items_with_what_grew_under_them() {
+    let env = Env::new();
+    let d = env.plain_store();
+    // the user is git user.name (or $USER); the agent only sets AI_AGENT
+    let jul: [(&str, &str); 0] = [];
+    let agent = [("AI_AGENT", "claude-code_x")];
+    let run = |args: &[&str], e: &[(&str, &str)]| {
+        let out = env.cake_env(&d, args, e);
+        assert!(out.status.success(), "{}", stderr(&out));
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    run(&["add", "id", "-m", "# idea"], &jul);
+    run(&["add", "pl", "-p", "id", "-m", "# plan"], &agent);
+    run(&["add", "dc", "-t", "doc", "-m", "# doc"], &agent);
+    // the agent runs cake for jul: --mine still means jul's items
+    assert_eq!(run(&["ls", "--mine"], &agent), "· id idea\n└─ · pl plan\n");
 }

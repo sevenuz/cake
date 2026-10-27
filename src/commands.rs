@@ -326,10 +326,10 @@ pub fn status(config: &Config, store: &Store) -> Result<Report, Box<dyn Error>> 
         .and_hms_opt(0, 0, 0)
         .and_then(|t| t.and_local_timezone(chrono::Local).earliest())
         .map_or(0, |t| t.timestamp());
+    // everyone's time on this store, e.g. you and your agents on one project
     let today = union_seconds(
         items
             .iter()
-            .filter(|i| i.by() == Some(&me))
             .flat_map(|i| i.intervals())
             .map(|(s, e)| (s.max(midnight), e))
             .filter(|(s, e)| e > s)

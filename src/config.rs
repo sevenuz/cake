@@ -37,7 +37,8 @@ pub struct Config {
     #[serde(default = "default_session_env")]
     pub session_env: Vec<String>,
     /// cake status segments: mine (your running timers), others (count of
-    /// others' running timers), ready, today (your time today), tag:<name>
+    /// others' running timers), ready, today (time tracked today in the store,
+    /// overlaps once), tag:<name> (open items with that tag)
     #[serde(default = "default_status")]
     pub status: Vec<String>,
     /// own commands: name -> command line, e.g. review: "ls -t review"; may
@@ -87,7 +88,7 @@ fn default_session_env() -> Vec<String> {
 }
 
 fn default_status() -> Vec<String> {
-    ["mine", "others", "ready", "today"].iter().map(|s| s.to_string()).collect()
+    ["mine", "others", "ready", "today", "tag:review"].iter().map(|s| s.to_string()).collect()
 }
 
 fn first_env(vars: &[String]) -> Option<String> {
