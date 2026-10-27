@@ -261,10 +261,25 @@ where
 /// Creates the store: inside a git repo a worktree of `config.git_branch` at
 /// `<repo>/.cake` (attached if the branch exists locally or on the remote),
 /// otherwise a plain `.cake` dir in the current directory.
-pub fn init<F>(debug: F, config: &Config) -> Result<(), Box<dyn Error>>
+/// With `global`, the global store becomes a git repo on `main`.
+pub fn init<F>(debug: F, config: &Config, global: bool) -> Result<(), Box<dyn Error>>
 where
     F: Fn(&str),
 {
+    if global {
+        let p = util::global_store()?;
+        debug(&format!("init: global store {:?}", p));
+        if p.join("items").is_dir() {
+            return Err(format!("There is already a store at {}.", p.display()).into());
+        }
+        let files = create_store_files(&p)?;
+        if !config.disable_git {
+            git::init_repo(&p)?;
+            git::commit(&p, &files, "cake: init")?;
+        }
+        println!("New global store {} created :)", p.display());
+        return Ok(());
+    }
     let cwd = std::env::current_dir()?;
     if config.disable_git || !git::is_repo(&cwd) {
         let p = cwd.join(util::STORE_DIR);

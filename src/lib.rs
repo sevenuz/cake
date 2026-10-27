@@ -29,6 +29,10 @@ pub struct Cli {
     #[arg(long, value_name = "DIR", env = "CAKE_STORE")]
     pub store: Option<PathBuf>,
 
+    /// Use the global store, also inside a project
+    #[arg(short, long, conflicts_with = "store")]
+    pub global: bool,
+
     /// Turn debugging information on
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub debug: u8,
@@ -201,6 +205,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let config = Config::new()?;
     let root = match &cli.store {
         Some(p) => p.to_owned(),
+        None if cli.global => util::global_store()?,
         None => util::find_store(&current_dir()?)?,
     };
     debug(&format!("Store: {}", root.display()));
@@ -257,7 +262,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             *long,
         )?,
         Some(Commands::Show { path }) => commands::show(debug, &config, path)?,
-        Some(Commands::Init {}) => commands::init(debug, &config)?,
+        Some(Commands::Init {}) => commands::init(debug, &config, cli.global)?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         None => {
             println!("Nothing happed o.0");
@@ -282,6 +287,12 @@ mod tests {
     #[test]
     fn cli_definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn global_flag_parses_and_conflicts_with_store() {
+        assert!(Cli::try_parse_from(["cake", "-g", "init"]).unwrap().global);
+        assert!(Cli::try_parse_from(["cake", "-g", "--store", "x", "ls"]).is_err());
     }
 
     #[test]

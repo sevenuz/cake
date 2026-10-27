@@ -127,3 +127,10 @@ pub fn exclude(repo: &Path, pattern: &str) -> Result<(), Box<dyn Error>> {
     std::fs::write(&file, format!("{}{}{}\n", content, sep, pattern))?;
     Ok(())
 }
+
+/// creates a new repository in `dir` on branch `main`
+pub fn init_repo(dir: &Path) -> Result<(), Box<dyn Error>> {
+    std::fs::create_dir_all(dir)?;
+    git(dir, &["init", "-q", "-b", "main"])?;
+    Ok(())
+}
