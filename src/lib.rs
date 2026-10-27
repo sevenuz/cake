@@ -16,6 +16,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 use config::Config;
 use item::Status;
 use selector::Selector;
+use std::collections::BTreeMap;
 use std::io::IsTerminal;
 use std::{
     env::{args, current_dir},
@@ -377,10 +378,65 @@ fn commit_message(args: &[String], agent: Option<String>) -> String {
     message
 }
 
+/// store root before parsing, from --store, -g, CAKE_STORE or the current dir
+fn guess_root(args: &[String]) -> Result<PathBuf, Box<dyn Error>> {
+    let mut it = args.iter().skip(1);
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--store" => return Ok(it.next().map(PathBuf::from).unwrap_or_default()),
+            "-g" | "--global" => return util::global_store(),
+            _ if a.starts_with("--store=") => return Ok(PathBuf::from(&a[8..])),
+            _ if !a.starts_with('-') => break,
+            _ => (),
+        }
+    }
+    match std::env::var("CAKE_STORE") {
+        Ok(s) if !s.is_empty() => Ok(PathBuf::from(s)),
+        _ => util::find_store(&current_dir()?),
+    }
+}
+
+/// replaces an alias in the command position with its command line
+fn expand_alias(args: &[String], aliases: &BTreeMap<String, String>) -> Result<Vec<String>, Box<dyn Error>> {
+    let mut i = 1;
+    while i < args.len() && args[i].starts_with('-') {
+        i += if args[i] == "--store" { 2 } else { 1 };
+    }
+    let Some(line) = args.get(i).and_then(|a| aliases.get(a)) else {
+        return Ok(args.to_vec());
+    };
+    let words = shlex::split(line).ok_or_else(|| error::invalid(format!("alias {}: bad quoting", args[i])))?;
+    Ok([&args[..i], &words[..], &args[i + 1..]].concat())
+}
+
+/// aliases may not shadow built-in commands
+fn check_aliases(aliases: &BTreeMap<String, String>) -> Result<(), Box<dyn Error>> {
+    let cmd = Cli::command();
+    for name in aliases.keys() {
+        if name == "help" || cmd.find_subcommand(name).is_some() {
+            return Err(error::invalid(format!("alias {} shadows a built-in command", name)));
+        }
+    }
+    Ok(())
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
-    let cli = match Cli::try_parse() {
+    let args: Vec<String> = args().collect();
+    out::set_json(args.iter().any(|a| a == "--json")); // for errors before parsing
+    let config = Config::new()?;
+    let aliases = config.aliases(&guess_root(&args)?)?;
+    check_aliases(&aliases)?;
+    let alias_help: String = aliases
+        .iter()
+        .map(|(k, v)| format!("  {:<8} {}\n", k, v))
+        .collect();
+    let parsed = Cli::command()
+        .after_help(format!("Aliases (config, store .cake/config.hjson):\n{}", alias_help))
+        .try_get_matches_from(expand_alias(&args, &aliases)?)
+        .and_then(|m| <Cli as clap::FromArgMatches>::from_arg_matches(&m));
+    let cli = match parsed {
         Ok(cli) => cli,
-        Err(e) if args().any(|a| a == "--json") && e.use_stderr() => {
+        Err(e) if args.iter().any(|a| a == "--json") && e.use_stderr() => {
             out::set_json(true);
             return Err(error::invalid(e.to_string().trim()));
         }
@@ -396,10 +452,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     };
     debug(&format!("debug mode is on."));
 
-    let args: Vec<String> = args().collect();
     debug(&format!("{:?}", args));
 
-    let config = Config::new()?;
     let root = match &cli.store {
         Some(p) => p.to_owned(),
         None if cli.global => util::global_store()?,
@@ -600,6 +654,21 @@ mod tests {
         let long = vec!["x".repeat(100)];
         let m = commit_message(&long, Some("claude-code".into()));
         assert!(m.ends_with("… [claude-code]") && m.chars().count() == 72 + 1 + 14, "{}", m);
+    }
+
+    #[test]
+    fn aliases_expand_in_command_position_with_extra_args() {
+        let s = |v: &[&str]| v.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        let aliases: BTreeMap<String, String> =
+            [("review".to_string(), "ls -t review -s 'two words'".to_string())].into();
+        assert_eq!(
+            expand_alias(&s(&["cake", "--json", "--store", "x", "review", "-p", "a"]), &aliases).unwrap(),
+            s(&["cake", "--json", "--store", "x", "ls", "-t", "review", "-s", "two words", "-p", "a"])
+        );
+        assert_eq!(expand_alias(&s(&["cake", "ls", "review"]), &aliases).unwrap(), s(&["cake", "ls", "review"]));
+        assert!(check_aliases(&aliases).is_ok());
+        assert!(check_aliases(&[("ls".to_string(), "x".to_string())].into()).is_err());
+        assert!(check_aliases(&[("reopen".to_string(), "x".to_string())].into()).is_err());
     }
 
     #[test]

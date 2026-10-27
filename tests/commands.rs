@@ -278,3 +278,30 @@ fn agent_sessions_are_recorded_on_changed_items() {
     env.cake_ok(&d, &["tag", "x", "b"]);
     assert!(read_item(&d, "x").contains("\nsessions: [s1, s2]\n"), "{}", read_item(&d, "x"));
 }
+
+#[test]
+fn aliases_from_defaults_user_and_store_config() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "r", "--todo", "-t", "review", "-m", "# to review"]);
+    env.cake_ok(&d, &["add", "i", "-m", "# idea"]);
+    env.cake_ok(&d, &["add", "c", "-p", "i", "-m", "# child"]);
+
+    let ids = |args: &[&str]| {
+        let out = env.cake_ok(&d, args);
+        ["r", "i", "c"].into_iter().filter(|id| out.contains(&format!("|{}", id)) || out.contains(&format!("\\{}", id))).collect::<Vec<_>>()
+    };
+    assert_eq!(ids(&["review"]), vec!["r"]);
+    assert_eq!(ids(&["ideas"]), vec!["c"], "i has a child");
+
+    let user = env.path("config/cake/config.hjson");
+    let cfg = std::fs::read_to_string(&user).unwrap().replace("\"aliases\": {}", "\"aliases\": {\"mine\": \"ls -s idea\"}");
+    std::fs::write(&user, cfg).unwrap();
+    assert_eq!(ids(&["mine"]), vec!["i"]);
+    std::fs::write(d.join(".cake/config.hjson"), "{ aliases: { mine: \"ls -s child\" } }").unwrap();
+    assert_eq!(ids(&["mine"]), vec!["c"], "store config wins");
+
+    assert!(env.cake_ok(&d, &["--help"]).contains("mine     ls -s child"));
+    std::fs::write(d.join(".cake/config.hjson"), "{ aliases: { ls: \"ready\" } }").unwrap();
+    assert!(env.cake_err(&d, &["ready"]).contains("shadows"));
+}

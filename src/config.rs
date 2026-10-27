@@ -1,6 +1,7 @@
 use crate::util;
 use crate::Error;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use termimad::MadSkin;
 
@@ -35,6 +36,10 @@ pub struct Config {
     /// env vars holding the agent's session id, first set one wins
     #[serde(default = "default_session_env")]
     pub session_env: Vec<String>,
+    /// own commands: name -> command line, e.g. review: "ls -t review";
+    /// added to the defaults, a store's .cake/config.hjson overrides them
+    #[serde(default)]
+    pub aliases: BTreeMap<String, String>,
     /// searches in config dir for skin file (hjson)
     skin_file_name: String,
     /// When output has more lines than the threshold, then show it in scrollview
@@ -80,7 +85,34 @@ fn first_env(vars: &[String]) -> Option<String> {
     vars.iter().find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty()))
 }
 
+/// committed per store in .cake/config.hjson, shared by everyone using the store
+#[derive(Deserialize, Default)]
+struct StoreConfig {
+    #[serde(default)]
+    aliases: BTreeMap<String, String>,
+}
+
 impl Config {
+    /// default aliases, then the user's, then the store's
+    pub fn aliases(&self, store: &std::path::Path) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
+        let mut aliases: BTreeMap<String, String> = [
+            ("review", "ls -t review --status todo,doing"),
+            ("ask", "ls -t ask"),
+            ("ideas", "ls --status none --childless"),
+        ]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        aliases.extend(self.aliases.clone());
+        let file = store.join("config.hjson");
+        if file.is_file() {
+            let store_config: StoreConfig = deser_hjson::from_str(&fs::read_to_string(&file)?)
+                .map_err(|e| format!("{}: {}", file.display(), e))?;
+            aliases.extend(store_config.aliases);
+        }
+        Ok(aliases)
+    }
+
     /// AI agent running cake, from `agent_env`
     pub fn agent(&self) -> Option<String> {
         first_env(&self.agent_env).map(|a| a.split('_').next().unwrap().to_string())
@@ -113,6 +145,7 @@ impl Config {
                 git_remote_name: "origin".to_string(),
                 agent_env: default_agent_env(),
                 session_env: default_session_env(),
+                aliases: BTreeMap::new(),
                 skin_file_name: "gruvbox.hjson".to_string(),
                 scrollview_threshold: 30,
             })
