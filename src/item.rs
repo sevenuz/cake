@@ -40,25 +40,6 @@ impl Status {
     }
 }
 
-/// tracked time span, `end` None while running, `by` who tracked it
-#[derive(Clone, Debug, PartialEq)]
-pub struct Interval {
-    pub start: i64,
-    pub end: Option<i64>,
-    pub by: Option<String>,
-}
-
-impl Interval {
-    /// open intervals of `actor`; intervals without `by` (older files) count for everyone
-    fn runs_for(&self, actor: &str) -> bool {
-        self.end.is_none() && self.by.as_deref().map_or(true, |b| b == actor)
-    }
-
-    fn seconds(&self) -> i64 {
-        self.end.unwrap_or_else(util::timestamp) - self.start
-    }
-}
-
 #[derive(Clone)]
 pub struct Item {
     id: String,
@@ -71,7 +52,7 @@ pub struct Item {
     closed: Option<i64>,
     due: Option<String>,
     priority: Option<u64>,
-    time: Vec<Interval>,
+    timetrack: Vec<i64>,
     extra: Mapping,
     content: String,
     children: Vec<String>, // derived by store
@@ -158,7 +139,7 @@ impl Item {
             closed: None,
             due: None,
             priority: None,
-            time: vec![],
+            timetrack: vec![],
             extra: Mapping::new(),
             content: String::new(),
             children,
@@ -198,21 +179,17 @@ impl Item {
             Some(Value::Number(n)) if n.as_u64().is_some() => n.as_u64(),
             Some(_) => return Err(err("'priority' must be a number".to_string())),
         };
-        let mut time = vec![];
+        let mut timetrack = vec![];
         for interval in take_list(&mut m, "time")? {
-            // "start/end by", end and by optional
-            let (span, by) = match interval.trim().split_once(' ') {
-                Some((s, b)) => (s, Some(b.trim().to_string())),
-                None => (interval.trim(), None),
-            };
-            let (start, end) = span
+            let (start, end) = interval
                 .split_once('/')
                 .ok_or(err(format!("invalid interval '{}'", interval)))?;
-            time.push(Interval {
-                start: util::parse_timestamp(start)?,
-                end: Some(end).filter(|e| !e.is_empty()).map(util::parse_timestamp).transpose()?,
-                by,
-            });
+            timetrack.push(util::parse_timestamp(start)?);
+            if !end.trim().is_empty() {
+                timetrack.push(util::parse_timestamp(end)?);
+            } else if timetrack.len() % 2 == 1 {
+                break;
+            }
         }
         Ok(Item {
             id,
@@ -225,7 +202,7 @@ impl Item {
             closed,
             due,
             priority,
-            time,
+            timetrack,
             extra: m,
             content,
             children: vec![],
@@ -259,21 +236,14 @@ impl Item {
         if let Some(p) = self.priority {
             s += &format!("priority: {}\n", p);
         }
-        if !self.time.is_empty() {
+        if !self.timetrack.is_empty() {
             s += "time:\n";
-            for i in &self.time {
-                let mut entry = format!(
-                    "{}/{}",
-                    util::format_timestamp(i.start),
-                    i.end.map(util::format_timestamp).unwrap_or_default()
+            for pair in self.timetrack.chunks(2) {
+                s += &format!(
+                    "  - {}/{}\n",
+                    util::format_timestamp(pair[0]),
+                    pair.get(1).map(|t| util::format_timestamp(*t)).unwrap_or_default()
                 );
-                if let Some(b) = &i.by {
-                    entry = format!("{} {}", entry, b);
-                    if yaml_str(b) != *b {
-                        entry = serde_json::to_string(&entry).unwrap();
-                    }
-                }
-                s += &format!("  - {}\n", entry);
             }
         }
         if !self.extra.is_empty() {
@@ -307,18 +277,18 @@ impl Item {
     /// * `serialize` - if true, the timetrack is printed as date,
     /// else only the timedifferences are printed
     pub fn print_long(&self, serialize: bool) -> String {
-        let tt = self
-            .time
-            .iter()
-            .map(|i| match serialize {
-                true => format!(
-                    "{}/{}",
-                    util::format_timestamp(i.start),
-                    i.end.map(util::format_timestamp).unwrap_or_default()
-                ),
-                false => util::timestamp_to_hms(i.seconds()),
-            })
-            .collect::<Vec<String>>();
+        let tt = if serialize {
+            self.timetrack
+                .iter()
+                .map(|t| util::format_timestamp(*t))
+                .collect::<Vec<String>>()
+        } else {
+            self.timetrack
+                .chunks(2)
+                .filter(|p| p.len() == 2)
+                .map(|p| util::timestamp_to_hms(p[1] - p[0]))
+                .collect::<Vec<String>>()
+        };
         format!(
             "| id | {}|\n|---|---|\n| status | {}|\n| created | {}|\n| by | {}|\n| tags | {}|\n| timetrack | {}|\n| parent | {}|\n| children | {}|\n| blocked by | {}|\n\n{}",
             self.id,
@@ -389,51 +359,35 @@ impl Item {
         self.timestamp
     }
 
-    /// a timer runs, for anyone
     pub fn is_started(&self) -> bool {
-        self.time.iter().any(|i| i.end.is_none())
+        self.timetrack.len() % 2 == 1
     }
 
     pub fn is_stopped(&self) -> bool {
-        !self.is_started()
+        self.timetrack.len() % 2 == 0
     }
 
-    pub fn runs_for(&self, actor: &str) -> bool {
-        self.time.iter().any(|i| i.runs_for(actor))
-    }
-
-    /// starts a timer for `actor`, sets status doing
-    pub fn start(&mut self, actor: &str) -> Result<(), String> {
-        if let Some(i) = self.time.iter().find(|i| i.runs_for(actor)) {
-            return Err(format!(
+    pub fn start(&mut self) -> Result<(), String> {
+        if self.is_stopped() {
+            self.timetrack.push(util::timestamp());
+            self.status = Some(Status::Doing);
+            Ok(())
+        } else {
+            Err(format!(
                 "{} runs already since {}",
                 self.id,
-                util::format_timestamp(i.start)
-            ));
+                util::format_timestamp(*self.timetrack.last().unwrap())
+            ))
         }
-        self.time.push(Interval {
-            start: util::timestamp(),
-            end: None,
-            by: Some(actor.to_string()),
-        });
-        self.status = Some(Status::Doing);
-        Ok(())
     }
 
-    /// stops the timer of `actor`
-    pub fn stop(&mut self, actor: &str) -> Result<(), String> {
-        let i = self
-            .time
-            .iter_mut()
-            .find(|i| i.runs_for(actor))
-            .ok_or(format!("{} is not running for {}.", self.id, actor))?;
-        i.end = Some(util::timestamp());
-        Ok(())
-    }
-
-    fn stop_all(&mut self) {
-        let now = util::timestamp();
-        self.time.iter_mut().filter(|i| i.end.is_none()).for_each(|i| i.end = Some(now));
+    pub fn stop(&mut self) -> Result<(), String> {
+        if self.is_started() {
+            self.timetrack.push(util::timestamp());
+            Ok(())
+        } else {
+            Err(format!("{} is not running.", self.id))
+        }
     }
 
     pub fn blocked_by(&self) -> &Vec<String> {
@@ -471,7 +425,9 @@ impl Item {
         if status.is_open() {
             self.closed = None;
         } else {
-            self.stop_all();
+            if self.is_started() {
+                self.stop()?;
+            }
             self.closed = Some(util::timestamp());
         }
         self.status = Some(status);
@@ -517,19 +473,21 @@ impl Item {
 
     /// tracked time, a running interval counts until now
     pub fn tracked_seconds(&self) -> i64 {
-        self.time.iter().map(|i| i.seconds()).sum()
+        self.timetrack
+            .chunks(2)
+            .map(|p| p.get(1).copied().unwrap_or_else(util::timestamp) - p[0])
+            .sum()
     }
 
     /// stored fields plus title, body and time stats; derived relations are added by the store
     pub fn to_json(&self) -> serde_json::Map<String, serde_json::Value> {
         let time: Vec<_> = self
-            .time
-            .iter()
-            .map(|i| {
+            .timetrack
+            .chunks(2)
+            .map(|p| {
                 serde_json::json!({
-                    "start": util::format_timestamp(i.start),
-                    "end": i.end.map(util::format_timestamp),
-                    "by": i.by,
+                    "start": util::format_timestamp(p[0]),
+                    "end": p.get(1).map(|t| util::format_timestamp(*t)),
                 })
             })
             .collect();

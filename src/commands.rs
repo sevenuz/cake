@@ -209,31 +209,28 @@ where
 {
     debug(&format!("start {:?}", selector));
     let ids = select(store, &selector)?;
-    let actor = util::author(store.root());
     for id in &ids {
-        store.get_item_mut(id).unwrap().start(&actor)?;
+        store
+            .get_item_mut(id)
+            .expect("Could not found id")
+            .start()?;
     }
     say!("{} started.", ids.len());
     Ok(Report::Items(ids))
 }
 
-/// stops your timer on the selected items, without selector all your running ones
-pub fn stop<F>(debug: F, store: &mut Store, selector: Selector) -> Result<Report, Box<dyn Error>>
+/// stops the selected items, without selector the running ones
+pub fn stop<F>(debug: F, store: &mut Store, mut selector: Selector) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
     debug(&format!("stop {:?}", selector));
-    let actor = util::author(store.root());
-    let ids = if selector.is_empty() {
-        let mut ids: Vec<String> =
-            store.get().values().filter(|i| i.runs_for(&actor)).map(|i| i.id().to_owned()).collect();
-        ids.sort();
-        ids
-    } else {
-        select(store, &selector)?
-    };
+    if selector.is_empty() {
+        selector.started = true;
+    }
+    let ids = select(store, &selector)?;
     for id in &ids {
-        store.get_item_mut(id).unwrap().stop(&actor)?;
+        store.get_item_mut(id).expect("Could not found id").stop()?;
     }
     say!("{} stopped.", ids.len());
     Ok(Report::Items(ids))

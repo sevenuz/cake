@@ -56,9 +56,9 @@ fn malformed_known_field_is_an_error() {
 #[test]
 fn start_sets_doing_and_stop_closes_interval() {
     let mut item = Item::new("id3".to_string(), vec![], None, vec![]);
-    item.start("me").unwrap();
+    item.start().unwrap();
     assert!(item.to_markdown().contains("status: doing\n"));
-    item.stop("me").unwrap();
+    item.stop().unwrap();
     assert!(item.is_stopped());
 }
 
@@ -81,7 +81,7 @@ fn print_uses_backslash_border_when_item_has_children() {
 #[test]
 fn done_stops_timer_and_sets_closed_reopen_clears_it() {
     let mut item = Item::new("a".into(), vec![], None, vec![]);
-    item.start("me").unwrap();
+    item.start().unwrap();
     item.set_status(Status::Done).unwrap();
     assert!(item.is_stopped());
     assert!(item.to_markdown().contains("status: done\n"));
@@ -139,33 +139,4 @@ fn title_and_json_fields() {
     assert_eq!(item.title(), "plain first line");
     let note = Item::new("n".into(), vec![], None, vec![]);
     assert!(note.to_json()["status"].is_null());
-}
-
-#[test]
-fn timers_belong_to_their_actor() {
-    let mut item = Item::new("a".into(), vec![], None, vec![]);
-    item.start("jul").unwrap();
-    item.start("claude-code").unwrap();
-    assert!(item.start("jul").is_err(), "one timer per actor");
-    item.stop("claude-code").unwrap();
-    assert!(item.runs_for("jul") && !item.runs_for("claude-code"));
-    assert!(item.stop("claude-code").is_err());
-    let md = item.to_markdown();
-    assert!(md.contains("/ jul\n"), "{}", md);
-    assert!(md.contains(" claude-code\n"), "{}", md);
-    let again = Item::from_markdown(&md, "a", 0).unwrap();
-    assert_eq!(again.to_markdown(), md);
-    assert_eq!(again.to_json()["time"][1]["by"], "claude-code");
-}
-
-#[test]
-fn intervals_without_actor_and_odd_names_round_trip() {
-    let old = "---\ntime:\n  - 2026-10-22T14:00:00+02:00/\n---\n";
-    let mut item = Item::from_markdown(old, "a", 0).unwrap();
-    assert!(item.runs_for("anyone"), "old open interval counts for everyone");
-    item.stop("anyone").unwrap();
-    item.start("Jul A. #1").unwrap();
-    let md = item.to_markdown();
-    assert!(md.contains("\"2026") && md.contains(" Jul A. #1\"\n"), "quoted: {}", md);
-    assert!(Item::from_markdown(&md, "a", 0).unwrap().runs_for("Jul A. #1"));
 }
