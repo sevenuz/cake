@@ -119,8 +119,8 @@ idea      (user,  note)   stays as the user wrote it
 └─ Q      (agent, note, tag ask)
 ```
 
-1. **New ideas** — `cake ls --json --status none --childless`; the user's
-   notes among them (`by` is not you) are not worked out yet.
+1. **New ideas** — `cake ideas --json`; the user's notes among them (`by` is
+   not you) are not worked out yet.
 2. **Discuss** in chat. Propose the breakdown as bullets; write nothing
    until the user agrees.
 3. **Write down** — under the idea: one plan note, then one `--todo` per
@@ -133,6 +133,9 @@ idea      (user,  note)   stays as the user wrote it
 5. **Finish** — `cake stop <id>`, `cake tag <id> review`; tell the user what
    is ready for review and what became unblocked (`blocks`, `cake ready`).
    The user closes with `cake done`.
+
+Aliases (`cake help` lists all, a store may add its own): `cake review`,
+`cake ask` (open questions), `cake ideas`. All take `--json` and selectors.
 
 **Context** — `cake ls --json -s <topic>`, `cake show <id> --json` on
 relevant notes. Reuse items instead of adding duplicates.
