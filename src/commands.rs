@@ -359,12 +359,17 @@ where
     Ok(())
 }
 
-pub fn show<F>(debug: F, config: &Config, path: &str) -> Result<(), Box<dyn Error>>
+/// shows an item by id, or any markdown file by path
+pub fn show<F>(debug: F, config: &Config, store: &Store, target: &str) -> Result<(), Box<dyn Error>>
 where
     F: Fn(&str),
 {
-    debug(&format!("show: {:?}", path));
-    let data = fs::read_to_string(path)?;
+    debug(&format!("show: {:?}", target));
+    let data = match store.get_item(target) {
+        Some(item) => item.print_long(false),
+        None if Path::new(target).is_file() => fs::read_to_string(target)?,
+        None => return Err(format!("{} is no item id or file.", target).into()),
+    };
     view::print(&config, data)?;
     Ok(())
 }

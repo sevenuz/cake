@@ -253,10 +253,10 @@ pub enum Commands {
         #[arg(short, long)]
         long: bool,
     },
-    /// show a markdown file in terminal
+    /// show an item, or any markdown file
     Show {
-        /// Path to the file
-        path: String,
+        /// item id or file path
+        target: String,
     },
     /// Creates a new store (.cake). In a git repo it is a worktree of an orphan
     /// branch (config git_branch), attached if the branch exists on the remote.
@@ -439,7 +439,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             selector.selector(&selector.ids)?,
             *long,
         )?,
-        Some(Commands::Show { path }) => commands::show(debug, &config, path)?,
+        Some(Commands::Show { target }) => commands::show(debug, &config, &store, target)?,
         Some(Commands::Init {}) => commands::init(debug, &config, cli.global)?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),

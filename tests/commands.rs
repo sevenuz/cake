@@ -156,3 +156,15 @@ fn block_unblock_and_ready() {
     env.cake_ok(&d, &["unblock", "ccc", "--by", "bbb"]);
     assert!(env.cake_ok(&d, &["ready"]).contains("ccc"));
 }
+
+#[test]
+fn show_takes_an_id_or_a_file() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "aaa", "-m", "# item title"]);
+    std::fs::write(d.join("README.md"), "# readme title\n").unwrap();
+
+    assert!(env.cake_ok(&d, &["show", "aaa"]).contains("item title"));
+    assert!(env.cake_ok(&d, &["show", "README.md"]).contains("readme title"));
+    assert!(env.cake_err(&d, &["show", "nope"]).contains("no item id or file"));
+}
