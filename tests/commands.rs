@@ -387,3 +387,13 @@ fn piping_one_cake_command_into_another_does_not_deadlock() {
     }
     assert!(read_item(&d, "x").contains("---\n# new"), "{}", read_item(&d, "x"));
 }
+
+#[test]
+fn empty_content_is_refused() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "x", "-m", "# keep"]);
+    assert!(env.cake_err(&d, &["edit", "x", "-m", "  "]).contains("Empty content"));
+    assert!(env.cake_err(&d, &["add", "y", "-m", ""]).contains("Empty content"));
+    assert!(read_item(&d, "x").ends_with("# keep"));
+}

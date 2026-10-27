@@ -363,12 +363,18 @@ fn print_report(store: &Store, report: commands::Report) {
     println!("{}", json);
 }
 
-/// -m value, "-" reads stdin
+/// -m value, "-" reads stdin; empty content is refused, e.g. from a pipe
+/// whose writer died
 fn read_message(message: &Option<String>) -> Result<Option<String>, Box<dyn Error>> {
-    Ok(match message.as_deref() {
-        Some("-") => Some(std::io::read_to_string(std::io::stdin())?),
-        m => m.map(String::from),
-    })
+    let text = match message.as_deref() {
+        Some("-") => std::io::read_to_string(std::io::stdin())?,
+        Some(m) => m.to_string(),
+        None => return Ok(None),
+    };
+    if text.trim().is_empty() {
+        return Err(error::invalid("Empty content, nothing written."));
+    }
+    Ok(Some(text))
 }
 
 /// one-line commit subject from the command line, at most 72 chars plus the agent tag
