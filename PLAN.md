@@ -37,14 +37,13 @@ One file per item. Two devices editing different items never conflict.
 ```markdown
 ---
 id: k3f9a2
-kind: task                   # task | note
-status: doing                # todo | doing | done | dropped   (tasks only)
+status: doing                # todo | doing | done | dropped; absent = note
 tags: [cake, storage]
 parent: "[[p0x7qe]]"         # single parent, Obsidian wikilink, optional
 blocked_by: ["[[m2k8zz]]"]   # optional, items that must close first
-related: ["[[a81hfq]]"]      # optional, no semantics
 aliases: ["File per item"]   # = title, makes Obsidian link autocomplete work
 created: 2026-10-22T09:12:00+02:00
+by: sevenuz                  # creator, set once: CAKE_AUTHOR | agent | git user.name
 closed: 2026-10-23T18:00:00+02:00   # set when status -> done|dropped
 due: 2026-10-30              # optional, date or datetime
 priority: 2                  # optional, 1 (high) .. 3 (low)
@@ -62,8 +61,14 @@ Rules:
 - **Only the child stores the relation.** `children` is computed on load
   (`HashMap<parent, Vec<child>>`). Re-parenting touches exactly one file.
 - **Dependencies (Beads-style), same rule:** only the waiting item stores
-  `blocked_by`; `blocks` is computed on load. `related` is a plain link
-  list. Wikilinks → Obsidian graph shows them.
+  `blocked_by`; `blocks` is computed on load. Other links are `[[id]]`
+  wikilinks in the body → Obsidian graph shows them.
+- **Notes vs tasks:** no `kind` field. An item without `status` is a note
+  (never in `ready`); any status command (`todo`, `start`, `done`, `drop`)
+  turns it into a task. `cake add` creates a note, `--todo` a task.
+- **Author:** `by` is written once on creation, never changed (no
+  conflicts). Commits by an agent end with `[agent]`; `git log` shows who
+  changed what.
 - **Ready is computed, never stored:** ready = status todo|doing and every
   `blocked_by` item is done|dropped; blocked = at least one open blocker.
   Storing it would rewrite files when a blocker closes → conflicts.
@@ -87,12 +92,12 @@ Rules:
 
 | action             | effect                                                     |
 |--------------------|------------------------------------------------------------|
-| `cake add`         | `status: todo` (task) / no status (note)                   |
+| `cake add`         | no status (note); `--todo` → `status: todo`                |
 | `cake start <id>`  | open interval, `status: doing`, stop other running timer   |
 | `cake stop [id]`   | close interval (no id = the running one), status unchanged |
 | `cake done <id>`   | close interval if open, `status: done`, set `closed`       |
 | `cake drop <id>`   | `status: dropped`, set `closed`                            |
-| `cake reopen <id>` | `status: todo`, remove `closed`                            |
+| `cake todo <id>`   | `status: todo`, remove `closed` (alias `reopen`)           |
 | `cake block <id> --by <ids>`   | add `blocked_by` edges (cycle check)           |
 | `cake unblock <id> --by <ids>` | remove `blocked_by` edges                      |
 
@@ -101,13 +106,12 @@ Rules:
 ```rust
 pub struct Item {
     pub id: String,
-    pub kind: Kind,              // Task | Note
-    pub status: Option<Status>,  // Todo | Doing | Done | Dropped
+    pub status: Option<Status>,  // Todo | Doing | Done | Dropped, None = note
     pub tags: Vec<String>,
     pub parent: Option<String>,
     pub blocked_by: Vec<String>,
-    pub related: Vec<String>,
     pub created: DateTime<FixedOffset>,
+    pub by: Option<String>,
     pub closed: Option<DateTime<FixedOffset>>,
     pub due: Option<Due>,
     pub priority: Option<u8>,
@@ -294,14 +298,14 @@ Same item edited on two devices between syncs:
 
 Later (on top, no base change): `.gitattributes` `items/*.md merge=cake` +
 local `git config merge.cake.driver "cake merge-driver %O %A %B"` for
-field-wise 3-way merge (union of `time`, `tags`, `blocked_by`, `related`, …).
+field-wise 3-way merge (union of `time`, `tags`, `blocked_by`, …).
 
 ### Phone / foreign editors
 
 cake must read files it didn't write (Obsidian, phone git apps, Termux):
 
-- **Lenient parsing:** missing frontmatter or fields → defaults (`kind:
-  task`, `status: todo`, `created` = file mtime); `id` = frontmatter id or
+- **Lenient parsing:** missing frontmatter or fields → defaults (no status
+  = note, `created` = file mtime); `id` = frontmatter id or
   filename stem (`buy milk.md` → id `buy milk`, quoted when needed);
   unknown keys preserved.
 - Files are not rewritten on read. The first edit through cake normalises
@@ -320,10 +324,10 @@ clap 3 → 4. Selector flags currently repeated in 6 subcommands → one
 
 ```
 cake                         TUI dashboard (static summary if stdout not a tty)
-cake add [-m TEXT] [-t TAGS] [-p PARENT] [--note] [--due D] [--prio N]
-         [--blocked-by IDS] [--related IDS]
+cake add [-m TEXT|-] [-t TAGS] [-p PARENT] [--todo] [--due D] [--prio N]
+         [--blocked-by IDS]
 cake edit <id>               $EDITOR on the item file
-cake start <id> | stop [id] | done <id> | drop <id> | reopen <id>
+cake start <id> | stop [id] | done <id> | drop <id> | todo <id>
 cake tag <sel> +a -b
 cake mv <id> <parent|->      re-parent / detach
 cake block <id> --by <ids>   add blockers (cycle check like re-parent)
@@ -340,11 +344,11 @@ cake config
 ```
 
 Selectors (existing + new): ids, `--tag`/`~tag`, `--parent`, `--status`,
-`--kind`, `--blocked`, `--ready`, `--before/--after`, `--started/--stopped`, `--due-before`,
+`--status none` (notes), `--by NAME`, `--blocked`, `--ready`, `--before/--after`, `--started/--stopped`, `--due-before`,
 `-s TEXT` (substring in title/body), `-r` recursion, `--or`.
 
 Non-interactive guarantees (needed for agents): no `$EDITOR` when
-`-m`/`--body-file` (`-` = stdin) is given, when `--json` is set, or when
+`-m` (`-m -` = stdin) is given, when `--json` is set, or when
 stdin is not a tty.
 
 ### `--json`
@@ -442,17 +446,17 @@ Contents outline:
   this for the project", or a `.cake/` dir exists in the repo, or starting
   non-trivial work in such a repo.
 - **Read first:** `cake ready --json` at session start and pick work from
-  that list, not from everything open; `cake ls --json --kind note -s
+  that list, not from everything open; `cake ls --json --status none -s
   <topic>` for context before planning; reuse existing items instead of
   creating duplicates.
 - **Dependencies:** work found mid-task → `cake add … -p <current>` (subtask)
-  or `--related`; ordering constraints → `cake block`. Before marking done,
+  or a `[[id]]` link in the body; ordering constraints → `cake block`. Before marking done,
   check `blocks` and report what becomes ready.
 - **Write conventions:**
-  - plans, designs, decisions → `kind: note`, tagged with area, parented
+  - plans, designs, decisions → notes (no `--todo`), tagged with area, parented
     under the relevant task;
-  - work items → `kind: task`, one per deliverable, children for subtasks;
-  - always `-m`/`--body-file -`, never interactive;
+  - work items → `--todo`, one per deliverable, children for subtasks;
+  - always `-m TEXT` or `-m -` with stdin, never interactive;
   - title = first `#` line, short; body in markdown;
   - don't create loose `PLAN.md`/`TODO.md` files in the repo when a cake
     store exists.
@@ -476,15 +480,15 @@ operation set for MCP tool definitions.
 1. **Groundwork:** clap 4, `SelectorArgs` flatten. Old stores stay until
    step 3 replaces them, so every commit builds and works.
 2. **Item format:** frontmatter parse/write (round-trip tests incl. unknown
-   keys, CRLF, empty body), `Item` with status/kind/parent/intervals and
-   `blocked_by`/`related`, ISO time helpers, id generator
+   keys, CRLF, empty body), `Item` with status/parent/intervals and
+   `blocked_by`, ISO time helpers, id generator
    + prefix resolution.
    Lenient reading of foreign files (§3 Phone): defaults, id from
    filename, no rewrite on read.
 3. **Store:** directory load/save, dirty tracking, derived children and
    blocks, cycle check on re-parent and block, atomic writes, discovery
    (§2). Delete single-file md/json stores and `-i/-o`.
-4. **Commands** on the new store: add/edit/start/stop/done/drop/reopen/
+4. **Commands** on the new store: add/edit/start/stop/done/drop/todo/
    tag/mv/block/unblock/ready/rm/ls/show/log/stats.
 5. **`--json`** for all commands + error codes.
 6. **Git:** rewrite `git.rs` around `-C <dir>`, status-checked calls,
@@ -511,5 +515,5 @@ sync, recurring tasks, estimates vs actual, personal branches
 
 - Should `start` on a child also count time for its parents in stats (rolled
   up) — display-only rollup proposed.
-- Keep `kind: note` items in the Tasks tab tree when they have task
+- Keep notes (no status) in the Tasks tab tree when they have task
   children/parents, or strictly separate tabs?
