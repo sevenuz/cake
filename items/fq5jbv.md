@@ -8,12 +8,29 @@ priority: 1
 ---
 # Merge driver for items/*.md
 
-Field-wise 3-way merge so the conflicts in [[2wkhyp]] resolve automatically:
+Goal: frontmatter conflicts from [[2wkhyp]] resolve automatically on sync.
 
-- tags, blocked_by: set merge (added on either side kept, removed on either side removed)
-- time: union of intervals
-- status/closed: a side that changed wins; both changed → closed (done/dropped) wins over open, closed = later
-- other scalars (parent, due, priority, unknown keys): a side that changed wins; both → ours
-- body: git merge-file 3-way; overlapping edits → conflict markers, driver fails, normal conflict flow
+Setup
+- store `.gitattributes`: `items/*.md merge=cake` (committed)
+- `cake init` (also attach) sets local `merge.cake.driver = cake merge-driver %O %A %B`
+- clones without the driver (phone apps): git text merge as today
 
-Setup: store .gitattributes `items/*.md merge=cake` (committed), `git config merge.cake.driver "cake merge-driver %O %A %B"` set by cake init (local, also on attach). Clones without the driver (phone apps) fall back to git's text merge.
+Driver `cake merge-driver BASE OURS THEIRS`
+- parse all 3 leniently as items, write result to OURS via the normal serializer
+- exit 0 clean, 1 if body has conflict markers
+
+Field rules (3-way: unchanged side takes the other; equal → keep)
+- `tags`, `blocked_by`: set merge, adds of both kept, removes of both applied
+- `time`: union by start; same start, one stopped → stopped one
+- `status`+`closed` together: closed (done/dropped) wins over open; both closed → later `closed`; closed result stops open intervals at `closed`
+- `parent`, `due`, `priority`, unknown keys, both changed differently: ours wins
+- `by`: never changes
+- body: `git merge-file` 3-way; overlap → markers, exit 1
+
+Sync
+- rm vs change (git skips the driver): keep the changed item, `git add` it, continue the merge
+- external edits (Obsidian etc.) are not auto-committed before sync
+
+Tests
+- play-through scenarios as integration tests, all clean except overlapping body edits
+- unit tests per field rule
