@@ -257,3 +257,20 @@ fn parallel_commands_wait_for_the_lock_and_all_commit() {
     let a0 = read_item(&a, "a0");
     assert!((1..20).all(|i| a0.contains(&format!("t{}", i))), "no lost tag: {}", a0);
 }
+
+#[test]
+fn stop_without_id_stops_only_your_own_timers() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "x", "--todo", "-m", "# x"]);
+    let jul = [("CAKE_AUTHOR", "jul")];
+    let agent = [("AI_AGENT", "claude-code_1_agent")];
+    assert!(env.cake_env(&d, &["start", "x"], &jul).status.success());
+    assert!(env.cake_env(&d, &["start", "x"], &agent).status.success());
+
+    let out = env.cake_env(&d, &["stop"], &agent);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let x = read_item(&d, "x");
+    assert!(x.contains("/ jul\n"), "jul still runs: {}", x);
+    assert!(!x.contains("/ claude-code\n") && x.contains(" claude-code\n"), "{}", x);
+}
