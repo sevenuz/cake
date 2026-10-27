@@ -8,7 +8,7 @@ created: 2026-10-27T12:19:28+01:00
 by: claude-code
 sessions: [69b1d969-f2c3-4f41-b58d-a996441f99e2]
 ---
-# Stage 3: SQLite index with FTS5
+# SQLite index for fast search in big stores
 
 .cake/index.sqlite (gitignored), rebuilt incrementally from mtimes, FTS5 over title/body/tags. Only when file scanning gets slow.
 
