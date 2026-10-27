@@ -184,6 +184,44 @@ pub mod inner {
             Ok(())
         }
 
+        /// true if `ancestor` is `id` or one of its parents, transitively
+        fn is_ancestor(&self, ancestor: &str, id: &str) -> bool {
+            let mut seen = HashSet::new();
+            let mut cur = Some(id.to_owned());
+            while let Some(c) = cur {
+                if c == ancestor {
+                    return true;
+                }
+                if !seen.insert(c.clone()) {
+                    return false;
+                }
+                cur = self.items.get(&c).and_then(|i| i.parents().first().cloned());
+            }
+            false
+        }
+
+        /// re-parents `id` under `parent`, None detaches; refuses cycles
+        pub fn move_item(&mut self, id: &str, parent: Option<&str>) -> Result<(), Box<dyn Error>> {
+            if !self.items.contains_key(id) {
+                return Err(format!("{} not found.", id).into());
+            }
+            if let Some(p) = parent {
+                if !self.items.contains_key(p) {
+                    return Err(format!("{} not found.", p).into());
+                }
+                if self.is_ancestor(id, p) {
+                    return Err(format!("{} is {} or below it, that would be a cycle.", p, id).into());
+                }
+            }
+            let item = self.items.get(id).unwrap().clone();
+            self.set_relations(&item, false);
+            let item = self.get_item_mut(id).unwrap();
+            item.set_parent(parent.map(|p| p.to_owned()));
+            let item = item.clone();
+            self.set_relations(&item, true);
+            Ok(())
+        }
+
         pub fn get_item(&self, id: &str) -> Option<&Item> {
             return self.items.get(id);
         }
@@ -351,6 +389,37 @@ pub mod inner {
             assert_eq!(p.tags(), &vec!["new".to_string()]);
             assert_eq!(p.children(), &vec!["c".to_string()]);
             assert_eq!(store.get_item("c").unwrap().parents(), ["p".to_string()]);
+        }
+
+        #[test]
+        fn move_item_reparents_and_detaches() {
+            let mut store = empty_store();
+            store.add(item("a", None, vec![])).unwrap();
+            store.add(item("b", None, vec![])).unwrap();
+            store.add(item("c", Some("a"), vec![])).unwrap();
+
+            store.move_item("c", Some("b")).unwrap();
+            assert!(store.get_item("a").unwrap().children().is_empty());
+            assert_eq!(store.get_item("b").unwrap().children(), &vec!["c".to_string()]);
+            assert_eq!(store.get_item("c").unwrap().parents(), ["b".to_string()]);
+
+            store.move_item("c", None).unwrap();
+            assert!(store.get_item("b").unwrap().children().is_empty());
+            assert!(store.get_item("c").unwrap().parents().is_empty());
+        }
+
+        #[test]
+        fn move_item_refuses_cycles_and_unknown_ids() {
+            let mut store = empty_store();
+            store.add(item("a", None, vec![])).unwrap();
+            store.add(item("b", Some("a"), vec![])).unwrap();
+            store.add(item("c", Some("b"), vec![])).unwrap();
+
+            assert!(store.move_item("a", Some("c")).is_err());
+            assert!(store.move_item("a", Some("a")).is_err());
+            assert!(store.move_item("a", Some("x")).is_err());
+            assert!(store.move_item("x", None).is_err());
+            assert!(store.get_item("a").unwrap().parents().is_empty());
         }
 
         #[test]

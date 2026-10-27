@@ -94,3 +94,18 @@ fn add_rejects_bad_input_without_writing() {
     assert!(env.cake_err(&d, &["add", "x", "-m", "x", "--blocked-by", "nope"]).contains("nope not found"));
     assert!(!d.join(".cake/items/x.md").exists());
 }
+
+#[test]
+fn mv_reparents_refuses_cycles_and_detaches() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "a", "-m", "# a"]);
+    env.cake_ok(&d, &["add", "b", "-m", "# b"]);
+    env.cake_ok(&d, &["add", "c", "-p", "a", "-m", "# c"]);
+
+    env.cake_ok(&d, &["mv", "c", "b"]);
+    assert!(read_item(&d, "c").contains("parent: \"[[b]]\"\n"));
+    assert!(env.cake_err(&d, &["mv", "b", "c"]).contains("cycle"));
+    env.cake_ok(&d, &["mv", "c", "-"]);
+    assert!(!read_item(&d, "c").contains("parent:"));
+}

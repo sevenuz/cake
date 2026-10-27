@@ -183,6 +183,21 @@ where
     Ok(())
 }
 
+/// re-parents an item, "-" detaches it
+pub fn mv<F>(debug: F, store: &mut Store, id: &str, parent: &str) -> Result<(), Box<dyn Error>>
+where
+    F: Fn(&str),
+{
+    debug(&format!("mv {:?} {:?}", id, parent));
+    let parent = if parent == "-" { None } else { Some(parent) };
+    store.move_item(id, parent)?;
+    match parent {
+        Some(p) => println!("{} moved under {}.", id, p),
+        None => println!("{} detached.", id),
+    }
+    Ok(())
+}
+
 pub fn set_status<F>(
     debug: F,
     store: &mut Store,

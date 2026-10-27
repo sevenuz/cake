@@ -178,6 +178,12 @@ pub enum Commands {
         #[command(flatten)]
         selector: SelectorArgs,
     },
+    /// move an item under a new parent, - detaches it
+    Mv {
+        id: String,
+        /// new parent id or -
+        parent: String,
+    },
     /// mark tasks done: stops the timer, sets closed
     Done {
         #[command(flatten)]
@@ -240,6 +246,7 @@ impl Commands {
                 | Commands::Tag { .. }
                 | Commands::Start { .. }
                 | Commands::Stop { .. }
+                | Commands::Mv { .. }
                 | Commands::Done { .. }
                 | Commands::Drop { .. }
                 | Commands::Reopen { .. }
@@ -359,6 +366,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Stop { selector }) => {
             commands::stop(debug, &mut &mut store, selector.selector(&selector.ids)?)?
         }
+        Some(Commands::Mv { id, parent }) => commands::mv(debug, &mut store, id, parent)?,
         Some(Commands::Done { selector }) => {
             commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Done)?
         }
