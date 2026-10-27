@@ -20,7 +20,7 @@ fn done_drop_reopen_set_status_and_closed() {
     env.cake_ok(&d, &["drop", "b"]);
     assert!(read_item(&d, "b").contains("status: dropped\n"));
 
-    env.cake_ok(&d, &["reopen", "a,b"]);
+    env.cake_ok(&d, &["reopen", "a,b"]); // alias of todo
     for id in ["a", "b"] {
         let item = read_item(&d, id);
         assert!(item.contains("status: todo\n") && !item.contains("closed:"), "{}", item);
@@ -49,7 +49,7 @@ fn changing_commands_refuse_empty_selector_and_unknown_ids() {
         assert!(env.cake_err(&d, &[cmd]).contains("No items selected"), "{}", cmd);
         assert!(env.cake_err(&d, &[cmd, "nope"]).contains("nope not found"), "{}", cmd);
     }
-    assert!(read_item(&d, "a").contains("status: todo"));
+    assert!(!read_item(&d, "a").contains("status:"));
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn add_with_all_fields_and_body_from_stdin() {
 
     env.cake_stdin(
         &d,
-        &["add", "a", "--body-file", "-", "--due", "2026-10-30", "--prio", "1", "--blocked-by", "b", "--related", "c"],
+        &["add", "a", "--todo", "--body-file", "-", "--due", "2026-10-30", "--prio", "1", "--blocked-by", "b", "--related", "c"],
         "# from stdin\n\nbody\n",
     );
     let a = read_item(&d, "a");
@@ -79,9 +79,13 @@ fn add_with_all_fields_and_body_from_stdin() {
     assert!(a.contains("due: 2026-10-30\npriority: 1\n"), "{}", a);
     assert!(a.ends_with("---\n# from stdin\n\nbody\n"), "{}", a);
 
-    env.cake_ok(&d, &["add", "n", "--note", "-m", "# a note"]);
-    let n = read_item(&d, "n");
-    assert!(n.contains("kind: note\n") && !n.contains("status:"), "{}", n);
+    assert!(a.contains("status: todo\n"), "{}", a);
+
+    env.cake_ok(&d, &["add", "n", "-m", "# a note"]);
+    assert!(!read_item(&d, "n").contains("status:"), "default is a note");
+
+    env.cake_ok(&d, &["todo", "n"]);
+    assert!(read_item(&d, "n").contains("status: todo\n"), "note promoted");
 }
 
 #[test]
@@ -111,12 +115,12 @@ fn mv_reparents_refuses_cycles_and_detaches() {
 }
 
 #[test]
-fn ls_filters_by_text_kind_status_and_blockers() {
+fn ls_filters_by_text_status_and_blockers() {
     let env = Env::new();
     let d = env.plain_store();
-    env.cake_ok(&d, &["add", "aaa", "-m", "# Worktree sync"]);
-    env.cake_ok(&d, &["add", "bbb", "--note", "-m", "# Design notes"]);
-    env.cake_ok(&d, &["add", "ccc", "--blocked-by", "aaa", "-m", "# TUI"]);
+    env.cake_ok(&d, &["add", "aaa", "--todo", "-m", "# Worktree sync"]);
+    env.cake_ok(&d, &["add", "bbb", "-m", "# Design notes"]);
+    env.cake_ok(&d, &["add", "ccc", "--todo", "--blocked-by", "aaa", "-m", "# TUI"]);
     env.cake_ok(&d, &["add", "ddd", "-m", "# old"]);
     env.cake_ok(&d, &["done", "ddd"]);
 
@@ -128,7 +132,7 @@ fn ls_filters_by_text_kind_status_and_blockers() {
             .collect::<Vec<_>>()
     };
     assert_eq!(ids(&["ls", "-s", "WORKTREE"]), vec!["aaa"]);
-    assert_eq!(ids(&["ls", "--kind", "note"]), vec!["bbb"]);
+    assert_eq!(ids(&["ls", "--status", "none"]), vec!["bbb"]);
     assert_eq!(ids(&["ls", "--status", "done"]), vec!["ddd"]);
     assert_eq!(ids(&["ls", "--ready"]), vec!["aaa"]);
     assert_eq!(ids(&["ls", "--blocked"]), vec!["ccc"]);
@@ -139,9 +143,10 @@ fn ls_filters_by_text_kind_status_and_blockers() {
 fn block_unblock_and_ready() {
     let env = Env::new();
     let d = env.plain_store();
-    env.cake_ok(&d, &["add", "aaa", "--prio", "2", "-m", "# a"]);
-    env.cake_ok(&d, &["add", "bbb", "--prio", "1", "-m", "# b"]);
-    env.cake_ok(&d, &["add", "ccc", "-m", "# c"]);
+    env.cake_ok(&d, &["add", "aaa", "--todo", "--prio", "2", "-m", "# a"]);
+    env.cake_ok(&d, &["add", "bbb", "--todo", "--prio", "1", "-m", "# b"]);
+    env.cake_ok(&d, &["add", "ccc", "--todo", "-m", "# c"]);
+    env.cake_ok(&d, &["add", "nnn", "-m", "# a note"]);
 
     env.cake_ok(&d, &["block", "ccc", "--by", "aaa,bbb"]);
     assert!(read_item(&d, "ccc").contains("blocked_by: [\"[[aaa]]\", \"[[bbb]]\"]\n"));
@@ -151,6 +156,7 @@ fn block_unblock_and_ready() {
     let (a, b) = (out.find("aaa").unwrap(), out.find("bbb").unwrap());
     assert!(b < a, "prio 1 first: {}", out);
     assert!(!out.contains("ccc"));
+    assert!(!out.contains("nnn"), "notes are never ready");
 
     env.cake_ok(&d, &["done", "aaa"]);
     env.cake_ok(&d, &["unblock", "ccc", "--by", "bbb"]);

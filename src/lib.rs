@@ -88,11 +88,7 @@ pub struct SelectorArgs {
     #[arg(short, long, value_name = "TEXT")]
     search: Option<String>,
 
-    /// task|note
-    #[arg(long)]
-    kind: Option<String>,
-
-    /// todo|doing|done|dropped
+    /// todo|doing|done|dropped|none (notes)
     #[arg(long)]
     status: Option<String>,
 
@@ -119,13 +115,13 @@ impl SelectorArgs {
             &self.recursive,
             &self.or,
         )?
-        .with_filters(&self.search, &self.kind, &self.status, self.ready, self.blocked)
+        .with_filters(&self.search, &self.status, self.ready, self.blocked)
     }
 }
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// add an item; the editor opens without -m or --body-file
+    /// add a note, with --todo a task; the editor opens without -m or --body-file
     Add {
         /// custom id, default: random
         ids: Option<String>,
@@ -150,9 +146,9 @@ pub enum Commands {
         #[arg(long, value_name = "FILE")]
         body_file: Option<PathBuf>,
 
-        /// a note instead of a task
+        /// a task (status todo) instead of a note
         #[arg(long)]
-        note: bool,
+        todo: bool,
 
         /// due date, e.g. 2026-10-30
         #[arg(long, value_name = "DATE")]
@@ -206,18 +202,19 @@ pub enum Commands {
         #[command(flatten)]
         selector: SelectorArgs,
     },
-    /// close tasks as done
+    /// set status done, stops the timer
     Done {
         #[command(flatten)]
         selector: SelectorArgs,
     },
-    /// close tasks as dropped
+    /// set status dropped, stops the timer
     Drop {
         #[command(flatten)]
         selector: SelectorArgs,
     },
-    /// set tasks back to todo
-    Reopen {
+    /// set status todo: turns a note into a task or reopens it
+    #[command(visible_alias("reopen"))]
+    Todo {
         #[command(flatten)]
         selector: SelectorArgs,
     },
@@ -289,7 +286,7 @@ impl Commands {
                 | Commands::Unblock { .. }
                 | Commands::Done { .. }
                 | Commands::Drop { .. }
-                | Commands::Reopen { .. }
+                | Commands::Todo { .. }
         )
     }
 }
@@ -351,7 +348,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             message,
             tags,
             body_file,
-            note,
+            todo,
             due,
             prio,
             blocked_by,
@@ -369,7 +366,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 None => message.to_owned(),
             },
             commands::AddOptions {
-                note: *note,
+                todo: *todo,
                 due: due.to_owned(),
                 priority: *prio,
                 blocked_by: util::split_comma_cleanup(blocked_by.to_owned().unwrap_or_default()),
@@ -415,7 +412,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             selector.selector(&selector.ids)?,
             Status::Dropped,
         )?,
-        Some(Commands::Reopen { selector }) => {
+        Some(Commands::Todo { selector }) => {
             commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Todo)?
         }
         Some(Commands::List { selector, long }) => commands::list(

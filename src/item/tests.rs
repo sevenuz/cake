@@ -39,7 +39,7 @@ fn missing_frontmatter_uses_defaults() {
     assert_eq!(item.id(), "stem");
     assert_eq!(item.timestamp(), 42);
     assert_eq!(item.content(), "just text\n");
-    assert!(item.to_markdown().contains("status: todo\n"));
+    assert!(!item.to_markdown().contains("status:"), "no status = note");
 }
 
 #[test]
@@ -88,10 +88,12 @@ fn done_stops_timer_and_sets_closed_reopen_clears_it() {
 }
 
 #[test]
-fn notes_have_no_status() {
+fn note_from_old_kind_field_becomes_a_task_with_a_status() {
     let mut item = Item::from_markdown("---\nkind: note\n---\nx\n", "n", 0).unwrap();
-    assert!(item.set_status(Status::Done).is_err());
     assert_eq!(item.status(), None);
+    assert!(!item.to_markdown().contains("kind"), "old key dropped");
+    item.set_status(Status::Todo).unwrap();
+    assert!(item.to_markdown().contains("status: todo\n"));
 }
 
 #[test]
@@ -103,7 +105,6 @@ fn status_parse_rejects_unknown() {
 #[test]
 fn add_fields_validate_and_serialize() {
     let mut item = Item::new("a".into(), vec![], None, vec![]);
-    item.set_note();
     assert!(item.set_due(Some("tomorrow".into())).is_err());
     item.set_due(Some("2026-10-30".into())).unwrap();
     item.set_due(Some("2026-10-30T12:00:00+01:00".into())).unwrap();
@@ -112,7 +113,7 @@ fn add_fields_validate_and_serialize() {
     item.set_blocked_by(vec!["b".into()]);
     item.set_related(vec!["c".into()]);
     let md = item.to_markdown();
-    assert!(md.contains("kind: note\n") && !md.contains("status:"), "{}", md);
+    assert!(!md.contains("status:"), "{}", md);
     assert!(md.contains("blocked_by: [\"[[b]]\"]\nrelated: [\"[[c]]\"]\n"), "{}", md);
     assert!(md.contains("due: \"2026-10-30T12:00:00+01:00\"\npriority: 1\n"), "{}", md);
 }

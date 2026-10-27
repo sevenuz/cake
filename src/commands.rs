@@ -13,7 +13,7 @@ use termimad::crossterm::style::Stylize;
 
 /// fields of a new item besides selector and content
 pub struct AddOptions {
-    pub note: bool,
+    pub todo: bool,
     pub due: Option<String>,
     pub priority: Option<u64>,
     pub blocked_by: Vec<String>,
@@ -53,8 +53,8 @@ where
     {
         return Err(format!("{} not found.", missing).into());
     }
-    if options.note {
-        item.set_note();
+    if options.todo {
+        item.set_status(Status::Todo)?;
     }
     item.set_due(options.due)?;
     item.set_priority(options.priority)?;

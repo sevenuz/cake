@@ -1,4 +1,4 @@
-use crate::item::{Kind, Status};
+use crate::item::Status;
 use crate::store::{Store, MAX_DEPTH};
 use crate::util;
 use std::error::Error;
@@ -19,8 +19,7 @@ pub struct Selector {
     pub rchildren: bool, // recursive for children
     or: bool,            // use or concatination of selectors
     pub search: Option<String>, // lowercase substring of the content
-    pub kind: Option<Kind>,
-    pub status: Vec<Status>,
+    pub status: Vec<Option<Status>>, // None selects notes
     pub ready: bool,
     pub blocked: bool,
 }
@@ -52,7 +51,6 @@ impl Selector {
             rchildren: *recursive == 1 || *recursive > 2, // -r only children, -rrr both
             or: *or,
             search: None,
-            kind: None,
             status: vec![],
             ready: false,
             blocked: false,
@@ -63,16 +61,17 @@ impl Selector {
     pub fn with_filters(
         mut self,
         search: &Option<String>,
-        kind: &Option<String>,
         status: &Option<String>,
         ready: bool,
         blocked: bool,
     ) -> Result<Selector, Box<dyn Error>> {
         self.search = search.as_ref().map(|s| s.to_lowercase());
-        self.kind = kind.as_deref().map(Kind::parse).transpose()?;
         self.status = util::split_comma_cleanup(status.to_owned().unwrap_or_default())
             .iter()
-            .map(|s| Status::parse(s))
+            .map(|s| match s.as_str() {
+                "none" => Ok(None),
+                s => Status::parse(s).map(Some),
+            })
             .collect::<Result<_, _>>()?;
         self.ready = ready;
         self.blocked = blocked;
@@ -90,7 +89,6 @@ impl Selector {
             && !self.started
             && !self.stopped
             && self.search.is_none()
-            && self.kind.is_none()
             && self.status.is_empty()
             && !self.ready
             && !self.blocked;
@@ -103,7 +101,7 @@ impl Selector {
     }
 
     fn matches_status(&self, status: Option<Status>) -> bool {
-        status.is_some_and(|s| self.status.contains(&s))
+        self.status.contains(&status)
     }
 
     /// checks if item should be excluded
@@ -161,7 +159,6 @@ impl Selector {
                     || item.is_started() && self.started
                     || item.is_stopped() && self.stopped
                     || self.matches_search(item.content())
-                    || self.kind == Some(item.kind())
                     || self.matches_status(item.status())
                     || self.ready && store.is_ready(key)
                     || self.blocked && store.is_blocked(key)
@@ -187,7 +184,6 @@ impl Selector {
                     && (!self.started || item.is_started())
                     && (!self.stopped || item.is_stopped())
                     && (self.search.is_none() || self.matches_search(item.content()))
-                    && (self.kind.is_none() || self.kind == Some(item.kind()))
                     && (self.status.is_empty() || self.matches_status(item.status()))
                     && (!self.ready || store.is_ready(key))
                     && (!self.blocked || store.is_blocked(key))
@@ -268,12 +264,11 @@ mod tests {
         assert_eq!(result, vec!["a".to_string()]);
     }
 
-    fn filtered(search: Option<&str>, kind: Option<&str>, status: Option<&str>, ready: bool, blocked: bool) -> Selector {
+    fn filtered(search: Option<&str>, status: Option<&str>, ready: bool, blocked: bool) -> Selector {
         let none = Selector::new(&None, &None, &None, &None, &None, &None, &false, &false, &0, &false);
         none.unwrap()
             .with_filters(
                 &search.map(String::from),
-                &kind.map(String::from),
                 &status.map(String::from),
                 ready,
                 blocked,
@@ -286,36 +281,43 @@ mod tests {
         v
     }
 
-    #[test]
-    fn search_kind_and_status_filters() {
-        let mut note = Item::new("n".into(), vec![], None, vec![]);
-        note.set_note();
-        note.set_content("# Meeting NOTES".into());
-        let mut done = Item::new("d".into(), vec![], None, vec![]);
-        done.set_status(Status::Done).unwrap();
-        let store = store_with(vec![note, done, tagged("t", &[])]);
+    fn task(id: &str, status: Status) -> Item {
+        let mut item = Item::new(id.into(), vec![], None, vec![]);
+        item.set_status(status).unwrap();
+        item
+    }
 
-        assert_eq!(filtered(Some("meeting notes"), None, None, false, false).get(&store, false), vec!["n"]);
-        assert_eq!(filtered(None, Some("note"), None, false, false).get(&store, false), vec!["n"]);
-        assert_eq!(sorted(filtered(None, None, Some("todo,done"), false, false).get(&store, false)), vec!["d", "t"]);
+    #[test]
+    fn search_and_status_filters() {
+        let mut note = Item::new("n".into(), vec![], None, vec![]);
+        note.set_content("# Meeting NOTES".into());
+        let store = store_with(vec![note, task("d", Status::Done), task("t", Status::Todo)]);
+
+        assert_eq!(filtered(Some("meeting notes"), None, false, false).get(&store, false), vec!["n"]);
+        assert_eq!(filtered(None, Some("none"), false, false).get(&store, false), vec!["n"]);
+        assert_eq!(sorted(filtered(None, Some("todo,done"), false, false).get(&store, false)), vec!["d", "t"]);
         assert!(Selector::new(&None, &None, &None, &None, &None, &None, &false, &false, &0, &false)
             .unwrap()
-            .with_filters(&None, &None, &Some("closed".into()), false, false)
+            .with_filters(&None, &Some("closed".into()), false, false)
             .is_err());
     }
 
     #[test]
     fn ready_and_blocked_follow_open_blockers() {
-        let mut blocked = Item::new("a".into(), vec![], None, vec![]);
+        let mut blocked = task("a", Status::Todo);
         blocked.set_blocked_by(vec!["b".into()]);
-        let mut unblocked = Item::new("c".into(), vec![], None, vec![]);
+        let mut unblocked = task("c", Status::Todo);
         unblocked.set_blocked_by(vec!["d".into()]);
-        let mut done = Item::new("d".into(), vec![], None, vec![]);
-        done.set_status(Status::Done).unwrap();
-        let store = store_with(vec![blocked, tagged("b", &[]), unblocked, done]);
+        let store = store_with(vec![
+            blocked,
+            task("b", Status::Doing),
+            unblocked,
+            task("d", Status::Done),
+            tagged("note", &[]),
+        ]);
 
-        assert_eq!(filtered(None, None, None, false, true).get(&store, false), vec!["a"]);
-        assert_eq!(sorted(filtered(None, None, None, true, false).get(&store, false)), vec!["b", "c"]);
+        assert_eq!(filtered(None, None, false, true).get(&store, false), vec!["a"]);
+        assert_eq!(sorted(filtered(None, None, true, false).get(&store, false)), vec!["b", "c"]);
     }
 
     #[test]

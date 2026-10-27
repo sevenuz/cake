@@ -8,22 +8,6 @@ use termimad::crossterm::style::Stylize;
 mod tests;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Kind {
-    Task,
-    Note,
-}
-
-impl Kind {
-    pub fn parse(s: &str) -> Result<Kind, String> {
-        match s {
-            "task" => Ok(Kind::Task),
-            "note" => Ok(Kind::Note),
-            _ => Err(format!("unknown kind '{}', use task|note", s)),
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Status {
     Todo,
     Doing,
@@ -59,7 +43,6 @@ impl Status {
 #[derive(Clone)]
 pub struct Item {
     id: String,
-    kind: Kind,
     status: Option<Status>,
     tags: Vec<String>,
     parent: Option<String>,
@@ -147,8 +130,7 @@ impl Item {
     pub fn new(id: String, children: Vec<String>, parent: Option<String>, tags: Vec<String>) -> Self {
         Self {
             id,
-            kind: Kind::Task,
-            status: Some(Status::Todo),
+            status: None,
             tags,
             parent,
             blocked_by: vec![],
@@ -181,15 +163,10 @@ impl Item {
             serde_yaml_ng::from_str(&front).map_err(|e| err(e.to_string()))?
         };
         let id = take_str(&mut m, "id")?.unwrap_or(fallback_id.to_string());
-        let kind = match take_str(&mut m, "kind")? {
-            None => Kind::Task,
-            Some(k) => Kind::parse(&k).map_err(err)?,
-        };
-        let status = match take_str(&mut m, "status")?.as_deref() {
-            None if kind == Kind::Task => Some(Status::Todo),
-            None => None,
-            Some(s) => Some(Status::parse(s).map_err(err)?),
-        };
+        m.remove("kind"); // written by older versions, a status replaces it
+        let status = take_str(&mut m, "status")?
+            .map(|s| Status::parse(&s).map_err(err))
+            .transpose()?;
         let tags = take_list(&mut m, "tags")?;
         let parent = take_str(&mut m, "parent")?.map(|p| unlink(&p));
         let blocked_by = take_list(&mut m, "blocked_by")?.iter().map(|s| unlink(s)).collect();
@@ -216,7 +193,6 @@ impl Item {
         }
         Ok(Item {
             id,
-            kind,
             status,
             tags,
             parent,
@@ -235,9 +211,6 @@ impl Item {
 
     pub fn to_markdown(&self) -> String {
         let mut s = format!("---\nid: {}\n", yaml_str(&self.id));
-        if self.kind == Kind::Note {
-            s += "kind: note\n";
-        }
         if let Some(st) = self.status {
             s += &format!("status: {}\n", st.as_str());
         }
@@ -396,9 +369,7 @@ impl Item {
     pub fn start(&mut self) -> Result<(), String> {
         if self.is_stopped() {
             self.timetrack.push(util::timestamp());
-            if self.kind == Kind::Task {
-                self.status = Some(Status::Doing);
-            }
+            self.status = Some(Status::Doing);
             Ok(())
         } else {
             Err(format!(
@@ -416,10 +387,6 @@ impl Item {
         } else {
             Err(format!("{} is not running.", self.id))
         }
-    }
-
-    pub fn kind(&self) -> Kind {
-        self.kind
     }
 
     pub fn blocked_by(&self) -> &Vec<String> {
@@ -443,12 +410,9 @@ impl Item {
         self.status
     }
 
-    /// sets the task status: done/dropped stop a running timer and set
-    /// `closed`, todo/doing remove it
+    /// sets the status, also turns a note into a task: done/dropped stop a
+    /// running timer and set `closed`, todo/doing remove it
     pub fn set_status(&mut self, status: Status) -> Result<(), String> {
-        if self.kind == Kind::Note {
-            return Err(format!("{} is a note, notes have no status.", self.id));
-        }
         if status.is_open() {
             self.closed = None;
         } else {
@@ -459,11 +423,6 @@ impl Item {
         }
         self.status = Some(status);
         Ok(())
-    }
-
-    pub fn set_note(&mut self) {
-        self.kind = Kind::Note;
-        self.status = None;
     }
 
     /// `due` is a date (2026-10-30) or an RFC 3339 datetime
