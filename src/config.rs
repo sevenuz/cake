@@ -36,8 +36,9 @@ pub struct Config {
     /// env vars holding the agent's session id, first set one wins
     #[serde(default = "default_session_env")]
     pub session_env: Vec<String>,
-    /// own commands: name -> command line, e.g. review: "ls -t review";
-    /// added to the defaults, a store's .cake/config.hjson overrides them
+    /// own commands: name -> command line, e.g. review: "ls -t review"; may
+    /// override built-ins (ls: "ls --status todo"); added to the defaults, a
+    /// store's .cake/config.hjson overrides them
     #[serde(default)]
     pub aliases: BTreeMap<String, String>,
     /// searches in config dir for skin file (hjson)

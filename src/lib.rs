@@ -398,7 +398,8 @@ fn guess_root(args: &[String]) -> Result<PathBuf, Box<dyn Error>> {
     }
 }
 
-/// replaces an alias in the command position with its command line
+/// replaces an alias in the command position with its command line, once,
+/// so an alias may override a built-in command: ls = "ls --status todo"
 fn expand_alias(args: &[String], aliases: &BTreeMap<String, String>) -> Result<Vec<String>, Box<dyn Error>> {
     let mut i = 1;
     while i < args.len() && args[i].starts_with('-') {
@@ -411,23 +412,11 @@ fn expand_alias(args: &[String], aliases: &BTreeMap<String, String>) -> Result<V
     Ok([&args[..i], &words[..], &args[i + 1..]].concat())
 }
 
-/// aliases may not shadow built-in commands
-fn check_aliases(aliases: &BTreeMap<String, String>) -> Result<(), Box<dyn Error>> {
-    let cmd = Cli::command();
-    for name in aliases.keys() {
-        if name == "help" || cmd.find_subcommand(name).is_some() {
-            return Err(error::invalid(format!("alias {} shadows a built-in command", name)));
-        }
-    }
-    Ok(())
-}
-
 pub fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = args().collect();
     out::set_json(args.iter().any(|a| a == "--json")); // for errors before parsing
     let config = Config::new()?;
     let aliases = config.aliases(&guess_root(&args)?)?;
-    check_aliases(&aliases)?;
     let alias_help: String = aliases
         .iter()
         .map(|(k, v)| format!("  {:<8} {}\n", k, v))
@@ -669,9 +658,12 @@ mod tests {
             s(&["cake", "--json", "--store", "x", "ls", "-t", "review", "-s", "two words", "-p", "a"])
         );
         assert_eq!(expand_alias(&s(&["cake", "ls", "review"]), &aliases).unwrap(), s(&["cake", "ls", "review"]));
-        assert!(check_aliases(&aliases).is_ok());
-        assert!(check_aliases(&[("ls".to_string(), "x".to_string())].into()).is_err());
-        assert!(check_aliases(&[("reopen".to_string(), "x".to_string())].into()).is_err());
+        let own_ls: BTreeMap<String, String> = [("ls".to_string(), "ls --status todo".to_string())].into();
+        assert_eq!(
+            expand_alias(&s(&["cake", "ls", "-t", "x"]), &own_ls).unwrap(),
+            s(&["cake", "ls", "--status", "todo", "-t", "x"]),
+            "an alias may override a built-in, expanded once"
+        );
     }
 
     #[test]

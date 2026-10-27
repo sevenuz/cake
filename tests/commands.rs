@@ -302,8 +302,8 @@ fn aliases_from_defaults_user_and_store_config() {
     assert_eq!(ids(&["mine"]), vec!["c"], "store config wins");
 
     assert!(env.cake_ok(&d, &["--help"]).contains("mine     ls -s child"));
-    std::fs::write(d.join(".cake/config.hjson"), "{ aliases: { ls: \"ready\" } }").unwrap();
-    assert!(env.cake_err(&d, &["ready"]).contains("shadows"));
+    std::fs::write(d.join(".cake/config.hjson"), "{ aliases: { ls: \"ls -s child\" } }").unwrap();
+    assert_eq!(ids(&["ls"]), vec!["c"], "built-in overridden");
 }
 
 #[test]
