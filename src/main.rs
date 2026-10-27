@@ -44,7 +44,8 @@ use termimad::crossterm::style::Stylize;
 
 fn main() {
     if let Err(e) = run() {
-            println!("That wasn't working o.0 \n {}", e.to_string().red().italic());
+        eprintln!("That wasn't working o.0 \n {}", e.to_string().red().italic());
+        std::process::exit(1);
     }
 }
 
