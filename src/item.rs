@@ -431,6 +431,41 @@ impl Item {
         Ok(())
     }
 
+    pub fn set_note(&mut self) {
+        self.kind = Kind::Note;
+        self.status = None;
+    }
+
+    /// `due` is a date (2026-10-30) or an RFC 3339 datetime
+    pub fn set_due(&mut self, due: Option<String>) -> Result<(), String> {
+        if let Some(d) = &due {
+            if chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").is_err()
+                && util::parse_timestamp(d).is_err()
+            {
+                return Err(format!("invalid due '{}', use 2026-10-30 or an RFC 3339 time", d));
+            }
+        }
+        self.due = due;
+        Ok(())
+    }
+
+    /// 1 (high) .. 3 (low)
+    pub fn set_priority(&mut self, priority: Option<u64>) -> Result<(), String> {
+        if priority.is_some_and(|p| !(1..=3).contains(&p)) {
+            return Err("priority must be 1 (high) .. 3 (low)".to_string());
+        }
+        self.priority = priority;
+        Ok(())
+    }
+
+    pub fn set_blocked_by(&mut self, ids: Vec<String>) {
+        self.blocked_by = ids;
+    }
+
+    pub fn set_related(&mut self, ids: Vec<String>) {
+        self.related = ids;
+    }
+
     /// replaces the item but keeps the derived children
     pub fn set(&mut self, item: Item) {
         let children = std::mem::take(&mut self.children);

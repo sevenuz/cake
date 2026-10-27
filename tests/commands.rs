@@ -61,3 +61,36 @@ fn edit_needs_a_known_id_and_a_terminal() {
     assert!(env.cake_err(&d, &["edit", "a"]).contains("terminal"));
     assert!(env.cake_err(&d, &["add", "a", "-m", "# again"]).contains("cake edit"));
 }
+
+#[test]
+fn add_with_all_fields_and_body_from_stdin() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "b", "-m", "# b"]);
+    env.cake_ok(&d, &["add", "c", "-m", "# c"]);
+
+    env.cake_stdin(
+        &d,
+        &["add", "a", "--body-file", "-", "--due", "2026-10-30", "--prio", "1", "--blocked-by", "b", "--related", "c"],
+        "# from stdin\n\nbody\n",
+    );
+    let a = read_item(&d, "a");
+    assert!(a.contains("blocked_by: [\"[[b]]\"]\nrelated: [\"[[c]]\"]\n"), "{}", a);
+    assert!(a.contains("due: 2026-10-30\npriority: 1\n"), "{}", a);
+    assert!(a.ends_with("---\n# from stdin\n\nbody\n"), "{}", a);
+
+    env.cake_ok(&d, &["add", "n", "--note", "-m", "# a note"]);
+    let n = read_item(&d, "n");
+    assert!(n.contains("kind: note\n") && !n.contains("status:"), "{}", n);
+}
+
+#[test]
+fn add_rejects_bad_input_without_writing() {
+    let env = Env::new();
+    let d = env.plain_store();
+    assert!(env.cake_err(&d, &["add", "x"]).contains("--body-file"));
+    assert!(env.cake_err(&d, &["add", "x", "-m", "x", "--prio", "5"]).contains("priority"));
+    assert!(env.cake_err(&d, &["add", "x", "-m", "x", "--due", "soon"]).contains("due"));
+    assert!(env.cake_err(&d, &["add", "x", "-m", "x", "--blocked-by", "nope"]).contains("nope not found"));
+    assert!(!d.join(".cake/items/x.md").exists());
+}

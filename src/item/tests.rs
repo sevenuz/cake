@@ -99,3 +99,20 @@ fn status_parse_rejects_unknown() {
     assert_eq!(Status::parse("dropped"), Ok(Status::Dropped));
     assert!(Status::parse("closed").is_err());
 }
+
+#[test]
+fn add_fields_validate_and_serialize() {
+    let mut item = Item::new("a".into(), vec![], None, vec![]);
+    item.set_note();
+    assert!(item.set_due(Some("tomorrow".into())).is_err());
+    item.set_due(Some("2026-10-30".into())).unwrap();
+    item.set_due(Some("2026-10-30T12:00:00+01:00".into())).unwrap();
+    assert!(item.set_priority(Some(4)).is_err());
+    item.set_priority(Some(1)).unwrap();
+    item.set_blocked_by(vec!["b".into()]);
+    item.set_related(vec!["c".into()]);
+    let md = item.to_markdown();
+    assert!(md.contains("kind: note\n") && !md.contains("status:"), "{}", md);
+    assert!(md.contains("blocked_by: [\"[[b]]\"]\nrelated: [\"[[c]]\"]\n"), "{}", md);
+    assert!(md.contains("due: \"2026-10-30T12:00:00+01:00\"\npriority: 1\n"), "{}", md);
+}

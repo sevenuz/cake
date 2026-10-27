@@ -122,8 +122,32 @@ pub enum Commands {
         tags: Option<String>,
 
         /// content, the first `# heading` is the title
-        #[arg(short, long)]
+        #[arg(short, long, conflicts_with = "body_file")]
         message: Option<String>,
+
+        /// read the content from a file, - for stdin
+        #[arg(long, value_name = "FILE")]
+        body_file: Option<PathBuf>,
+
+        /// add a note instead of a task
+        #[arg(long)]
+        note: bool,
+
+        /// due date, e.g. 2026-10-30
+        #[arg(long)]
+        due: Option<String>,
+
+        /// priority, 1 (high) .. 3 (low)
+        #[arg(long)]
+        prio: Option<u64>,
+
+        /// items that must be closed first, comma separated
+        #[arg(long, value_name = "IDS")]
+        blocked_by: Option<String>,
+
+        /// related items, comma separated
+        #[arg(long, value_name = "IDS")]
+        related: Option<String>,
     },
     /// open the item file (frontmatter and body) in the editor
     Edit {
@@ -287,6 +311,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             parents,
             message,
             tags,
+            body_file,
+            note,
+            due,
+            prio,
+            blocked_by,
+            related,
         }) => commands::add(
             &debug,
             &config,
@@ -294,7 +324,18 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             Selector::new(
                 ids, children, parents, tags, &None, &None, &false, &false, &0, &false,
             )?,
-            message.to_owned().unwrap_or("".to_string()),
+            match body_file {
+                Some(f) if f.as_os_str() == "-" => Some(std::io::read_to_string(std::io::stdin())?),
+                Some(f) => Some(std::fs::read_to_string(f)?),
+                None => message.to_owned(),
+            },
+            commands::AddOptions {
+                note: *note,
+                due: due.to_owned(),
+                priority: *prio,
+                blocked_by: util::split_comma_cleanup(blocked_by.to_owned().unwrap_or_default()),
+                related: util::split_comma_cleanup(related.to_owned().unwrap_or_default()),
+            },
         )?,
         Some(Commands::Edit { id }) => commands::edit(&debug, &config, &mut store, id)?,
         Some(Commands::Remove { selector }) => {

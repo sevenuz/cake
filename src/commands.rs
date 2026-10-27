@@ -11,12 +11,23 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use termimad::crossterm::style::Stylize;
 
+/// fields of a new item besides selector and content
+pub struct AddOptions {
+    pub note: bool,
+    pub due: Option<String>,
+    pub priority: Option<u64>,
+    pub blocked_by: Vec<String>,
+    pub related: Vec<String>,
+}
+
+/// adds an item; without content the editor opens, which needs a terminal
 pub fn add<F>(
     debug: F,
     config: &Config,
     store: &mut Store,
     selector: Selector,
-    content: String,
+    content: Option<String>,
+    options: AddOptions,
 ) -> Result<(), Box<dyn Error>>
 where
     F: Fn(&str),
@@ -34,10 +45,27 @@ where
         selector.tags,
     );
     store.check_existence(&item, false)?;
-    item.set_content(if content.is_empty() {
-        util::input_from_external_editor(&config.editor, None)?
-    } else {
-        content
+    if let Some(missing) = options
+        .blocked_by
+        .iter()
+        .chain(options.related.iter())
+        .find(|i| store.get_item(i).is_none())
+    {
+        return Err(format!("{} not found.", missing).into());
+    }
+    if options.note {
+        item.set_note();
+    }
+    item.set_due(options.due)?;
+    item.set_priority(options.priority)?;
+    item.set_blocked_by(options.blocked_by);
+    item.set_related(options.related);
+    item.set_content(match content {
+        Some(c) => c,
+        None if std::io::stdin().is_terminal() => {
+            util::input_from_external_editor(&config.editor, None)?
+        }
+        None => return Err("No content, use -m TEXT or --body-file FILE (- for stdin).".into()),
     });
     debug(&item.content());
     store.add(item)?;

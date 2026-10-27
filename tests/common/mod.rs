@@ -54,6 +54,26 @@ impl Env {
             .unwrap()
     }
 
+    /// runs cake with `input` on stdin, expects success
+    pub fn cake_stdin(&self, cwd: &Path, args: &[&str], input: &str) -> String {
+        use std::io::Write;
+        let mut child = Command::new(env!("CARGO_BIN_EXE_cake"))
+            .args(args)
+            .current_dir(cwd)
+            .env("XDG_CONFIG_HOME", self.path("config"))
+            .env("XDG_DATA_HOME", self.path("data"))
+            .env_remove("CAKE_STORE")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success(), "cake {:?} failed: {}", args, stderr(&out));
+        String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
     pub fn cake_ok(&self, cwd: &Path, args: &[&str]) -> String {
         let out = self.cake(cwd, args);
         assert!(out.status.success(), "cake {:?} failed: {}", args, stderr(&out));
