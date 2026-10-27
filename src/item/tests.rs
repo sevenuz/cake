@@ -63,22 +63,6 @@ fn start_sets_doing_and_stop_closes_interval() {
 }
 
 #[test]
-fn print_shows_border_and_only_the_first_content_line() {
-    let mut item = Item::new("abc".to_string(), vec![], None, vec![]);
-    item.set_content("first line\nsecond line".to_string());
-    let out = item.print(5, false);
-    assert!(out.starts_with('|'));
-    assert!(out.ends_with("first line"));
-    assert!(!out.contains("second line"));
-}
-
-#[test]
-fn print_uses_backslash_border_when_item_has_children() {
-    let item = Item::new("abc".to_string(), vec![], None, vec![]);
-    assert!(item.print(5, true).starts_with('\\'));
-}
-
-#[test]
 fn done_stops_timer_and_sets_closed_reopen_clears_it() {
     let mut item = Item::new("a".into(), vec![], None, vec![]);
     item.start().unwrap();

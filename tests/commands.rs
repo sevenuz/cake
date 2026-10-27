@@ -289,7 +289,10 @@ fn aliases_from_defaults_user_and_store_config() {
 
     let ids = |args: &[&str]| {
         let out = env.cake_ok(&d, args);
-        ["r", "i", "c"].into_iter().filter(|id| out.contains(&format!("|{}", id)) || out.contains(&format!("\\{}", id))).collect::<Vec<_>>()
+        ["r", "i", "c"]
+            .into_iter()
+            .filter(|id| out.lines().any(|l| l.split_whitespace().any(|w| w == *id)))
+            .collect::<Vec<_>>()
     };
     assert_eq!(ids(&["review"]), vec!["r"]);
     assert_eq!(ids(&["ideas"]), vec!["c"], "i has a child");
@@ -297,7 +300,7 @@ fn aliases_from_defaults_user_and_store_config() {
     let user = env.path("config/cake/config.hjson");
     let cfg = std::fs::read_to_string(&user).unwrap().replace("\"aliases\": {}", "\"aliases\": {\"mine\": \"ls -s idea\"}");
     std::fs::write(&user, cfg).unwrap();
-    assert_eq!(ids(&["mine"]), vec!["i"]);
+    assert_eq!(ids(&["mine"]), vec!["i", "c"], "ls shows children of matches");
     std::fs::write(d.join(".cake/config.hjson"), "{ aliases: { mine: \"ls -s child\" } }").unwrap();
     assert_eq!(ids(&["mine"]), vec!["c"], "store config wins");
 
@@ -326,4 +329,24 @@ fn status_line_shows_timers_and_what_waits_for_you() {
     assert_eq!(run(&["status"], &jul), "▶ a a task with a rather lon… 0:00 · review 1 · ask 1\n");
     run(&["start", "r"], &agent);
     assert!(run(&["status"], &jul).contains("▶ r r 0:00 (claude-code)"));
+}
+
+#[test]
+fn ls_is_a_tree_and_hides_closed_items() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "p", "--todo", "-t", "x", "-m", "# parent"]);
+    env.cake_ok(&d, &["add", "a", "--todo", "-p", "p", "--prio", "1", "-m", "# first"]);
+    env.cake_ok(&d, &["add", "b", "-p", "p", "-m", "# note"]);
+    env.cake_ok(&d, &["add", "c", "--todo", "-p", "a", "-m", "# deep"]);
+    env.cake_ok(&d, &["add", "z", "--todo", "-m", "# closed"]);
+    env.cake_ok(&d, &["done", "z"]);
+
+    assert_eq!(
+        env.cake_ok(&d, &["ls"]),
+        "○ p parent #x\n├─ ○ a first\n│  └─ ○ c deep\n└─ · b note\n"
+    );
+    assert!(env.cake_ok(&d, &["ls", "-A"]).contains("✓ z closed"));
+    assert_eq!(env.cake_ok(&d, &["ls", "-t", "x"]).lines().count(), 4, "children of matches");
+    assert_eq!(env.cake_ok(&d, &["ls", "a"]), "○ a first\n└─ ○ c deep\n");
 }

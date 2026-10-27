@@ -1,4 +1,3 @@
-pub use self::inner::RecState;
 pub use self::inner::Store;
 pub use self::inner::MAX_DEPTH;
 
@@ -18,6 +17,8 @@ pub mod inner {
         Reappearence,
     }
 
+    /// collected by recursive_execute, used for the visited path
+    #[allow(dead_code)]
     #[derive(Copy, Clone)]
     pub struct ItemView<'a> {
         pub item: &'a Item,

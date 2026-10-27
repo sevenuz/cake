@@ -198,11 +198,15 @@ pub enum Commands {
         /// item id or file path
         target: String,
     },
-    /// list items
+    /// list items as a tree; done and dropped only with -a, --status or ids
     #[command(visible_alias("ls"))]
     List {
         #[command(flatten)]
         selector: SelectorArgs,
+
+        /// also done and dropped items
+        #[arg(short = 'A', long)]
+        all: bool,
 
         /// all fields and the body, also in json
         #[arg(short, long)]
@@ -579,7 +583,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Ready { selector, long }) => {
             let mut selector = selector.selector(&selector.ids)?;
             selector.ready = true;
-            commands::list(debug, &config, &mut store, selector, *long)?
+            commands::list(debug, &config, &mut store, selector, *long, false)?
         }
         Some(Commands::Done { selector }) => {
             commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Done)?
@@ -593,13 +597,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Todo { selector }) => {
             commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Todo)?
         }
-        Some(Commands::List { selector, long }) => commands::list(
-            debug,
-            &config,
-            &mut store,
-            selector.selector(&selector.ids)?,
-            *long,
-        )?,
+        Some(Commands::List { selector, long, all }) => {
+            let mut selector = selector.selector(&selector.ids)?;
+            selector.rchildren = true;
+            commands::list(debug, &config, &mut store, selector, *long, *all)?
+        }
         Some(Commands::Status {}) => commands::status(&config, &store)?,
         Some(Commands::Show { target }) => commands::show(debug, &config, &store, target)?,
         Some(Commands::Init {}) => commands::init(debug, &config, cli.global)?,

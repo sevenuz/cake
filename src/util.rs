@@ -54,24 +54,6 @@ mod tests {
         assert_eq!(timestamp_to_hms(1000), "16m40s");
     }
 
-    #[test]
-    fn test_space_pads_evenly_on_both_sides() {
-        assert_eq!(space("ab", 6), "  ab  ");
-    }
-
-    #[test]
-    fn test_space_extra_padding_goes_on_the_right_when_odd() {
-        assert_eq!(space("ab", 5), " ab  ");
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_space_panics_when_string_is_longer_than_spacer_len() {
-        // BUG: `space` computes `spacer_len - s.len()` with no bounds check,
-        // so an id longer than spacer_len panics on unsigned-subtraction
-        // overflow instead of e.g. returning the string unpadded.
-        space("toolong", 3);
-    }
 
     #[test]
     fn test_split_comma_cleanup() {
@@ -392,19 +374,6 @@ where
         }
     }
     true
-}
-
-pub fn space(s: &str, spacer_len: usize) -> String {
-    let prefix = (spacer_len - s.len()) / 2;
-    let appendix = if (spacer_len - s.len()) % 2 == 0 {
-        prefix
-    } else {
-        prefix + 1
-    };
-    let mut result = (0..prefix).map(|_| " ").collect::<String>();
-    result += &s;
-    result += &(0..appendix).map(|_| " ").collect::<String>();
-    result
 }
 
 /// joins vector with comma

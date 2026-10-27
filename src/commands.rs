@@ -1,10 +1,11 @@
 use crate::config::Config;
 use crate::item::{Item, Status};
-use crate::store::{inner::ItemView, RecState, Store, MAX_DEPTH};
+use crate::store::Store;
 use crate::view;
 use crate::Selector;
 use crate::{error, git, out, say, util};
 use std::error::Error;
+use std::collections::HashSet;
 use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -356,130 +357,114 @@ pub fn status(config: &Config, store: &Store) -> Result<Report, Box<dyn Error>> 
     Ok(Report::Value(serde_json::json!({ "running": running, "review": review, "ask": ask })))
 }
 
+/// lists matches as a tree with their children; done and dropped items are
+/// hidden unless `all`, ids or --status select them
 pub fn list<F>(
     debug: F,
     config: &Config,
     store: &mut Store,
     selector: Selector,
     long: bool,
+    all: bool,
 ) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
     debug(&format!("list {:?} long: {:?}", selector, long));
-
-    let mut cycle: Vec<String> = vec![];
-    let item_views: Vec<ItemView>;
-    let max_depth = if selector.rchildren { MAX_DEPTH } else { 1 };
-
-    // TODO recursive for both: rparents, rchildren
-    // TODO shows same item as a child on -rrr
-    let items = store.get();
-    let mut keys = selector.get(store, false);
-    // sort output from old to new
-    keys.sort_by(|a, b| {
-        items
-            .get(a)
-            .unwrap()
-            .timestamp()
-            .cmp(&items.get(b).unwrap().timestamp())
-    });
-    // by priority (none last), then due (none last)
-    keys.sort_by_key(|k| {
-        let i = items.get(k).unwrap();
-        (i.priority().unwrap_or(u64::MAX), i.due().is_none(), i.due().cloned())
-    });
-    // sort output by amount of parents. Zero parents first
-    keys.sort_by(|a, b| {
-        items
-            .get(a)
-            .unwrap()
-            .parents()
-            .len()
-            .cmp(&items.get(b).unwrap().parents().len())
-    });
-    // get the recursive ItemView to print with indention
-    item_views = store
-        .recursive_execute(&keys, &mut cycle, 0, max_depth, selector.rparents)
-        .iter()
-        .filter(|iv| {
-            // filter exclude tags again, because recursive execution is not filtering in selector
-            selector.exclude(iv.item.id(), store)
-        })
-        .map(|iv| iv.to_owned())
+    let show_closed = all || !selector.ids.is_empty() || !selector.status.is_empty();
+    let ids: HashSet<String> = selector
+        .get(store, true)
+        .into_iter()
+        .filter(|id| show_closed || store.get_item(id).map_or(false, |i| i.status().map_or(true, |s| s.is_open())))
         .collect();
+    let order = tree(store, &ids);
 
-    // printing of results
-    let mut text: String = "".to_string();
     if long {
-        for (i, item_view) in item_views.iter().enumerate() {
-            if matches!(item_view.state, RecState::Reappearence) && item_view.depth > 0 {
-                text = text + &format!("{}", "### Recursion Warning ###".red());
-            }
-            debug(&format!("### raw ###\n{}", item_view.item.print_long(true)));
-
-            // appends a dilimeter at the end if there are following items
-            text = text
-                + &(item_view.item.to_string()
-                    + if i + 1 < item_views.len() {
-                        "\n---\n"
-                    } else {
-                        ""
-                    });
-        }
-    } else {
-        // find maximun id len
-        let max_id_len = item_views.iter().fold(0, |a, b| {
-            if a > b.item.id().len() {
-                a
-            } else {
-                b.item.id().len()
-            }
-        });
-        for item_view in item_views.iter() {
-            match item_view.state {
-                RecState::Normal => {
-                    text = text
-                        + &format!(
-                            "{:indent$} {}\n",
-                            "‎",
-                            item_view.item.print(max_id_len, item_view.has_children),
-                            indent = if item_view.has_children {
-                                item_view.depth + 1
-                            } else {
-                                item_view.depth
-                            }
-                        );
-                    debug(&format!("indention {:?}", item_view.depth));
-                }
-                RecState::Reappearence if item_view.depth > 0 => {
-                    text = text
-                        + &format!(
-                            "{:indent$} {}",
-                            "‎",
-                            item_view.item.print(max_id_len, item_view.has_children),
-                            indent = if item_view.has_children {
-                                item_view.depth + 1
-                            } else {
-                                item_view.depth
-                            }
-                        );
-                    text = text + &format!(" {}\n", "### Reappearence Warning ###".red());
-                    debug(&format!("indention {:?}", item_view.depth));
-                }
-                _ => (),
-            }
+        let text = order
+            .iter()
+            .map(|(_, id)| store.get_item(id).unwrap().to_string())
+            .collect::<Vec<_>>()
+            .join("\n---\n");
+        view::print(&config, text)?;
+    } else if !out::json() {
+        let color = std::io::stdout().is_terminal();
+        for (prefix, id) in &order {
+            println!("{}{}", prefix, line(store.get_item(id).unwrap(), color));
         }
     }
-    view::print(&config, text)?;
-    let mut ids: Vec<String> = vec![];
-    for iv in &item_views {
-        if !ids.contains(iv.item.id()) {
-            ids.push(iv.item.id().to_owned());
-        }
-    }
-
+    let ids = order.into_iter().map(|(_, id)| id).collect();
     Ok(if long { Report::Items(ids) } else { Report::Brief(ids) })
+}
+
+/// depth-first order of `ids` as (tree prefix, id): items whose parent is not
+/// listed are roots; siblings by priority, due, then creation
+fn tree(store: &Store, ids: &HashSet<String>) -> Vec<(String, String)> {
+    let key = |id: &String| {
+        let i = store.get_item(id).unwrap();
+        (i.priority().unwrap_or(u64::MAX), i.due().is_none(), i.due().cloned(), i.timestamp())
+    };
+    let sorted = |mut v: Vec<String>| {
+        v.sort_by_key(|id| key(id));
+        v
+    };
+    fn walk(
+        store: &Store,
+        ids: &HashSet<String>,
+        sorted: &dyn Fn(Vec<String>) -> Vec<String>,
+        id: &str,
+        prefix: (&str, &str),
+        out: &mut Vec<(String, String)>,
+    ) {
+        if out.iter().any(|(_, seen)| seen == id) {
+            return; // cycle
+        }
+        out.push((prefix.0.to_string(), id.to_string()));
+        let children = sorted(
+            store.get_item(id).unwrap().children().iter().filter(|c| ids.contains(*c)).cloned().collect(),
+        );
+        for (n, c) in children.iter().enumerate() {
+            let last = n + 1 == children.len();
+            let own = format!("{}{}", prefix.1, if last { "└─ " } else { "├─ " });
+            let below = format!("{}{}", prefix.1, if last { "   " } else { "│  " });
+            walk(store, ids, sorted, c, (&own, &below), out);
+        }
+    }
+    let roots = sorted(
+        ids.iter()
+            .filter(|id| store.get_item(id).unwrap().parents().first().map_or(true, |p| !ids.contains(p)))
+            .cloned()
+            .collect(),
+    );
+    let mut out = vec![];
+    for r in roots {
+        walk(store, ids, &sorted, &r, ("", ""), &mut out);
+    }
+    out
+}
+
+/// one list line: status marker, id, title, tags
+fn line(item: &Item, color: bool) -> String {
+    let marker = match item.status() {
+        None => "·",
+        Some(Status::Todo) => "○",
+        Some(Status::Doing) if item.is_started() => "▶",
+        Some(Status::Doing) => "◐",
+        Some(Status::Done) => "✓",
+        Some(Status::Dropped) => "✗",
+    };
+    let tags: String = item.tags().iter().map(|t| format!(" #{}", t)).collect();
+    let open = item.status().map_or(true, |s| s.is_open());
+    if !color {
+        return format!("{} {} {}{}", marker, item.id(), item.title(), tags);
+    }
+    let marker = match marker {
+        "▶" => marker.green().bold(),
+        "◐" => marker.yellow(),
+        _ => marker.stylize(),
+    };
+    let title = if open { item.title().stylize() } else { item.title().dark_grey() };
+    let text = format!("{} {}", item.id().as_str().dark_grey(), title);
+    format!("{} {}{}", marker, text, tags.dark_grey())
 }
 
 /// shows an item by id, or any markdown file by path

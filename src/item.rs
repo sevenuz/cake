@@ -2,7 +2,6 @@ use crate::error::ParseError;
 use crate::util;
 use core::fmt;
 use serde_yaml_ng::{Mapping, Value};
-use termimad::crossterm::style::Stylize;
 
 #[cfg(test)]
 mod tests;
@@ -257,27 +256,6 @@ impl Item {
             s += &serde_yaml_ng::to_string(&self.extra).unwrap();
         }
         s + "---\n" + &self.content
-    }
-
-    /**
-     * short info about the item
-     * prints only first line of the content and id
-     * the id is surrounded by spaces to reach spacer_len
-     */
-    pub fn print(&self, spacer_len: usize, has_children: bool) -> String {
-        let border = if has_children { "\\" } else { "|" };
-        return format!(
-            "{}{}{}{} {}",
-            border,
-            util::space(&self.id, spacer_len),
-            if self.is_started() {
-                "*".dark_red()
-            } else {
-                "".white()
-            },
-            border,
-            self.content.split("\n").next().unwrap()
-        );
     }
 
     /// # Arguments
