@@ -232,3 +232,28 @@ fn edit_sets_and_clears_priority_and_due() {
     let a = read_item(&d, "a");
     assert!(!a.contains("priority:") && !a.contains("due:") && a.ends_with("# a"), "{}", a);
 }
+
+#[test]
+fn parallel_commands_wait_for_the_lock_and_all_commit() {
+    let env = Env::new();
+    let a = env.repo("a");
+    env.cake_ok(&a, &["init"]);
+    for i in 0..20 {
+        let (x, y) = (format!("a{}", i), format!("b{}", i));
+        std::thread::scope(|s| {
+            let t1 = s.spawn(|| env.cake(&a, &["add", &x, "--todo", "-m", "# x"]));
+            let t2 = s.spawn(|| env.cake(&a, &["tag", "a0", &format!("t{}", i)]));
+            let t3 = s.spawn(|| env.cake(&a, &["add", &y, "--todo", "-m", "# y"]));
+            for out in [t1.join().unwrap(), t3.join().unwrap()] {
+                assert!(out.status.success(), "{}", stderr(&out));
+            }
+            let tag = t2.join().unwrap();
+            assert!(tag.status.success() || i == 0, "{}", stderr(&tag)); // a0 may not exist yet
+        });
+    }
+    let store = a.join(".cake");
+    assert_eq!(git(&store, &["status", "--porcelain"]), "", "everything committed");
+    assert_eq!(std::fs::read_dir(store.join("items")).unwrap().count(), 40);
+    let a0 = read_item(&a, "a0");
+    assert!((1..20).all(|i| a0.contains(&format!("t{}", i))), "no lost tag: {}", a0);
+}

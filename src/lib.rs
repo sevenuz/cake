@@ -16,6 +16,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 use config::Config;
 use item::Status;
 use selector::Selector;
+use std::io::IsTerminal;
 use std::{
     env::{args, current_dir},
     error::Error,
@@ -398,6 +399,34 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     };
     debug(&format!("Store: {}", root.display()));
 
+    // editors run before taking the lock, so other commands are not blocked meanwhile
+    let mut message = None;
+    let mut edited = None;
+    match &cli.command {
+        Some(Commands::Add { message: m, .. }) => {
+            message = read_message(m)?;
+            if message.is_none() && std::io::stdin().is_terminal() && !out::json() {
+                message = Some(util::input_from_external_editor(&config.editor, None)?);
+            }
+        }
+        Some(Commands::Edit {
+            id,
+            message: None,
+            prio: None,
+            due: None,
+        }) => edited = Some(commands::edit_in_editor(&config, &root, id)?),
+        _ => (),
+    }
+
+    let exclusive = cli.command.as_ref().map_or(false, |c| {
+        c.writes() || matches!(c, Commands::Sync { .. })
+    });
+    let mut lock = util::lock_file(&root)?;
+    let _guard = match lock.as_mut() {
+        Some(l) => Some(util::lock(l, exclusive)?),
+        None => None,
+    };
+
     // before loading: conflicted items may not parse
     if let Some(Commands::Sync {
         publish,
@@ -432,12 +461,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             ids,
             children,
             parents,
-            message,
             tags,
             todo,
             due,
             prio,
             blocked_by,
+            ..
         }) => commands::add(
             &debug,
             &config,
@@ -445,7 +474,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             Selector::new(
                 ids, children, parents, tags, &None, &None, &false, &false, &0, &false,
             )?,
-            read_message(message)?,
+            message,
             commands::AddOptions {
                 todo: *todo,
                 due: due.to_owned(),
@@ -464,6 +493,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             &mut store,
             id,
             commands::EditOptions {
+                edited,
                 body: read_message(message)?,
                 priority: *prio,
                 due: due.to_owned(),

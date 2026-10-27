@@ -73,9 +73,6 @@ where
     item.set_by(util::author(store.root()));
     item.set_content(match content {
         Some(c) => c,
-        None if std::io::stdin().is_terminal() && !out::json() => {
-            util::input_from_external_editor(&config.editor, None)?
-        }
         None => return Err(error::invalid("No content, use -m TEXT (- for stdin).")),
     });
     debug(&item.content());
@@ -86,13 +83,26 @@ where
 
 /// changes without an editor; `priority` 0 and `due` "-" clear the field
 pub struct EditOptions {
+    /// (item as markdown before, after) from `edit_in_editor`
+    pub edited: Option<(String, String)>,
     pub body: Option<String>,
     pub priority: Option<u64>,
     pub due: Option<String>,
 }
 
-/// applies `options`; without any it opens the whole item file (frontmatter
-/// and body) in the editor
+/// opens the item file (frontmatter and body) in the editor, without the
+/// lock, so other cake commands keep working meanwhile
+pub fn edit_in_editor(config: &Config, root: &Path, id: &str) -> Result<(String, String), Box<dyn Error>> {
+    let store = Store::new_except(root, &[])?;
+    let text = store.get_item(id).ok_or_else(|| error::not_found(id))?.to_markdown();
+    if !std::io::stdin().is_terminal() || out::json() {
+        return Err(error::invalid("cake edit without -m/--prio/--due needs a terminal and no --json."));
+    }
+    let edited = util::input_from_external_editor(&config.editor, Some(&text))?;
+    Ok((text, edited))
+}
+
+/// applies `options`; an editor result is refused if the item changed meanwhile
 pub fn edit<F>(
     debug: F,
     config: &Config,
@@ -120,11 +130,14 @@ where
         view::print(&config, store.get_item(id).unwrap().print_long(false))?;
         return Ok(Report::Items(vec![id.to_owned()]));
     }
-    if !std::io::stdin().is_terminal() || out::json() {
-        return Err(error::invalid("cake edit without -m/--prio/--due needs a terminal and no --json."));
+    let (text, edited) = options.edited.ok_or_else(|| error::invalid("Nothing to edit."))?;
+    if old.to_markdown() != text {
+        return Err(error::conflict(format!(
+            "{} changed while you were editing it, nothing written. Your version: {}",
+            id,
+            std::env::temp_dir().join("editable.md").display()
+        )));
     }
-    let text = old.to_markdown();
-    let edited = util::input_from_external_editor(&config.editor, Some(&text))?;
     if edited == text {
         say!("{} unchanged.", id);
         return Ok(Report::Items(vec![id.to_owned()]));

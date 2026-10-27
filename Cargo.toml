@@ -15,6 +15,7 @@ termimad = "0.25.5"
 deser-hjson = "2.2.0"
 serde_yaml_ng = "0.10"
 directories = "5.0.1"
+fd-lock = "4.0.4"
 
 [dev-dependencies]
 tempfile = "3"

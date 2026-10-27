@@ -357,6 +357,45 @@ pub fn author(store: &Path) -> String {
 
 pub const STORE_DIR: &str = ".cake";
 
+/// the store's lock file, None while the store dir does not exist
+pub fn lock_file(root: &Path) -> Result<Option<fd_lock::RwLock<File>>, Box<dyn Error>> {
+    if !root.is_dir() {
+        return Ok(None);
+    }
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(root.join(".lock"))?;
+    Ok(Some(fd_lock::RwLock::new(file)))
+}
+
+/// held, not read: dropping it releases the lock
+#[allow(dead_code)]
+pub enum LockGuard<'a> {
+    Shared(fd_lock::RwLockReadGuard<'a, File>),
+    Exclusive(fd_lock::RwLockWriteGuard<'a, File>),
+}
+
+/// blocks until the lock is free, says so once on stderr if it has to wait;
+/// the OS releases it when the process ends, also on a crash
+pub fn lock(lock: &mut fd_lock::RwLock<File>, exclusive: bool) -> Result<LockGuard<'_>, Box<dyn Error>> {
+    let busy = |r: std::io::Result<()>| matches!(r, Err(e) if e.kind() == std::io::ErrorKind::WouldBlock);
+    let waiting = if exclusive {
+        busy(lock.try_write().map(drop))
+    } else {
+        busy(lock.try_read().map(drop))
+    };
+    if waiting {
+        eprintln!("waiting for lock (another cake command is running)");
+    }
+    Ok(if exclusive {
+        LockGuard::Exclusive(lock.write()?)
+    } else {
+        LockGuard::Shared(lock.read()?)
+    })
+}
+
 pub const STORE_GITIGNORE: &str = "index.sqlite\n.lock\n.*.md.tmp\n.obsidian/workspace*.json\n";
 
 pub fn global_store() -> Result<PathBuf, Box<dyn Error>> {
