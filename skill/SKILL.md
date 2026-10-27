@@ -130,9 +130,15 @@ idea      (user,  note)   stays as the user wrote it
    task once, show progress with status and tags. New findings → child
    items. A decision needed → child note tagged `ask`; remove the tag when
    answered.
-5. **Finish** — `cake stop <id>`, `cake tag <id> review`; tell the user what
-   is ready for review and what became unblocked (`blocks`, `cake ready`).
-   The user closes with `cake done`.
+5. **Finish** — `cake stop <id>`, then a review note as child (no tags):
+   `# Review: <title>` with ≤ 5 bullets: changed (commits), check (one
+   command), risks, one question for the user. Then `cake tag <id> review`
+   and tell the user what is ready and what became unblocked.
+6. **Review (user)** — `cake review` lists tasks with their review notes;
+   `cake show <id>`; then `cake done <id>` (ok), `cake drop <id>`, or a
+   feedback note `cake add -p <id> -m "…"`. Feedback = the user's notes under
+   your review tasks: fix it, answer as a child of the feedback note, keep
+   the `review` tag.
 
 Aliases (`cake help` lists all, a store may add its own): `cake review`,
 `cake ask` (open questions), `cake ideas`. All take `--json` and selectors.
