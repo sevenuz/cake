@@ -169,7 +169,8 @@ pub enum Commands {
         /// Path to the file
         path: String,
     },
-    /// Creates a new store (.cake) in the current directory
+    /// Creates a new store (.cake). In a git repo it is a worktree of an orphan
+    /// branch (config git_branch), attached if the branch exists on the remote.
     Init {},
     /// Open config file in editor
     Config {},
@@ -256,7 +257,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             *long,
         )?,
         Some(Commands::Show { path }) => commands::show(debug, &config, path)?,
-        Some(Commands::Init {}) => commands::init(debug)?,
+        Some(Commands::Init {}) => commands::init(debug, &config)?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         None => {
             println!("Nothing happed o.0");

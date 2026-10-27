@@ -63,3 +63,67 @@ pub fn commit(dir: &Path, paths: &[PathBuf], message: &str) -> Result<(), Box<dy
     git(dir, &["commit", "-q", "-m", message])?;
     Ok(())
 }
+
+fn branch_exists(dir: &Path, branch: &str) -> Result<bool, Box<dyn Error>> {
+    git_ok(dir, &["rev-parse", "-q", "--verify", &format!("refs/heads/{}", branch)])
+}
+
+fn has_remote(dir: &Path, remote: &str) -> Result<bool, Box<dyn Error>> {
+    git_ok(dir, &["remote", "get-url", remote])
+}
+
+/// asks the remote whether `branch` exists (network), errors on other failures
+fn remote_branch_exists(dir: &Path, remote: &str, branch: &str) -> Result<bool, Box<dyn Error>> {
+    let out = run(dir, &["ls-remote", "--exit-code", "--heads", remote, branch])?;
+    match out.status.code() {
+        Some(0) => Ok(true),
+        Some(2) => Ok(false),
+        _ => Err(format!(
+            "git ls-remote {} failed: {}",
+            remote,
+            String::from_utf8_lossy(&out.stderr).trim()
+        )
+        .into()),
+    }
+}
+
+/// Attaches a worktree for `branch` at `path`. Uses the local branch if it
+/// exists, else the one on `remote`, else creates an orphan branch.
+/// Returns false if the branch was newly created (worktree is empty).
+pub fn add_worktree(
+    repo: &Path,
+    path: &Path,
+    branch: &str,
+    remote: &str,
+) -> Result<bool, Box<dyn Error>> {
+    let path = path.to_str().unwrap();
+    git(repo, &["worktree", "prune"])?;
+    if branch_exists(repo, branch)? {
+        git(repo, &["worktree", "add", path, branch])?;
+        return Ok(true);
+    }
+    if has_remote(repo, remote)? && remote_branch_exists(repo, remote, branch)? {
+        let tracking = format!("{}/{}", remote, branch);
+        let refspec = format!("{}:refs/remotes/{}", branch, tracking);
+        git(repo, &["fetch", "-q", remote, &refspec])?;
+        git(repo, &["worktree", "add", "-q", "--track", "-b", branch, path, &tracking])?;
+        return Ok(true);
+    }
+    git(repo, &["worktree", "add", "-q", "--orphan", "-b", branch, path])?;
+    Ok(false)
+}
+
+/// adds `pattern` to the repo's local .git/info/exclude (shared by all worktrees)
+pub fn exclude(repo: &Path, pattern: &str) -> Result<(), Box<dyn Error>> {
+    let common = git(repo, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
+    let info = Path::new(&common).join("info");
+    std::fs::create_dir_all(&info)?;
+    let file = info.join("exclude");
+    let content = std::fs::read_to_string(&file).unwrap_or_default();
+    if content.lines().any(|l| l.trim() == pattern) {
+        return Ok(());
+    }
+    let sep = if content.is_empty() || content.ends_with('\n') { "" } else { "\n" };
+    std::fs::write(&file, format!("{}{}{}\n", content, sep, pattern))?;
+    Ok(())
+}

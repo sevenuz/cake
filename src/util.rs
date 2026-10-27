@@ -312,6 +312,8 @@ pub fn config_path() -> Result<PathBuf, Box<dyn Error>> {
 
 pub const STORE_DIR: &str = ".cake";
 
+pub const STORE_GITIGNORE: &str = "index.sqlite\n.lock\n.*.md.tmp\n.obsidian/workspace*.json\n";
+
 pub fn global_store() -> Result<PathBuf, Box<dyn Error>> {
     let base_dirs = BaseDirs::new().ok_or("Could not find data directory")?;
     Ok(base_dirs.data_dir().join(PKG_NAME))

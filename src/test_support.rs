@@ -1,7 +1,6 @@
 //! Shared helpers for tests that need a real git repository and/or an
 //! isolated config/data dir. Only compiled for `cfg(test)`.
 
-use crate::config::Config;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -106,9 +105,4 @@ pub fn git(subcommand: &str, args: &[&str]) -> Output {
         String::from_utf8_lossy(&out.stderr)
     );
     out
-}
-
-/// Builds a default `Config` inside an already-active `Sandbox`.
-pub fn default_config() -> Config {
-    Config::new().expect("build default config")
 }

@@ -3,10 +3,10 @@ use crate::item::Item;
 use crate::store::{inner::ItemView, RecState, Store, MAX_DEPTH};
 use crate::view;
 use crate::Selector;
-use crate::util;
+use crate::{git, util};
 use std::error::Error;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use termimad::crossterm::style::Stylize;
 
@@ -258,18 +258,49 @@ where
     Ok(())
 }
 
-pub fn init<F>(debug: F) -> Result<(), Box<dyn Error>>
+/// Creates the store: inside a git repo a worktree of `config.git_branch` at
+/// `<repo>/.cake` (attached if the branch exists locally or on the remote),
+/// otherwise a plain `.cake` dir in the current directory.
+pub fn init<F>(debug: F, config: &Config) -> Result<(), Box<dyn Error>>
 where
     F: Fn(&str),
 {
-    let p = Path::new(util::STORE_DIR).join("items");
-    debug(&format!("init: new store {:?}", p));
-    if p.is_dir() {
-        return Err("There is already a store here.".into());
+    let cwd = std::env::current_dir()?;
+    if config.disable_git || !git::is_repo(&cwd) {
+        let p = cwd.join(util::STORE_DIR);
+        debug(&format!("init: new store {:?}", p));
+        if p.join("items").is_dir() {
+            return Err("There is already a store here.".into());
+        }
+        create_store_files(&p)?;
+        println!("New store {} created :)", p.display());
+        return Ok(());
     }
-    fs::create_dir_all(&p)?;
-    println!("New store {} created :)", util::STORE_DIR);
+    let repo = git::toplevel(&cwd)?;
+    let p = repo.join(util::STORE_DIR);
+    if p.exists() {
+        return Err(format!("{} already exists.", p.display()).into());
+    }
+    debug(&format!("init: worktree {:?} on {}", p, config.git_branch));
+    let attached = git::add_worktree(&repo, &p, &config.git_branch, &config.git_remote_name)?;
+    git::exclude(&repo, &format!("/{}/", util::STORE_DIR))?;
+    if attached {
+        fs::create_dir_all(p.join("items"))?;
+        println!("Attached store {} on branch {} :)", p.display(), config.git_branch);
+    } else {
+        let files = create_store_files(&p)?;
+        git::commit(&p, &files, "cake: init")?;
+        println!("New store {} created on branch {} :)", p.display(), config.git_branch);
+    }
     Ok(())
+}
+
+/// creates `items/` and `.gitignore` in `root`, returns the files to commit
+fn create_store_files(root: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+    fs::create_dir_all(root.join("items"))?;
+    let gitignore = root.join(".gitignore");
+    fs::write(&gitignore, util::STORE_GITIGNORE)?;
+    Ok(vec![gitignore])
 }
 
 pub fn config<F>(debug: F, config: &Config) -> Result<(), Box<dyn Error>>
