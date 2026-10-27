@@ -78,7 +78,7 @@ where
     });
     debug(&item.content());
     store.add(item)?;
-    view::print(&config, store.get_item(&id).unwrap().print_long(false))?;
+    view::print(&config, store.get_item(&id).unwrap().print_long())?;
     Ok(Report::Items(vec![id]))
 }
 
@@ -128,7 +128,7 @@ where
             item.set_due(Some(d).filter(|d| d != "-")).map_err(error::invalid)?;
         }
         store.get_item_mut(id).unwrap().set(item);
-        view::print(&config, store.get_item(id).unwrap().print_long(false))?;
+        view::print(&config, store.get_item(id).unwrap().print_long())?;
         return Ok(Report::Items(vec![id.to_owned()]));
     }
     let (text, edited) = options.edited.ok_or_else(|| error::invalid("Nothing to edit."))?;
@@ -149,7 +149,7 @@ where
     }
     store.check_existence(&item, true)?;
     store.edit(item)?;
-    view::print(&config, store.get_item(id).unwrap().print_long(false))?;
+    view::print(&config, store.get_item(id).unwrap().print_long())?;
     Ok(Report::Items(vec![id.to_owned()]))
 }
 
@@ -475,7 +475,16 @@ where
     debug(&format!("show: {:?}", target));
     let data = match store.get_item(target) {
         Some(item) => {
-            view::print(&config, item.print_long(false))?;
+            view::print(&config, item.print_long())?;
+            let ids: HashSet<String> = item.children().iter().cloned().collect();
+            let children = tree(store, &ids);
+            if !children.is_empty() && !out::json() {
+                let color = std::io::stdout().is_terminal();
+                print!("{}", if item.content().ends_with('\n') { "\n" } else { "\n\n" });
+                for (prefix, id) in children {
+                    println!("{}{}", prefix, line(store.get_item(&id).unwrap(), color));
+                }
+            }
             return Ok(Report::Items(vec![target.to_owned()]));
         }
         None if Path::new(target).is_file() => fs::read_to_string(target)?,

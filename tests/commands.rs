@@ -350,3 +350,15 @@ fn ls_is_a_tree_and_hides_closed_items() {
     assert_eq!(env.cake_ok(&d, &["ls", "-t", "x"]).lines().count(), 4, "children of matches");
     assert_eq!(env.cake_ok(&d, &["ls", "a"]), "○ a first\n└─ ○ c deep\n");
 }
+
+#[test]
+fn show_has_a_meta_line_and_lists_children() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "t", "--todo", "-t", "x", "--prio", "1", "-m", "# task\n\n- bullet"]);
+    env.cake_ok(&d, &["add", "n", "-p", "t", "-m", "# review note"]);
+    let out = env.cake_ok(&d, &["show", "t"]);
+    let first = out.lines().next().unwrap();
+    assert!(first.starts_with("*t* · todo · #x · by ") && first.ends_with(" · prio 1"), "{}", first);
+    assert!(out.ends_with("- bullet\n\n· n review note\n"), "{}", out);
+}

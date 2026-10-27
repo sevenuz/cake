@@ -60,7 +60,7 @@ pub struct Item {
 
 impl fmt::Display for Item {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{}", self.print_long(false))
+        writeln!(f, "{}", self.print_long())
     }
 }
 
@@ -258,35 +258,40 @@ impl Item {
         s + "---\n" + &self.content
     }
 
-    /// # Arguments
-    /// * `serialize` - if true, the timetrack is printed as date,
-    /// else only the timedifferences are printed
-    pub fn print_long(&self, serialize: bool) -> String {
-        let tt = if serialize {
-            self.timetrack
-                .iter()
-                .map(|t| util::format_timestamp(*t))
-                .collect::<Vec<String>>()
-        } else {
-            self.timetrack
-                .chunks(2)
-                .filter(|p| p.len() == 2)
-                .map(|p| util::timestamp_to_hms(p[1] - p[0]))
-                .collect::<Vec<String>>()
-        };
-        format!(
-            "| id | {}|\n|---|---|\n| status | {}|\n| created | {}|\n| by | {}|\n| tags | {}|\n| timetrack | {}|\n| parent | {}|\n| children | {}|\n| blocked by | {}|\n\n{}",
-            self.id,
-            self.status().map(|s| s.as_str()).unwrap_or("note"),
-            util::format_timestamp(self.timestamp),
-            self.by.clone().unwrap_or_default(),
-            util::vec_to_str(&self.tags),
-            util::vec_to_str(&tt),
-            self.parent.clone().unwrap_or_default(),
-            util::vec_to_str(&self.children),
-            util::vec_to_str(&self.blocked_by),
-            self.content
-        )
+    /// one meta line (id, status, owner, dates, time, links) above the body
+    pub fn print_long(&self) -> String {
+        let mut meta = vec![
+            format!("*{}*", self.id),
+            self.status().map_or("note", |s| s.as_str()).to_string(),
+        ];
+        if !self.tags.is_empty() {
+            meta.push(self.tags.iter().map(|t| format!("#{}", t)).collect::<Vec<_>>().join(" "));
+        }
+        if let Some(b) = &self.by {
+            meta.push(format!("by {}", b));
+        }
+        meta.push(format!("created {}", util::format_timestamp(self.timestamp)[..16].replace('T', " ")));
+        if let Some(c) = self.closed {
+            meta.push(format!("closed {}", util::format_timestamp(c)[..16].replace('T', " ")));
+        }
+        let tracked = self.tracked_seconds();
+        if tracked > 0 {
+            let running = if self.is_started() { " running" } else { "" };
+            meta.push(format!("tracked {}{}", util::timestamp_to_hms(tracked), running));
+        }
+        if let Some(p) = self.priority {
+            meta.push(format!("prio {}", p));
+        }
+        if let Some(d) = &self.due {
+            meta.push(format!("due {}", d));
+        }
+        if let Some(p) = &self.parent {
+            meta.push(format!("parent {}", p));
+        }
+        if !self.blocked_by.is_empty() {
+            meta.push(format!("blocked by {}", self.blocked_by.join(", ")));
+        }
+        format!("{}\n\n{}", meta.join(" · "), self.content)
     }
 
     pub fn id(&self) -> &String {
