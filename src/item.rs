@@ -366,6 +366,12 @@ impl Item {
         self.timestamp
     }
 
+    /// seconds the running timer runs, None if stopped
+    pub fn running_seconds(&self) -> Option<i64> {
+        self.is_started()
+            .then(|| util::timestamp() - self.timetrack.last().unwrap())
+    }
+
     pub fn is_started(&self) -> bool {
         self.timetrack.len() % 2 == 1
     }

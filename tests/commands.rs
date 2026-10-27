@@ -305,3 +305,25 @@ fn aliases_from_defaults_user_and_store_config() {
     std::fs::write(d.join(".cake/config.hjson"), "{ aliases: { ls: \"ready\" } }").unwrap();
     assert!(env.cake_err(&d, &["ready"]).contains("shadows"));
 }
+
+#[test]
+fn status_line_shows_timers_and_what_waits_for_you() {
+    let env = Env::new();
+    let d = env.plain_store();
+    let jul = [("CAKE_AUTHOR", "jul")];
+    let agent = [("AI_AGENT", "claude-code_x")];
+    let run = |args: &[&str], e: &[(&str, &str)]| {
+        let out = env.cake_env(&d, args, e);
+        assert!(out.status.success(), "{}", stderr(&out));
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    assert_eq!(run(&["status"], &jul), "", "nothing to show");
+    run(&["add", "a", "--todo", "-m", "# a task with a rather long title"], &jul);
+    run(&["start", "a"], &jul);
+    run(&["add", "r", "--todo", "-t", "review", "-m", "# r"], &agent);
+    run(&["add", "q", "-t", "ask", "-m", "# q"], &agent);
+    run(&["add", "own", "-t", "ask", "-m", "# mine"], &jul);
+    assert_eq!(run(&["status"], &jul), "▶ a a task with a rather lon… 0:00 · review 1 · ask 1\n");
+    run(&["start", "r"], &agent);
+    assert!(run(&["status"], &jul).contains("▶ r r 0:00 (claude-code)"));
+}

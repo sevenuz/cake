@@ -208,6 +208,8 @@ pub enum Commands {
         #[arg(short, long)]
         long: bool,
     },
+    /// one line for prompts: running timers, review and ask counts
+    Status {},
     /// list open items without open blockers, by priority and due
     Ready {
         #[command(flatten)]
@@ -609,6 +611,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             selector.selector(&selector.ids)?,
             *long,
         )?,
+        Some(Commands::Status {}) => commands::status(&config, &store)?,
         Some(Commands::Show { target }) => commands::show(debug, &config, &store, target)?,
         Some(Commands::Init {}) => commands::init(debug, &config, cli.global)?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,

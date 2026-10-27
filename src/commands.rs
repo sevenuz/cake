@@ -306,6 +306,56 @@ where
     Ok(Report::Items(ids))
 }
 
+/// one line for prompts and status lines: running timers, items waiting for
+/// you (review, ask by others); prints nothing when there is nothing
+pub fn status(config: &Config, store: &Store) -> Result<Report, Box<dyn Error>> {
+    let me = config.author(store.root());
+    let mut running: Vec<_> = store
+        .get()
+        .values()
+        .filter_map(|i| i.running_seconds().map(|s| (i, s)))
+        .collect();
+    running.sort_by_key(|(i, _)| i.id().to_owned());
+    let others = |tag: &str, open: bool| {
+        store
+            .get()
+            .values()
+            .filter(|i| i.tags().iter().any(|t| t == tag))
+            .filter(|i| !open || i.is_open())
+            .filter(|i| i.by() != Some(&me))
+            .count()
+    };
+    let (review, ask) = (others("review", true), others("ask", false));
+    let mut parts: Vec<String> = running
+        .iter()
+        .map(|(i, s)| {
+            let mut title: String = i.title().chars().take(24).collect();
+            if title.len() < i.title().len() {
+                title.push('…');
+            }
+            let owner = match i.by() {
+                Some(b) if *b != me => format!(" ({})", b),
+                _ => String::new(),
+            };
+            format!("▶ {} {} {}:{:02}{}", i.id(), title, s / 3600, s / 60 % 60, owner)
+        })
+        .collect();
+    if review > 0 {
+        parts.push(format!("review {}", review));
+    }
+    if ask > 0 {
+        parts.push(format!("ask {}", ask));
+    }
+    if !parts.is_empty() {
+        say!("{}", parts.join(" · "));
+    }
+    let running: Vec<_> = running
+        .iter()
+        .map(|(i, s)| serde_json::json!({ "id": i.id(), "title": i.title(), "by": i.by(), "seconds": s }))
+        .collect();
+    Ok(Report::Value(serde_json::json!({ "running": running, "review": review, "ask": ask })))
+}
+
 pub fn list<F>(
     debug: F,
     config: &Config,
