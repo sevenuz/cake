@@ -1,9 +1,10 @@
 ---
 id: 0qwtxm
-status: todo
+status: done
 tags: [cli]
 created: 2026-10-27T12:30:10+01:00
 by: claude-code
+closed: 2026-10-27T12:50:16+01:00
 priority: 2
 ---
 # cake edit detects concurrent changes
