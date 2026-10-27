@@ -307,25 +307,34 @@ fn aliases_from_defaults_user_and_store_config() {
 }
 
 #[test]
-fn status_line_shows_timers_and_what_waits_for_you() {
+fn status_shows_your_timers_others_ready_and_configured_tags() {
     let env = Env::new();
     let d = env.plain_store();
     let jul = [("CAKE_AUTHOR", "jul")];
-    let agent = [("AI_AGENT", "claude-code_x")];
+    // an agent runs cake for jul: the user stays jul
+    let agent = [("CAKE_AUTHOR", "jul"), ("AI_AGENT", "claude-code_x")];
+    let other = [("CAKE_AUTHOR", "bob")];
     let run = |args: &[&str], e: &[(&str, &str)]| {
         let out = env.cake_env(&d, args, e);
         assert!(out.status.success(), "{}", stderr(&out));
         String::from_utf8_lossy(&out.stdout).to_string()
     };
     assert_eq!(run(&["status"], &jul), "", "nothing to show");
-    run(&["add", "a", "--todo", "-m", "# a task with a rather long title"], &jul);
-    run(&["start", "a"], &jul);
-    run(&["add", "r", "--todo", "-t", "review", "-m", "# r"], &agent);
-    run(&["add", "q", "-t", "ask", "-m", "# q"], &agent);
-    run(&["add", "own", "-t", "ask", "-m", "# mine"], &jul);
-    assert_eq!(run(&["status"], &jul), "▶ a a task with a rather lon… 0:00 · review 1 · ask 1\n");
-    run(&["start", "r"], &agent);
-    assert!(run(&["status"], &jul).contains("▶ r r 0:00 (claude-code)"));
+    run(&["add", "ab", "--todo", "-m", "# a task with a rather long title"], &jul);
+    run(&["add", "cd", "--todo", "-t", "review", "-m", "# c"], &other);
+    run(&["start", "ab"], &jul);
+    run(&["start", "cd"], &other);
+    run(&["add", "ef", "--todo", "-m", "# e"], &jul);
+    assert_eq!(run(&["status"], &agent), "▶ ab a task with a rather lon… 0h00 · ▶ 1 others · ready 3\n");
+
+    let user = env.path("config/cake/config.hjson");
+    let cfg = std::fs::read_to_string(&user).unwrap();
+    let cfg = cfg.replace("\"status\": [\n    \"mine\",", "\"status\": [\n    \"tag:review\",\n    \"mine\",");
+    std::fs::write(&user, cfg).unwrap();
+    assert!(run(&["status"], &jul).starts_with("review 1 · ▶ ab"), "{}", run(&["status"], &jul));
+    let json: serde_json::Value = serde_json::from_str(&run(&["status", "--json"], &jul)).unwrap();
+    assert_eq!((json["user"].as_str(), json["others"].as_u64(), json["ready"].as_u64()), (Some("jul"), Some(1), Some(3)));
+    assert_eq!(json["tags"]["review"], 1);
 }
 
 #[test]

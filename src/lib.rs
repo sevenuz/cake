@@ -226,7 +226,7 @@ pub enum Commands {
         #[arg(short, long)]
         long: bool,
     },
-    /// one line for prompts: running timers, review and ask counts
+    /// one line for prompts and tmux: your timers, others' timers, ready, today
     Status {},
     /// list open items without open blockers, by priority and due
     Ready {

@@ -349,6 +349,14 @@ impl Item {
         self.timestamp
     }
 
+    /// tracked intervals as (start, end), a running one ends now
+    pub fn intervals(&self) -> Vec<(i64, i64)> {
+        self.timetrack
+            .chunks(2)
+            .map(|p| (p[0], p.get(1).copied().unwrap_or_else(util::timestamp)))
+            .collect()
+    }
+
     /// seconds the running timer runs, None if stopped
     pub fn running_seconds(&self) -> Option<i64> {
         self.is_started()

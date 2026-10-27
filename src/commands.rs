@@ -308,58 +308,99 @@ where
     Ok(Report::Items(ids))
 }
 
-/// one line for prompts and status lines: running timers, items waiting for
-/// you (review, ask by others); prints nothing when there is nothing
+/// one line for prompts, tmux and status lines, segments from config `status`
 pub fn status(config: &Config, store: &Store) -> Result<Report, Box<dyn Error>> {
-    let me = config.author(store.root());
-    let mut running: Vec<_> = store
-        .get()
-        .values()
-        .filter_map(|i| i.running_seconds().map(|s| (i, s)))
-        .collect();
-    running.sort_by_key(|(i, _)| i.id().to_owned());
-    let others = |tag: &str, open: bool| {
-        store
-            .get()
-            .values()
-            .filter(|i| i.tags().iter().any(|t| t == tag))
-            .filter(|i| !open || i.is_open())
-            .filter(|i| i.by() != Some(&me))
-            .count()
-    };
-    let (review, ask) = (others("review", true), others("ask", false));
-    let mut parts: Vec<String> = running
+    let me = config.user(store.root());
+    let short = store.short_ids();
+    let items: Vec<&Item> = store.get().values().collect();
+    let mut mine: Vec<(&Item, i64)> = items
         .iter()
-        .map(|(i, s)| {
-            let mut title: String = i.title().chars().take(24).collect();
-            if title.len() < i.title().len() {
-                title.push('…');
-            }
-            let owner = match i.by() {
-                Some(b) if *b != me => format!(" ({})", b),
-                _ => String::new(),
-            };
-            format!("▶ {} {} {}:{:02}{}", i.id(), title, s / 3600, s / 60 % 60, owner)
-        })
+        .filter(|i| i.by() == Some(&me))
+        .filter_map(|i| i.running_seconds().map(|s| (*i, s)))
         .collect();
-    if review > 0 {
-        parts.push(format!("review {}", review));
-    }
-    if ask > 0 {
-        parts.push(format!("ask {}", ask));
+    mine.sort_by_key(|(i, _)| i.id().to_owned());
+    let others = items.iter().filter(|i| i.is_started() && i.by() != Some(&me)).count();
+    let ready = items.iter().filter(|i| store.is_ready(i.id())).count();
+    let midnight = chrono::Local::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .and_then(|t| t.and_local_timezone(chrono::Local).earliest())
+        .map_or(0, |t| t.timestamp());
+    let today = union_seconds(
+        items
+            .iter()
+            .filter(|i| i.by() == Some(&me))
+            .flat_map(|i| i.intervals())
+            .map(|(s, e)| (s.max(midnight), e))
+            .filter(|(s, e)| e > s)
+            .collect(),
+    );
+    let hm = |s: i64| format!("{}h{:02}", s / 3600, s / 60 % 60);
+    let mut tags = serde_json::Map::new();
+    let mut parts: Vec<String> = vec![];
+    for segment in &config.status {
+        match segment.as_str() {
+            "mine" => parts.extend(mine.iter().map(|(i, s)| {
+                let mut title: String = i.title().chars().take(24).collect();
+                if title.len() < i.title().len() {
+                    title.push('…');
+                }
+                format!("▶ {} {} {}", short[i.id()], title, hm(*s))
+            })),
+            "others" if others > 0 => parts.push(format!("▶ {} others", others)),
+            "ready" if ready > 0 => parts.push(format!("ready {}", ready)),
+            "today" if today > 0 => parts.push(format!("today {}", hm(today))),
+            s if s.starts_with("tag:") => {
+                let tag = &s[4..];
+                let n = items.iter().filter(|i| i.is_open() && i.tags().iter().any(|t| t == tag)).count();
+                tags.insert(tag.to_string(), n.into());
+                if n > 0 {
+                    parts.push(format!("{} {}", tag, n));
+                }
+            }
+            _ => (),
+        }
     }
     if !parts.is_empty() {
         say!("{}", parts.join(" · "));
     }
-    let running: Vec<_> = running
+    let mine: Vec<_> = mine
         .iter()
-        .map(|(i, s)| serde_json::json!({ "id": i.id(), "title": i.title(), "by": i.by(), "seconds": s }))
+        .map(|(i, s)| serde_json::json!({ "id": i.id(), "title": i.title(), "seconds": s }))
         .collect();
-    Ok(Report::Value(serde_json::json!({ "running": running, "review": review, "ask": ask })))
+    Ok(Report::Value(serde_json::json!({
+        "user": me, "mine": mine, "others": others, "ready": ready, "today_seconds": today, "tags": tags,
+    })))
 }
 
-/// lists matches as a tree with their children; done and dropped items are
-/// hidden unless `all`, ids or --status select them
+/// total length of possibly overlapping (start, end) intervals, overlaps once
+fn union_seconds(mut spans: Vec<(i64, i64)>) -> i64 {
+    spans.sort();
+    let mut total = 0;
+    let mut current: Option<(i64, i64)> = None;
+    for (s, e) in spans {
+        current = match current {
+            Some((cs, ce)) if s <= ce => Some((cs, ce.max(e))),
+            Some((cs, ce)) => {
+                total += ce - cs;
+                Some((s, e))
+            }
+            None => Some((s, e)),
+        };
+    }
+    total + current.map_or(0, |(s, e)| e - s)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn union_counts_overlaps_once() {
+        assert_eq!(super::union_seconds(vec![(0, 10), (5, 15), (20, 30)]), 25);
+        assert_eq!(super::union_seconds(vec![(20, 30), (0, 40)]), 40);
+        assert_eq!(super::union_seconds(vec![]), 0);
+    }
+}
+
 pub fn list<F>(
     debug: F,
     config: &Config,

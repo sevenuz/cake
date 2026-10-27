@@ -36,6 +36,10 @@ pub struct Config {
     /// env vars holding the agent's session id, first set one wins
     #[serde(default = "default_session_env")]
     pub session_env: Vec<String>,
+    /// cake status segments: mine (your running timers), others (count of
+    /// others' running timers), ready, today (your time today), tag:<name>
+    #[serde(default = "default_status")]
+    pub status: Vec<String>,
     /// own commands: name -> command line, e.g. review: "ls -t review"; may
     /// override built-ins (ls: "ls --status todo"); added to the defaults, a
     /// store's .cake/config.hjson overrides them
@@ -82,6 +86,10 @@ fn default_session_env() -> Vec<String> {
     vec!["CAKE_SESSION".to_string(), "CLAUDE_CODE_SESSION_ID".to_string()]
 }
 
+fn default_status() -> Vec<String> {
+    ["mine", "others", "ready", "today"].iter().map(|s| s.to_string()).collect()
+}
+
 fn first_env(vars: &[String]) -> Option<String> {
     vars.iter().find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty()))
 }
@@ -124,6 +132,15 @@ impl Config {
         first_env(&self.session_env)
     }
 
+    /// the human using cake, also when an agent runs it: CAKE_AUTHOR, else git
+    /// user.name, else $USER
+    pub fn user(&self, store: &std::path::Path) -> String {
+        first_env(&["CAKE_AUTHOR".to_string()])
+            .or_else(|| crate::git::user_name(store))
+            .or_else(|| std::env::var("USER").ok())
+            .unwrap_or("unknown".to_string())
+    }
+
     /// creator of new items: CAKE_AUTHOR, else the agent, else git user.name, else $USER
     pub fn author(&self, store: &std::path::Path) -> String {
         first_env(&["CAKE_AUTHOR".to_string()])
@@ -147,6 +164,7 @@ impl Config {
                 agent_env: default_agent_env(),
                 session_env: default_session_env(),
                 aliases: BTreeMap::new(),
+                status: default_status(),
                 skin_file_name: "gruvbox.hjson".to_string(),
                 scrollview_threshold: 30,
             })
