@@ -205,6 +205,29 @@ pub enum Commands {
         /// new parent id or -
         parent: String,
     },
+    /// add items that must be closed before this one
+    Block {
+        id: String,
+        /// blocking ids, comma separated
+        #[arg(long, value_name = "IDS")]
+        by: String,
+    },
+    /// remove blockers
+    Unblock {
+        id: String,
+        /// blocking ids, comma separated
+        #[arg(long, value_name = "IDS")]
+        by: String,
+    },
+    /// list open items without open blockers, by priority and due
+    Ready {
+        #[command(flatten)]
+        selector: SelectorArgs,
+
+        /// detailed presentation of the items
+        #[arg(short, long)]
+        long: bool,
+    },
     /// mark tasks done: stops the timer, sets closed
     Done {
         #[command(flatten)]
@@ -268,6 +291,8 @@ impl Commands {
                 | Commands::Start { .. }
                 | Commands::Stop { .. }
                 | Commands::Mv { .. }
+                | Commands::Block { .. }
+                | Commands::Unblock { .. }
                 | Commands::Done { .. }
                 | Commands::Drop { .. }
                 | Commands::Reopen { .. }
@@ -388,6 +413,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             commands::stop(debug, &mut &mut store, selector.selector(&selector.ids)?)?
         }
         Some(Commands::Mv { id, parent }) => commands::mv(debug, &mut store, id, parent)?,
+        Some(Commands::Block { id, by }) => commands::block(debug, &mut store, id, by, false)?,
+        Some(Commands::Unblock { id, by }) => commands::block(debug, &mut store, id, by, true)?,
+        Some(Commands::Ready { selector, long }) => {
+            let mut selector = selector.selector(&selector.ids)?;
+            selector.ready = true;
+            commands::list(debug, &config, &mut store, selector, *long)?
+        }
         Some(Commands::Done { selector }) => {
             commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Done)?
         }

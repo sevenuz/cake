@@ -426,6 +426,14 @@ impl Item {
         &self.blocked_by
     }
 
+    pub fn priority(&self) -> Option<u64> {
+        self.priority
+    }
+
+    pub fn due(&self) -> Option<&String> {
+        self.due.as_ref()
+    }
+
     /// todo or doing
     pub fn is_open(&self) -> bool {
         self.status.is_some_and(|s| s.is_open())

@@ -198,6 +198,29 @@ where
     Ok(())
 }
 
+/// adds or removes blockers of `id`
+pub fn block<F>(
+    debug: F,
+    store: &mut Store,
+    id: &str,
+    by: &str,
+    remove: bool,
+) -> Result<(), Box<dyn Error>>
+where
+    F: Fn(&str),
+{
+    debug(&format!("block {:?} by {:?}, remove: {:?}", id, by, remove));
+    let blockers = util::split_comma_cleanup(by.to_owned());
+    if remove {
+        store.unblock(id, &blockers)?;
+    } else {
+        store.block(id, &blockers)?;
+    }
+    let left = store.get_item(id).unwrap().blocked_by();
+    println!("{} blocked by: {}", id, util::vec_to_str(left));
+    Ok(())
+}
+
 pub fn set_status<F>(
     debug: F,
     store: &mut Store,
@@ -243,6 +266,11 @@ where
             .unwrap()
             .timestamp()
             .cmp(&items.get(b).unwrap().timestamp())
+    });
+    // by priority (none last), then due (none last)
+    keys.sort_by_key(|k| {
+        let i = items.get(k).unwrap();
+        (i.priority().unwrap_or(u64::MAX), i.due().is_none(), i.due().cloned())
     });
     // sort output by amount of parents. Zero parents first
     keys.sort_by(|a, b| {

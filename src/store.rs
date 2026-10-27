@@ -222,6 +222,49 @@ pub mod inner {
             Ok(())
         }
 
+        /// true if `from` waits on `target`, directly or transitively
+        fn waits_on(&self, from: &str, target: &str) -> bool {
+            let mut seen = HashSet::new();
+            let mut todo = vec![from.to_owned()];
+            while let Some(c) = todo.pop() {
+                if c == target {
+                    return true;
+                }
+                if seen.insert(c.clone()) {
+                    if let Some(i) = self.items.get(&c) {
+                        todo.extend(i.blocked_by().iter().cloned());
+                    }
+                }
+            }
+            false
+        }
+
+        /// adds blockers to `id`, refuses unknown ids and cycles
+        pub fn block(&mut self, id: &str, blockers: &[String]) -> Result<(), Box<dyn Error>> {
+            for b in std::iter::once(&id.to_owned()).chain(blockers) {
+                if !self.items.contains_key(b) {
+                    return Err(format!("{} not found.", b).into());
+                }
+            }
+            for b in blockers {
+                if self.waits_on(b, id) {
+                    return Err(format!("{} waits on {}, that would be a cycle.", b, id).into());
+                }
+            }
+            let item = self.get_item_mut(id).unwrap();
+            let mut ids = item.blocked_by().clone();
+            ids.extend(blockers.iter().filter(|b| !item.blocked_by().contains(b)).cloned());
+            item.set_blocked_by(ids);
+            Ok(())
+        }
+
+        pub fn unblock(&mut self, id: &str, blockers: &[String]) -> Result<(), Box<dyn Error>> {
+            let item = self.get_item_mut(id).ok_or(format!("{} not found.", id))?;
+            let ids = item.blocked_by().iter().filter(|b| !blockers.contains(b)).cloned().collect();
+            item.set_blocked_by(ids);
+            Ok(())
+        }
+
         /// open item with at least one open blocker
         pub fn is_blocked(&self, id: &str) -> bool {
             self.items.get(id).is_some_and(|i| {
@@ -435,6 +478,25 @@ pub mod inner {
             assert!(store.move_item("a", Some("x")).is_err());
             assert!(store.move_item("x", None).is_err());
             assert!(store.get_item("a").unwrap().parents().is_empty());
+        }
+
+        #[test]
+        fn block_adds_once_and_refuses_cycles() {
+            let mut store = empty_store();
+            for id in ["a", "b", "c"] {
+                store.add(item(id, None, vec![])).unwrap();
+            }
+            store.block("a", &["b".into()]).unwrap();
+            store.block("a", &["b".into(), "c".into()]).unwrap();
+            store.block("b", &["c".into()]).unwrap();
+            assert_eq!(store.get_item("a").unwrap().blocked_by(), &vec!["b".to_string(), "c".to_string()]);
+
+            assert!(store.block("c", &["a".into()]).is_err(), "c <- b <- a");
+            assert!(store.block("a", &["a".into()]).is_err());
+            assert!(store.block("a", &["x".into()]).is_err());
+
+            store.unblock("a", &["b".into()]).unwrap();
+            assert_eq!(store.get_item("a").unwrap().blocked_by(), &vec!["c".to_string()]);
         }
 
         #[test]

@@ -134,3 +134,25 @@ fn ls_filters_by_text_kind_status_and_blockers() {
     assert_eq!(ids(&["ls", "--blocked"]), vec!["ccc"]);
     assert!(env.cake_err(&d, &["ls", "--status", "closed"]).contains("unknown status"));
 }
+
+#[test]
+fn block_unblock_and_ready() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "aaa", "--prio", "2", "-m", "# a"]);
+    env.cake_ok(&d, &["add", "bbb", "--prio", "1", "-m", "# b"]);
+    env.cake_ok(&d, &["add", "ccc", "-m", "# c"]);
+
+    env.cake_ok(&d, &["block", "ccc", "--by", "aaa,bbb"]);
+    assert!(read_item(&d, "ccc").contains("blocked_by: [\"[[aaa]]\", \"[[bbb]]\"]\n"));
+    assert!(env.cake_err(&d, &["block", "aaa", "--by", "ccc"]).contains("cycle"));
+
+    let out = env.cake_ok(&d, &["ready"]);
+    let (a, b) = (out.find("aaa").unwrap(), out.find("bbb").unwrap());
+    assert!(b < a, "prio 1 first: {}", out);
+    assert!(!out.contains("ccc"));
+
+    env.cake_ok(&d, &["done", "aaa"]);
+    env.cake_ok(&d, &["unblock", "ccc", "--by", "bbb"]);
+    assert!(env.cake_ok(&d, &["ready"]).contains("ccc"));
+}
