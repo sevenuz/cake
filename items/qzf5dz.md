@@ -2,7 +2,6 @@
 id: qzf5dz
 status: todo
 tags: [workflow]
-parent: "[[jbs1wz]]"
 created: 2026-10-27T13:29:58+01:00
 by: claude-code
 sessions: [69b1d969-f2c3-4f41-b58d-a996441f99e2]
