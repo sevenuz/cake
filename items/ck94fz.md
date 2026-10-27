@@ -1,9 +1,11 @@
 ---
 id: ck94fz
-status: todo
+status: doing
 tags: [skill]
 created: 2026-10-27T12:19:28+01:00
 by: claude-code
+time:
+  - 2026-10-27T12:19:28+01:00/
 ---
 # Claude skill for cake
 
