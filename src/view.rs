@@ -1,6 +1,6 @@
 // https://docs.rs/crate/termimad/latest/source/examples/scrollable/main.rs
 use std::error::Error;
-use std::io::{stdout, Write};
+use std::io::{stdout, IsTerminal, Write};
 use termimad::crossterm::{
     cursor::{Hide, Show},
     event::{self, Event, KeyCode::*, KeyEvent},
@@ -58,6 +58,11 @@ fn scroll_view(skin: termimad::MadSkin, text: String) -> Result<(), termimad::Er
 /// renders markdown, silent in `--json` mode
 pub fn print(config: &Config, text: String) -> Result<(), Box<dyn Error>> {
     if crate::out::json() {
+        return Ok(());
+    }
+    // pipes and files get the plain markdown, the scroll view needs a terminal
+    if !std::io::stdout().is_terminal() {
+        print!("{}", text);
         return Ok(());
     }
     let skin = config.build_skin()?;
