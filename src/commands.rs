@@ -25,6 +25,8 @@ pub enum Report {
     None,
     /// items after the command, by id
     Items(Vec<String>),
+    /// like Items, without body
+    Brief(Vec<String>),
     /// ids of removed items
     Removed(Vec<String>),
     Value(serde_json::Value),
@@ -383,7 +385,7 @@ where
         }
     }
 
-    Ok(Report::Items(ids))
+    Ok(if long { Report::Items(ids) } else { Report::Brief(ids) })
 }
 
 /// shows an item by id, or any markdown file by path

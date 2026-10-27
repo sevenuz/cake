@@ -78,7 +78,8 @@ EOF
 ## Output
 
 - Success: `{"v": 1, "items": [...]}` (items after the change), `rm` →
-  `{"v": 1, "removed": [ids]}`.
+  `{"v": 1, "removed": [ids]}`. `ls` and `ready` leave out `body` unless
+  `-l`; use `show <id>` for one item's body.
 - Item: `id`, `title`, `body`, `status` (null = note), `tags`, `parent`,
   `children`, `blocked_by`, `blocks`, `ready`, `due`, `priority`, `created`,
   `closed`, `by`, `running`, `tracked_seconds`, `time`, `path`.

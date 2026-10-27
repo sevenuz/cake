@@ -186,7 +186,7 @@ pub enum Commands {
         #[command(flatten)]
         selector: SelectorArgs,
 
-        /// all fields and the body
+        /// all fields and the body, also in json
         #[arg(short, long)]
         long: bool,
     },
@@ -195,7 +195,7 @@ pub enum Commands {
         #[command(flatten)]
         selector: SelectorArgs,
 
-        /// all fields and the body
+        /// all fields and the body, also in json
         #[arg(short, long)]
         long: bool,
     },
@@ -317,6 +317,17 @@ fn print_report(store: &Store, report: commands::Report) {
         commands::Report::Items(ids) => serde_json::json!({
             "v": 1,
             "items": ids.iter().filter_map(|id| store.item_json(id)).collect::<Vec<_>>(),
+        }),
+        commands::Report::Brief(ids) => serde_json::json!({
+            "v": 1,
+            "items": ids
+                .iter()
+                .filter_map(|id| store.item_json(id))
+                .map(|mut i| {
+                    i.as_object_mut().unwrap().remove("body");
+                    i
+                })
+                .collect::<Vec<_>>(),
         }),
         commands::Report::Removed(ids) => serde_json::json!({ "v": 1, "removed": ids }),
         commands::Report::Value(serde_json::Value::Object(mut m)) => {
