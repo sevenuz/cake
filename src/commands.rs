@@ -269,10 +269,19 @@ where
     if global {
         let p = util::global_store()?;
         debug(&format!("init: global store {:?}", p));
-        if p.join("items").is_dir() {
+        let exists = if config.disable_git {
+            p.join("items").is_dir()
+        } else {
+            git::is_store_repo(&p)
+        };
+        if exists {
             return Err(format!("There is already a store at {}.", p.display()).into());
         }
-        let files = create_store_files(&p)?;
+        // an existing plain global store is adopted with its items
+        let mut files = create_store_files(&p)?;
+        if fs::read_dir(p.join("items"))?.next().is_some() {
+            files.push(p.join("items"));
+        }
         if !config.disable_git {
             git::init_repo(&p)?;
             git::commit(&p, &files, "cake: init")?;

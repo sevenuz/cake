@@ -137,7 +137,9 @@ pub mod inner {
         /// writes changed items, removes deleted ones, returns touched paths
         pub fn save(&mut self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
             let dir = Self::items_dir(&self.root);
-            std::fs::create_dir_all(&dir)?;
+            if !self.dirty.is_empty() {
+                std::fs::create_dir_all(&dir)?;
+            }
             let mut paths = vec![];
             for id in self.dirty.drain() {
                 let path = dir.join(format!("{}.md", id));
@@ -419,6 +421,14 @@ pub mod inner {
             assert_eq!(store.get_item("buy milk").unwrap().content(), "buy milk\n");
             assert!(store.save().unwrap().is_empty());
             assert_eq!(std::fs::read_to_string(&path).unwrap(), "buy milk\n");
+        }
+
+        #[test]
+        fn save_without_changes_creates_nothing() {
+            let dir = tempfile::tempdir().unwrap();
+            let mut store = Store::new(&dir.path().join("store")).unwrap();
+            assert!(store.save().unwrap().is_empty());
+            assert!(!dir.path().join("store").exists());
         }
 
         #[test]
