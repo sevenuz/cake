@@ -48,6 +48,7 @@ pub struct Item {
     parent: Option<String>,
     blocked_by: Vec<String>,
     timestamp: i64, // creation timestamp
+    by: Option<String>, // creator, set once
     closed: Option<i64>,
     due: Option<String>,
     priority: Option<u64>,
@@ -134,6 +135,7 @@ impl Item {
             parent,
             blocked_by: vec![],
             timestamp: util::timestamp(),
+            by: None,
             closed: None,
             due: None,
             priority: None,
@@ -169,6 +171,7 @@ impl Item {
         let parent = take_str(&mut m, "parent")?.map(|p| unlink(&p));
         let blocked_by = take_list(&mut m, "blocked_by")?.iter().map(|s| unlink(s)).collect();
         let timestamp = take_time(&mut m, "created")?.unwrap_or(fallback_created);
+        let by = take_str(&mut m, "by")?;
         let closed = take_time(&mut m, "closed")?;
         let due = take_str(&mut m, "due")?;
         let priority = match m.shift_remove("priority") {
@@ -195,6 +198,7 @@ impl Item {
             parent,
             blocked_by,
             timestamp,
+            by,
             closed,
             due,
             priority,
@@ -220,6 +224,9 @@ impl Item {
             s += &format!("blocked_by: {}\n", list(&self.blocked_by, link));
         }
         s += &format!("created: {}\n", util::format_timestamp(self.timestamp));
+        if let Some(b) = &self.by {
+            s += &format!("by: {}\n", yaml_str(b));
+        }
         if let Some(c) = self.closed {
             s += &format!("closed: {}\n", util::format_timestamp(c));
         }
@@ -283,10 +290,11 @@ impl Item {
                 .collect::<Vec<String>>()
         };
         format!(
-            "| id | {}|\n|---|---|\n| status | {}|\n| created | {}|\n| tags | {}|\n| timetrack | {}|\n| parent | {}|\n| children | {}|\n| blocked by | {}|\n\n{}",
+            "| id | {}|\n|---|---|\n| status | {}|\n| created | {}|\n| by | {}|\n| tags | {}|\n| timetrack | {}|\n| parent | {}|\n| children | {}|\n| blocked by | {}|\n\n{}",
             self.id,
             self.status().map(|s| s.as_str()).unwrap_or("note"),
             util::format_timestamp(self.timestamp),
+            self.by.clone().unwrap_or_default(),
             util::vec_to_str(&self.tags),
             util::vec_to_str(&tt),
             self.parent.clone().unwrap_or_default(),
@@ -384,6 +392,14 @@ impl Item {
 
     pub fn blocked_by(&self) -> &Vec<String> {
         &self.blocked_by
+    }
+
+    pub fn by(&self) -> Option<&String> {
+        self.by.as_ref()
+    }
+
+    pub fn set_by(&mut self, by: String) {
+        self.by = Some(by);
     }
 
     pub fn priority(&self) -> Option<u64> {

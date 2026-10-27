@@ -43,13 +43,22 @@ impl Env {
     }
 
     pub fn cake(&self, cwd: &Path, args: &[&str]) -> Output {
+        self.cake_env(cwd, args, &[])
+    }
+
+    /// runs cake with extra env vars; agent and author vars of the caller are removed
+    pub fn cake_env(&self, cwd: &Path, args: &[&str], envs: &[(&str, &str)]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_cake"))
             .args(args)
             .current_dir(cwd)
             .env("XDG_CONFIG_HOME", self.path("config"))
             .env("XDG_DATA_HOME", self.path("data"))
             .env_remove("CAKE_STORE")
+            .env_remove("CAKE_AUTHOR")
+            .env_remove("AI_AGENT")
+            .env_remove("CLAUDECODE")
             .envs(identity())
+            .envs(envs.iter().copied())
             .output()
             .unwrap()
     }
@@ -63,6 +72,9 @@ impl Env {
             .env("XDG_CONFIG_HOME", self.path("config"))
             .env("XDG_DATA_HOME", self.path("data"))
             .env_remove("CAKE_STORE")
+            .env_remove("CAKE_AUTHOR")
+            .env_remove("AI_AGENT")
+            .env_remove("CLAUDECODE")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

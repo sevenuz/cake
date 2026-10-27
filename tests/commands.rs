@@ -182,3 +182,27 @@ fn help_exits_zero_and_usage_errors_fail() {
     assert!(env.cake_ok(&d, &["help", "add"]).contains("--todo"));
     assert!(env.cake_err(&d, &["bogus"]).contains("unrecognized subcommand"));
 }
+
+#[test]
+fn by_records_the_creator_and_agents_tag_commits() {
+    let env = Env::new();
+    let a = env.repo("a");
+    env.cake_ok(&a, &["init"]);
+
+    let out = env.cake_env(&a, &["add", "mine", "-m", "# mine"], &[("CAKE_AUTHOR", "jul")]);
+    assert!(out.status.success());
+    let out = env.cake_env(&a, &["add", "ai", "-m", "# ai"], &[("AI_AGENT", "claude-code_2-1-308_agent")]);
+    assert!(out.status.success());
+    let out = env.cake_env(&a, &["done", "mine"], &[("CLAUDECODE", "1")]);
+    assert!(out.status.success());
+
+    assert!(read_item(&a, "mine").contains("\nby: jul\n"));
+    assert!(read_item(&a, "ai").contains("\nby: claude-code\n"));
+    let log = git(&a.join(".cake"), &["log", "--format=%s", "-3"]);
+    assert_eq!(log, "cake done mine [claude-code]\ncake add ai -m # ai [claude-code]\ncake add mine -m # mine");
+
+    let out = env.cake_ok(&a, &["ls", "--by", "claude-code"]);
+    assert!(out.contains("ai") && !out.contains("mine"), "{}", out);
+    env.cake_ok(&a, &["add", "plain", "-m", "# x"]);
+    assert!(read_item(&a, "plain").contains("\nby: "), "falls back to git user or $USER");
+}

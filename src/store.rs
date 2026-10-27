@@ -280,6 +280,10 @@ pub mod inner {
             self.items.get(id).is_some_and(|i| i.is_open()) && !self.is_blocked(id)
         }
 
+        pub fn root(&self) -> &Path {
+            &self.root
+        }
+
         pub fn get_item(&self, id: &str) -> Option<&Item> {
             return self.items.get(id);
         }

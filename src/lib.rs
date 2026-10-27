@@ -99,6 +99,10 @@ pub struct SelectorArgs {
     /// open, with open blockers
     #[arg(long)]
     blocked: bool,
+
+    /// created by, e.g. a git user name or claude-code
+    #[arg(long, value_name = "NAME")]
+    by: Option<String>,
 }
 
 impl SelectorArgs {
@@ -115,7 +119,7 @@ impl SelectorArgs {
             &self.recursive,
             &self.or,
         )?
-        .with_filters(&self.search, &self.status, self.ready, self.blocked)
+        .with_filters(&self.search, &self.status, self.ready, self.blocked, &self.by)
     }
 }
 
@@ -419,7 +423,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
     let changed = store.save()?;
     if !config.disable_git && git::is_store_repo(&root) {
-        let message = format!("cake {}", args[1..].join(" "));
+        let mut message = format!("cake {}", args[1..].join(" "));
+        if let Some(agent) = util::agent() {
+            message += &format!(" [{}]", agent);
+        }
         debug(&format!("git commit {:?}: {}", changed, message));
         git::commit(&root, &changed, &message)?;
     }

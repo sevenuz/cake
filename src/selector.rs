@@ -22,6 +22,7 @@ pub struct Selector {
     pub status: Vec<Option<Status>>, // None selects notes
     pub ready: bool,
     pub blocked: bool,
+    pub by: Option<String>,
 }
 
 impl Selector {
@@ -54,6 +55,7 @@ impl Selector {
             status: vec![],
             ready: false,
             blocked: false,
+            by: None,
         })
     }
 
@@ -64,6 +66,7 @@ impl Selector {
         status: &Option<String>,
         ready: bool,
         blocked: bool,
+        by: &Option<String>,
     ) -> Result<Selector, Box<dyn Error>> {
         self.search = search.as_ref().map(|s| s.to_lowercase());
         self.status = util::split_comma_cleanup(status.to_owned().unwrap_or_default())
@@ -75,6 +78,7 @@ impl Selector {
             .collect::<Result<_, _>>()?;
         self.ready = ready;
         self.blocked = blocked;
+        self.by = by.to_owned();
         Ok(self)
     }
 
@@ -91,7 +95,8 @@ impl Selector {
             && self.search.is_none()
             && self.status.is_empty()
             && !self.ready
-            && !self.blocked;
+            && !self.blocked
+            && self.by.is_none();
     }
 
     fn matches_search(&self, content: &str) -> bool {
@@ -162,6 +167,7 @@ impl Selector {
                     || self.matches_status(item.status())
                     || self.ready && store.is_ready(key)
                     || self.blocked && store.is_blocked(key)
+                    || self.by.is_some() && item.by() == self.by.as_ref()
             })
             .map(|s| s.to_owned())
             .collect::<Vec<String>>();
@@ -187,6 +193,7 @@ impl Selector {
                     && (self.status.is_empty() || self.matches_status(item.status()))
                     && (!self.ready || store.is_ready(key))
                     && (!self.blocked || store.is_blocked(key))
+                    && (self.by.is_none() || item.by() == self.by.as_ref())
             })
             .map(|s| s.to_owned())
             .collect::<Vec<_>>();
@@ -272,6 +279,7 @@ mod tests {
                 &status.map(String::from),
                 ready,
                 blocked,
+                &None,
             )
             .unwrap()
     }
@@ -298,7 +306,7 @@ mod tests {
         assert_eq!(sorted(filtered(None, Some("todo,done"), false, false).get(&store, false)), vec!["d", "t"]);
         assert!(Selector::new(&None, &None, &None, &None, &None, &None, &false, &false, &0, &false)
             .unwrap()
-            .with_filters(&None, &Some("closed".into()), false, false)
+            .with_filters(&None, &Some("closed".into()), false, false, &None)
             .is_err());
     }
 

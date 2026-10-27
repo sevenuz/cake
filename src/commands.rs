@@ -54,6 +54,7 @@ where
     item.set_due(options.due)?;
     item.set_priority(options.priority)?;
     item.set_blocked_by(options.blocked_by);
+    item.set_by(util::author(store.root()));
     item.set_content(match content {
         Some(c) => c,
         None if std::io::stdin().is_terminal() => {

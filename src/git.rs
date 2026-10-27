@@ -30,6 +30,11 @@ fn git_ok(dir: &Path, args: &[&str]) -> Result<bool, Box<dyn Error>> {
     Ok(run(dir, args)?.status.success())
 }
 
+/// git user.name as seen from `dir`, None if unset
+pub fn user_name(dir: &Path) -> Option<String> {
+    git(dir, &["config", "user.name"]).ok().filter(|n| !n.is_empty())
+}
+
 pub fn is_repo(dir: &Path) -> bool {
     git_ok(dir, &["rev-parse", "--is-inside-work-tree"]).unwrap_or(false)
 }
