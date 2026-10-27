@@ -322,6 +322,19 @@ fn print_report(store: &Store, report: commands::Report) {
     println!("{}", json);
 }
 
+/// one-line commit subject from the command line, at most 72 chars plus the agent tag
+fn commit_message(args: &[String], agent: Option<String>) -> String {
+    let line = format!("cake {}", args.join(" ").split_whitespace().collect::<Vec<_>>().join(" "));
+    let mut message: String = line.chars().take(72).collect();
+    if message.len() < line.len() {
+        message.push('…');
+    }
+    if let Some(agent) = agent {
+        message += &format!(" [{}]", agent);
+    }
+    message
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
@@ -473,10 +486,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
     let changed = store.save()?;
     if !config.disable_git && git::is_store_repo(&root) {
-        let mut message = format!("cake {}", args[1..].join(" "));
-        if let Some(agent) = util::agent() {
-            message += &format!(" [{}]", agent);
-        }
+        let message = commit_message(&args[1..], util::agent());
         debug(&format!("git commit {:?}: {}", changed, message));
         git::commit(&root, &changed, &message)?;
     }
@@ -495,6 +505,15 @@ mod tests {
     #[test]
     fn cli_definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn commit_message_is_one_short_line_with_agent_tag() {
+        let args: Vec<String> = ["add", "-m", "# Title\n\nlong body"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(commit_message(&args, None), "cake add -m # Title long body");
+        let long = vec!["x".repeat(100)];
+        let m = commit_message(&long, Some("claude-code".into()));
+        assert!(m.ends_with("… [claude-code]") && m.chars().count() == 72 + 1 + 14, "{}", m);
     }
 
     #[test]
