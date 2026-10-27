@@ -139,31 +139,6 @@ mod tests {
 
     #[test]
     #[serial]
-    fn agent_and_author_from_env() {
-        let _sandbox = Sandbox::new();
-        let vars = ["CAKE_AUTHOR", "AI_AGENT", "CLAUDECODE"];
-        let saved: Vec<_> = vars.iter().map(|v| std::env::var(v).ok()).collect();
-        vars.iter().for_each(|v| std::env::remove_var(v));
-
-        assert_eq!(agent(), None);
-        std::env::set_var("CLAUDECODE", "1");
-        assert_eq!(agent().as_deref(), Some("claude-code"));
-        std::env::set_var("AI_AGENT", "some-tool_1_agent");
-        assert_eq!(agent().as_deref(), Some("some-tool"));
-        assert_eq!(author(Path::new("/")), "some-tool");
-        std::env::set_var("CAKE_AUTHOR", "jul");
-        assert_eq!(author(Path::new("/")), "jul");
-
-        for (v, s) in vars.iter().zip(saved) {
-            match s {
-                Some(s) => std::env::set_var(v, s),
-                None => std::env::remove_var(v),
-            }
-        }
-    }
-
-    #[test]
-    #[serial]
     fn find_store_falls_back_to_global_store() {
         let sandbox = Sandbox::new();
         assert_eq!(find_store(sandbox.path()).unwrap(), global_store().unwrap());
@@ -333,26 +308,6 @@ pub fn config_path() -> Result<PathBuf, Box<dyn Error>> {
     } else {
         return Err("Could not find config directory".into());
     }
-}
-
-/// AI agent running cake, from AI_AGENT (e.g. claude-code_2-1-308_agent ->
-/// claude-code) or CLAUDECODE=1
-pub fn agent() -> Option<String> {
-    if let Some(a) = std::env::var("AI_AGENT").ok().filter(|a| !a.is_empty()) {
-        return Some(a.split('_').next().unwrap().to_string());
-    }
-    (std::env::var("CLAUDECODE").as_deref() == Ok("1")).then(|| "claude-code".to_string())
-}
-
-/// creator of new items: CAKE_AUTHOR, else the agent, else git user.name, else $USER
-pub fn author(store: &Path) -> String {
-    std::env::var("CAKE_AUTHOR")
-        .ok()
-        .filter(|a| !a.is_empty())
-        .or_else(agent)
-        .or_else(|| crate::git::user_name(store))
-        .or_else(|| std::env::var("USER").ok())
-        .unwrap_or("unknown".to_string())
 }
 
 pub const STORE_DIR: &str = ".cake";

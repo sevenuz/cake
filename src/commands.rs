@@ -70,7 +70,7 @@ where
     item.set_due(options.due).map_err(error::invalid)?;
     item.set_priority(options.priority).map_err(error::invalid)?;
     item.set_blocked_by(options.blocked_by);
-    item.set_by(util::author(store.root()));
+    item.set_by(config.author(store.root()));
     item.set_content(match content {
         Some(c) => c,
         None => return Err(error::invalid("No content, use -m TEXT (- for stdin).")),
@@ -219,16 +219,30 @@ where
     Ok(Report::Items(ids))
 }
 
-/// stops the selected items, without selector the running ones
-pub fn stop<F>(debug: F, store: &mut Store, mut selector: Selector) -> Result<Report, Box<dyn Error>>
+/// stops the selected items, without selector the running items you own
+pub fn stop<F>(
+    debug: F,
+    config: &Config,
+    store: &mut Store,
+    selector: Selector,
+) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
     debug(&format!("stop {:?}", selector));
-    if selector.is_empty() {
-        selector.started = true;
-    }
-    let ids = select(store, &selector)?;
+    let ids = if selector.is_empty() {
+        let me = config.author(store.root());
+        let mut ids: Vec<String> = store
+            .get()
+            .values()
+            .filter(|i| i.is_started() && i.by() == Some(&me))
+            .map(|i| i.id().to_owned())
+            .collect();
+        ids.sort();
+        ids
+    } else {
+        select(store, &selector)?
+    };
     for id in &ids {
         store.get_item_mut(id).expect("Could not found id").stop()?;
     }

@@ -221,7 +221,7 @@ pub enum Commands {
         #[command(flatten)]
         selector: SelectorArgs,
     },
-    /// stop the timer, default: the running items
+    /// stop the timer, default: your running items
     Stop {
         #[command(flatten)]
         selector: SelectorArgs,
@@ -526,7 +526,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             commands::start(debug, &mut &mut store, selector.selector(&selector.ids)?)?
         }
         Some(Commands::Stop { selector }) => {
-            commands::stop(debug, &mut &mut store, selector.selector(&selector.ids)?)?
+            commands::stop(debug, &config, &mut store, selector.selector(&selector.ids)?)?
         }
         Some(Commands::Mv { id, parent }) => commands::mv(debug, &mut store, id, parent)?,
         Some(Commands::Block { id, by }) => commands::block(debug, &mut store, id, by, false)?,
@@ -567,9 +567,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    if let Some(session) = config.session() {
+        store.add_session(&session);
+    }
     let changed = store.save()?;
     if !config.disable_git && git::is_store_repo(&root) {
-        let message = commit_message(&args[1..], util::agent());
+        let message = commit_message(&args[1..], config.agent());
         debug(&format!("git commit {:?}: {}", changed, message));
         git::commit(&root, &changed, &message)?;
     }

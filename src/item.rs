@@ -49,6 +49,7 @@ pub struct Item {
     blocked_by: Vec<String>,
     timestamp: i64, // creation timestamp
     by: Option<String>, // creator, set once
+    sessions: Vec<String>, // agent sessions that changed the item
     closed: Option<i64>,
     due: Option<String>,
     priority: Option<u64>,
@@ -136,6 +137,7 @@ impl Item {
             blocked_by: vec![],
             timestamp: util::timestamp(),
             by: None,
+            sessions: vec![],
             closed: None,
             due: None,
             priority: None,
@@ -172,6 +174,7 @@ impl Item {
         let blocked_by = take_list(&mut m, "blocked_by")?.iter().map(|s| unlink(s)).collect();
         let timestamp = take_time(&mut m, "created")?.unwrap_or(fallback_created);
         let by = take_str(&mut m, "by")?;
+        let sessions = take_list(&mut m, "sessions")?;
         let closed = take_time(&mut m, "closed")?;
         let due = take_str(&mut m, "due")?;
         let priority = match m.shift_remove("priority") {
@@ -199,6 +202,7 @@ impl Item {
             blocked_by,
             timestamp,
             by,
+            sessions,
             closed,
             due,
             priority,
@@ -226,6 +230,9 @@ impl Item {
         s += &format!("created: {}\n", util::format_timestamp(self.timestamp));
         if let Some(b) = &self.by {
             s += &format!("by: {}\n", yaml_str(b));
+        }
+        if !self.sessions.is_empty() {
+            s += &format!("sessions: {}\n", list(&self.sessions, yaml_str));
         }
         if let Some(c) = self.closed {
             s += &format!("closed: {}\n", util::format_timestamp(c));
@@ -398,6 +405,12 @@ impl Item {
         self.by.as_ref()
     }
 
+    pub fn add_session(&mut self, session: &str) {
+        if !self.sessions.iter().any(|s| s == session) {
+            self.sessions.push(session.to_string());
+        }
+    }
+
     pub fn set_by(&mut self, by: String) {
         self.by = Some(by);
     }
@@ -499,6 +512,7 @@ impl Item {
             "blocked_by": self.blocked_by,
             "created": util::format_timestamp(self.timestamp),
             "by": self.by,
+            "sessions": self.sessions,
             "closed": self.closed.map(util::format_timestamp),
             "due": self.due,
             "priority": self.priority,

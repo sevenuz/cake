@@ -28,6 +28,13 @@ pub struct Config {
     pub git_branch: String,
     /// remote used by cake init and cake sync --publish
     pub git_remote_name: String,
+    /// env vars naming the AI agent running cake, first set one wins,
+    /// value cut at the first _ (claude-code_2-1_agent -> claude-code)
+    #[serde(default = "default_agent_env")]
+    pub agent_env: Vec<String>,
+    /// env vars holding the agent's session id, first set one wins
+    #[serde(default = "default_session_env")]
+    pub session_env: Vec<String>,
     /// searches in config dir for skin file (hjson)
     skin_file_name: String,
     /// When output has more lines than the threshold, then show it in scrollview
@@ -61,7 +68,38 @@ fn default_git_branch() -> String {
     "cake/main".to_string()
 }
 
+fn default_agent_env() -> Vec<String> {
+    vec!["AI_AGENT".to_string()]
+}
+
+fn default_session_env() -> Vec<String> {
+    vec!["CAKE_SESSION".to_string(), "CLAUDE_CODE_SESSION_ID".to_string()]
+}
+
+fn first_env(vars: &[String]) -> Option<String> {
+    vars.iter().find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty()))
+}
+
 impl Config {
+    /// AI agent running cake, from `agent_env`
+    pub fn agent(&self) -> Option<String> {
+        first_env(&self.agent_env).map(|a| a.split('_').next().unwrap().to_string())
+    }
+
+    /// agent session changing items, from `session_env`
+    pub fn session(&self) -> Option<String> {
+        first_env(&self.session_env)
+    }
+
+    /// creator of new items: CAKE_AUTHOR, else the agent, else git user.name, else $USER
+    pub fn author(&self, store: &std::path::Path) -> String {
+        first_env(&["CAKE_AUTHOR".to_string()])
+            .or_else(|| self.agent())
+            .or_else(|| crate::git::user_name(store))
+            .or_else(|| std::env::var("USER").ok())
+            .unwrap_or("unknown".to_string())
+    }
+
     pub fn new() -> Result<Config, Box<dyn Error>> {
         if let Ok(serialized) = std::fs::read_to_string(util::config_file()?) {
             Ok(deser_hjson::from_str::<Config>(&serialized)?)
@@ -73,6 +111,8 @@ impl Config {
                 disable_git: false,
                 git_branch: default_git_branch(),
                 git_remote_name: "origin".to_string(),
+                agent_env: default_agent_env(),
+                session_env: default_session_env(),
                 skin_file_name: "gruvbox.hjson".to_string(),
                 scrollview_threshold: 30,
             })
@@ -130,6 +170,35 @@ mod tests {
         assert_eq!(config.git_branch, "cake/main");
         assert_eq!(config.git_remote_name, "origin");
         assert!(!config.disable_git);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn agent_session_and_author_from_configured_env() {
+        let _sandbox = Sandbox::new();
+        let mut config = Config::new().unwrap();
+        config.agent_env = vec!["TEST_AGENT".into()];
+        config.session_env = vec!["TEST_SESSION".into()];
+        let vars = ["CAKE_AUTHOR", "TEST_AGENT", "TEST_SESSION"];
+        let saved: Vec<_> = vars.iter().map(|v| std::env::var(v).ok()).collect();
+        vars.iter().for_each(|v| std::env::remove_var(v));
+
+        assert_eq!(config.agent(), None);
+        assert_eq!(config.session(), None);
+        std::env::set_var("TEST_AGENT", "some-tool_1_agent");
+        std::env::set_var("TEST_SESSION", "s1");
+        assert_eq!(config.agent().as_deref(), Some("some-tool"));
+        assert_eq!(config.session().as_deref(), Some("s1"));
+        assert_eq!(config.author(std::path::Path::new("/")), "some-tool");
+        std::env::set_var("CAKE_AUTHOR", "jul");
+        assert_eq!(config.author(std::path::Path::new("/")), "jul");
+
+        for (v, s) in vars.iter().zip(saved) {
+            match s {
+                Some(s) => std::env::set_var(v, s),
+                None => std::env::remove_var(v),
+            }
+        }
     }
 
     #[test]

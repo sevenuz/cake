@@ -28,15 +28,21 @@ fn done_drop_reopen_set_status_and_closed() {
 }
 
 #[test]
-fn stop_without_id_stops_the_running_item() {
+fn stop_without_id_stops_only_your_running_items() {
     let env = Env::new();
     let d = env.plain_store();
     env.cake_ok(&d, &["add", "a", "-m", "# a"]);
     env.cake_ok(&d, &["add", "b", "-m", "# b"]);
     env.cake_ok(&d, &["start", "a"]);
+    let agent = [("AI_AGENT", "claude-code_x")];
+    assert!(env.cake_env(&d, &["add", "c", "-m", "# c"], &agent).status.success());
+    assert!(env.cake_env(&d, &["start", "c"], &agent).status.success());
 
     assert!(env.cake_ok(&d, &["stop"]).contains("1 stopped"));
     assert!(!read_item(&d, "a").contains("/\n"));
+    assert!(read_item(&d, "c").contains("/\n"), "the agent's item keeps running");
+    assert!(env.cake_env(&d, &["stop"], &agent).status.success());
+    assert!(!read_item(&d, "c").contains("/\n"));
 }
 
 #[test]
@@ -193,7 +199,7 @@ fn by_records_the_creator_and_agents_tag_commits() {
     assert!(out.status.success());
     let out = env.cake_env(&a, &["add", "ai", "-m", "# ai"], &[("AI_AGENT", "claude-code_2-1-308_agent")]);
     assert!(out.status.success());
-    let out = env.cake_env(&a, &["done", "mine"], &[("CLAUDECODE", "1")]);
+    let out = env.cake_env(&a, &["done", "mine"], &[("AI_AGENT", "claude-code_x")]);
     assert!(out.status.success());
 
     assert!(read_item(&a, "mine").contains("\nby: jul\n"));
@@ -256,4 +262,19 @@ fn parallel_commands_wait_for_the_lock_and_all_commit() {
     assert_eq!(std::fs::read_dir(store.join("items")).unwrap().count(), 40);
     let a0 = read_item(&a, "a0");
     assert!((1..20).all(|i| a0.contains(&format!("t{}", i))), "no lost tag: {}", a0);
+}
+
+#[test]
+fn agent_sessions_are_recorded_on_changed_items() {
+    let env = Env::new();
+    let d = env.plain_store();
+    let run = |args: &[&str], s: &str| {
+        let out = env.cake_env(&d, args, &[("CAKE_SESSION", s)]);
+        assert!(out.status.success(), "{}", stderr(&out));
+    };
+    run(&["add", "x", "--todo", "-m", "# x"], "s1");
+    run(&["tag", "x", "a"], "s1");
+    run(&["done", "x"], "s2");
+    env.cake_ok(&d, &["tag", "x", "b"]);
+    assert!(read_item(&d, "x").contains("\nsessions: [s1, s2]\n"), "{}", read_item(&d, "x"));
 }

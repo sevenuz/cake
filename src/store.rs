@@ -133,6 +133,15 @@ pub mod inner {
             Ok(store)
         }
 
+        /// records `session` on every changed item
+        pub fn add_session(&mut self, session: &str) {
+            for id in &self.dirty {
+                if let Some(i) = self.items.get_mut(id) {
+                    i.add_session(session);
+                }
+            }
+        }
+
         /// writes changed items, removes deleted ones, returns touched paths
         pub fn save(&mut self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
             let dir = Self::items_dir(&self.root);
