@@ -355,19 +355,22 @@ stdin is not a tty.
 
 Global flag. Rules:
 
-- stdout = exactly one JSON document; nothing else (no color, no hints).
-- `ls` → array of items; `show` → item; mutating commands → the changed
-  item(s) after the change; `stats` / bare `cake --json` → stats object;
-  `sync` → `{ "merged": n, "pushed": bool, "conflicts": [...] }`;
-  writes during an unresolved merge → error code `conflict`; sync without
-  upstream → `not_published`.
+- stdout = exactly one JSON document; nothing else (no color, no hints,
+  debug output on stderr). Top-level `"v": 1` for schema versioning.
+- `ls` / `ready` / `show <id>` / mutating commands → `{"items": [...]}`
+  (the items after the change, `ls` in list order); `rm` → `{"removed":
+  [ids]}`; `init` → `{"store"}`; `sync` → `{"synced": true}` /
+  `{"published": remote}` / `{"aborted": true}`; `show <file>` → `{"path",
+  "content"}`. Later: `stats` / bare `cake --json` → stats object.
 - Errors → `{"error": {"code": "not_found", "message": "…"}}` on stdout,
-  exit code ≠ 0. Stable codes: `not_found`, `ambiguous_id`, `conflict`,
-  `invalid_input`, `git`.
+  exit code 1. Stable codes: `not_found`, `invalid_input`, `conflict`
+  (unresolved merge), `not_published` (sync without upstream), `git`,
+  `other`. Later with id prefixes: `ambiguous_id`.
+- `--json` never opens an editor: `add` without `-m`, `edit`, `config` →
+  `invalid_input`.
 - Item JSON = frontmatter fields + `title`, `body`, `children` (derived),
   `blocks` (derived), `ready` (bool), `tracked_seconds`, `running` (bool),
-  `path`.
-- Top-level `"v": 1` for schema versioning.
+  `path`, `extra` (unknown keys).
 
 ---
 
