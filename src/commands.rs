@@ -16,6 +16,7 @@ use termimad::crossterm::style::Stylize;
 pub struct AddOptions {
     pub todo: bool,
     pub due: Option<String>,
+    pub deadline: Option<String>,
     pub priority: Option<u64>,
     pub blocked_by: Vec<String>,
 }
@@ -70,6 +71,7 @@ where
         item.set_status(Status::Todo)?;
     }
     item.set_due(options.due).map_err(error::invalid)?;
+    item.set_deadline(options.deadline).map_err(error::invalid)?;
     item.set_priority(options.priority).map_err(error::invalid)?;
     item.set_blocked_by(options.blocked_by);
     item.set_by(config.author(store.root()));
@@ -87,6 +89,7 @@ pub struct EditOptions {
     pub body: Option<String>,
     pub priority: Option<u64>,
     pub due: Option<String>,
+    pub deadline: Option<String>,
 }
 
 /// opens the item file (frontmatter and body) in the editor, without the
@@ -115,7 +118,7 @@ where
 {
     debug(&format!("edit {:?}", id));
     let old = store.get_item(id).ok_or_else(|| error::not_found(id))?;
-    if options.body.is_some() || options.priority.is_some() || options.due.is_some() {
+    if options.body.is_some() || options.priority.is_some() || options.due.is_some() || options.deadline.is_some() {
         let mut item = old.clone();
         if let Some(body) = options.body {
             item.set_content(body);
@@ -125,6 +128,9 @@ where
         }
         if let Some(d) = options.due {
             item.set_due(Some(d).filter(|d| d != "-")).map_err(error::invalid)?;
+        }
+        if let Some(d) = options.deadline {
+            item.set_deadline(Some(d).filter(|d| d != "-")).map_err(error::invalid)?;
         }
         store.get_item_mut(id).unwrap().set(item);
         view::print(&config, store.get_item(id).unwrap().print_long())?;
@@ -293,6 +299,7 @@ pub fn set_status<F>(
     store: &mut Store,
     selector: Selector,
     status: Status,
+    note: Option<String>,
 ) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
@@ -300,7 +307,11 @@ where
     debug(&format!("set_status {:?} {:?}", selector, status));
     let ids = select(store, &selector)?;
     for id in &ids {
-        store.get_item_mut(id).unwrap().set_status(status)?;
+        let item = store.get_item_mut(id).unwrap();
+        item.set_status(status)?;
+        if let Some(n) = &note {
+            item.append_content(n);
+        }
     }
     say!("{} {}.", ids.len(), status.as_str());
     Ok(Report::Items(ids))
@@ -438,14 +449,15 @@ where
 }
 
 /// depth-first order of `ids` as (tree prefix, id): items whose parent is not
-/// listed are roots; siblings by priority, due, then creation
+/// listed are roots; siblings by score, then creation
 fn tree(store: &Store, ids: &HashSet<String>) -> Vec<(String, String)> {
+    let now = util::timestamp();
     let key = |id: &String| {
         let i = store.get_item(id).unwrap();
-        (i.priority().unwrap_or(u64::MAX), i.due().is_none(), i.due().cloned(), i.timestamp(), id.clone())
+        (std::cmp::Reverse(store.score(id, now)), i.timestamp(), id.clone())
     };
     let sorted = |mut v: Vec<String>| {
-        v.sort_by_key(|id| key(id));
+        v.sort_by_cached_key(|id| key(id));
         v
     };
     fn walk(

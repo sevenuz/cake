@@ -187,9 +187,13 @@ pub enum Commands {
         #[arg(long)]
         todo: bool,
 
-        /// due date, e.g. 2026-10-30
+        /// soft target date, e.g. 2026-10-30
         #[arg(long, value_name = "DATE")]
         due: Option<String>,
+
+        /// hard limit date, e.g. 2026-11-15
+        #[arg(long, value_name = "DATE")]
+        deadline: Option<String>,
 
         /// priority, 1 (high) .. 3 (low)
         #[arg(long, value_name = "N")]
@@ -199,7 +203,7 @@ pub enum Commands {
         #[arg(long, value_name = "IDS")]
         blocked_by: Option<String>,
     },
-    /// edit the item file in the editor, or change body/priority/due directly
+    /// edit the item file in the editor, or change body/priority/dates directly
     Edit {
         id: String,
 
@@ -211,9 +215,13 @@ pub enum Commands {
         #[arg(long, value_name = "N")]
         prio: Option<u64>,
 
-        /// due date, e.g. 2026-10-30, - clears
+        /// soft target date, e.g. 2026-10-30, - clears
         #[arg(long, value_name = "DATE")]
         due: Option<String>,
+
+        /// hard limit date, - clears
+        #[arg(long, value_name = "DATE")]
+        deadline: Option<String>,
     },
     /// show an item, or any markdown file
     Show {
@@ -255,15 +263,23 @@ pub enum Commands {
         #[command(flatten)]
         selector: SelectorArgs,
     },
-    /// set status done, stops the timer
+    /// set status done, stops the timer; -m appends a closing note (e.g. an answer)
     Done {
         #[command(flatten)]
         selector: SelectorArgs,
+
+        /// appended to the body, - reads stdin
+        #[arg(short, long)]
+        message: Option<String>,
     },
-    /// set status dropped, stops the timer
+    /// set status dropped, stops the timer; -m appends the reason
     Drop {
         #[command(flatten)]
         selector: SelectorArgs,
+
+        /// appended to the body, - reads stdin
+        #[arg(short, long)]
+        message: Option<String>,
     },
     /// set status todo: turns a note into a task or reopens it
     #[command(visible_alias("reopen"))]
@@ -359,8 +375,8 @@ impl Commands {
             | Commands::Tag { selector, .. }
             | Commands::Start { selector }
             | Commands::Stop { selector }
-            | Commands::Done { selector }
-            | Commands::Drop { selector }
+            | Commands::Done { selector, .. }
+            | Commands::Drop { selector, .. }
             | Commands::Todo { selector }
             | Commands::List { selector, .. }
             | Commands::Ready { selector, .. } => selector.resolve(store, user)?,
@@ -545,9 +561,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             message: None,
             prio: None,
             due: None,
+            deadline: None,
         }) => edited = Some(commands::edit_in_editor(&config, &root, id)?),
         // stdin may come from another cake command that needs the lock
-        Some(Commands::Edit { message: m, .. }) => message = read_message(m)?,
+        Some(Commands::Edit { message: m, .. })
+        | Some(Commands::Done { message: m, .. })
+        | Some(Commands::Drop { message: m, .. }) => message = read_message(m)?,
         _ => (),
     }
 
@@ -600,6 +619,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             tags,
             todo,
             due,
+            deadline,
             prio,
             blocked_by,
             ..
@@ -614,11 +634,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             commands::AddOptions {
                 todo: *todo,
                 due: due.to_owned(),
+                deadline: deadline.to_owned(),
                 priority: *prio,
                 blocked_by: util::split_comma_cleanup(blocked_by.to_owned().unwrap_or_default()),
             },
         )?,
-        Some(Commands::Edit { id, prio, due, .. }) => commands::edit(
+        Some(Commands::Edit { id, prio, due, deadline, .. }) => commands::edit(
             &debug,
             &config,
             &mut store,
@@ -628,6 +649,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 body: message,
                 priority: *prio,
                 due: due.to_owned(),
+                deadline: deadline.to_owned(),
             },
         )?,
         Some(Commands::Remove { selector }) => {
@@ -659,17 +681,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             selector.ready = true;
             commands::list(debug, &config, &mut store, selector, *long, false)?
         }
-        Some(Commands::Done { selector }) => {
-            commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Done)?
+        Some(Commands::Done { selector, .. }) => {
+            commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Done, message)?
         }
-        Some(Commands::Drop { selector }) => commands::set_status(
-            debug,
-            &mut store,
-            selector.selector(&selector.ids)?,
-            Status::Dropped,
-        )?,
+        Some(Commands::Drop { selector, .. }) => {
+            commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Dropped, message)?
+        }
         Some(Commands::Todo { selector }) => {
-            commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Todo)?
+            commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Todo, None)?
         }
         Some(Commands::List { selector, long, all }) => {
             let mut selector = selector.selector(&selector.ids)?;

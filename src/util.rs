@@ -189,6 +189,14 @@ pub fn check_id(id: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// a date (end of that day, local) or an RFC 3339 datetime as unix seconds
+pub fn date_timestamp(s: &str) -> Option<i64> {
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        return d.and_hms_opt(23, 59, 59)?.and_local_timezone(Local).earliest().map(|t| t.timestamp());
+    }
+    parse_timestamp(s).ok()
+}
+
 pub fn generate_id() -> String {
     // letters only, without i, l and o, which are easy to misread
     let alphabet: Vec<char> = "abcdefghjkmnpqrstuvwxyz".chars().collect();

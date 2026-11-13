@@ -51,6 +51,7 @@ pub struct Item {
     sessions: Vec<String>, // agent sessions that changed the item
     closed: Option<i64>,
     due: Option<String>,
+    deadline: Option<String>,
     priority: Option<u64>,
     timetrack: Vec<i64>,
     extra: Mapping,
@@ -139,6 +140,7 @@ impl Item {
             sessions: vec![],
             closed: None,
             due: None,
+            deadline: None,
             priority: None,
             timetrack: vec![],
             extra: Mapping::new(),
@@ -176,6 +178,7 @@ impl Item {
         let sessions = take_list(&mut m, "sessions")?;
         let closed = take_time(&mut m, "closed")?;
         let due = take_str(&mut m, "due")?;
+        let deadline = take_str(&mut m, "deadline")?;
         let priority = match m.shift_remove("priority") {
             None | Some(Value::Null) => None,
             Some(Value::Number(n)) if n.as_u64().is_some() => n.as_u64(),
@@ -204,6 +207,7 @@ impl Item {
             sessions,
             closed,
             due,
+            deadline,
             priority,
             timetrack,
             extra: m,
@@ -238,6 +242,9 @@ impl Item {
         }
         if let Some(d) = &self.due {
             s += &format!("due: {}\n", yaml_str(d));
+        }
+        if let Some(d) = &self.deadline {
+            s += &format!("deadline: {}\n", yaml_str(d));
         }
         if let Some(p) = self.priority {
             s += &format!("priority: {}\n", p);
@@ -284,6 +291,9 @@ impl Item {
         }
         if let Some(d) = &self.due {
             meta.push(format!("due {}", d));
+        }
+        if let Some(d) = &self.deadline {
+            meta.push(format!("deadline {}", d));
         }
         if let Some(p) = &self.parent {
             meta.push(format!("parent {}", p));
@@ -420,6 +430,10 @@ impl Item {
         self.due.as_ref()
     }
 
+    pub fn deadline(&self) -> Option<&String> {
+        self.deadline.as_ref()
+    }
+
     /// todo or doing
     pub fn is_open(&self) -> bool {
         self.status.is_some_and(|s| s.is_open())
@@ -444,17 +458,24 @@ impl Item {
         Ok(())
     }
 
-    /// `due` is a date (2026-10-30) or an RFC 3339 datetime
+    /// soft target: a date (2026-10-30) or an RFC 3339 datetime
     pub fn set_due(&mut self, due: Option<String>) -> Result<(), String> {
-        if let Some(d) = &due {
-            if chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").is_err()
-                && util::parse_timestamp(d).is_err()
-            {
-                return Err(format!("invalid due '{}', use 2026-10-30 or an RFC 3339 time", d));
-            }
-        }
+        check_date("due", &due)?;
         self.due = due;
         Ok(())
+    }
+
+    /// hard limit, same format as `due`
+    pub fn set_deadline(&mut self, deadline: Option<String>) -> Result<(), String> {
+        check_date("deadline", &deadline)?;
+        self.deadline = deadline;
+        Ok(())
+    }
+
+    /// appends `text` as a new paragraph, e.g. the answer to a question
+    pub fn append_content(&mut self, text: &str) {
+        let body = self.content.trim_end();
+        self.content = format!("{}\n\n{}\n", body, text.trim());
     }
 
     /// 1 (high) .. 3 (low)
@@ -506,6 +527,7 @@ impl Item {
             "sessions": self.sessions,
             "closed": self.closed.map(util::format_timestamp),
             "due": self.due,
+            "deadline": self.deadline,
             "priority": self.priority,
             "time": time,
             "tracked_seconds": self.tracked_seconds(),
@@ -538,4 +560,13 @@ pub fn title_of(content: &str) -> String {
         .unwrap_or_default()
         .trim()
         .to_string()
+}
+
+fn check_date(field: &str, value: &Option<String>) -> Result<(), String> {
+    match value {
+        Some(d) if util::date_timestamp(d).is_none() => {
+            Err(format!("invalid {} '{}', use 2026-10-30 or an RFC 3339 time", field, d))
+        }
+        _ => Ok(()),
+    }
 }

@@ -10,6 +10,7 @@ pub mod inner {
 
     use crate::error;
     use crate::item::Item;
+    use crate::util;
 
     #[derive(Copy, Clone)]
     pub enum RecState {
@@ -370,6 +371,46 @@ pub mod inner {
             Ok(())
         }
 
+        /// open items waiting on `id`, directly or transitively
+        pub fn waiting_on(&self, id: &str) -> usize {
+            let mut seen = HashSet::new();
+            let mut todo = vec![id.to_owned()];
+            while let Some(c) = todo.pop() {
+                for i in self.items.values().filter(|i| i.blocked_by().contains(&c)) {
+                    if i.is_open() && seen.insert(i.id().to_owned()) {
+                        todo.push(i.id().to_owned());
+                    }
+                }
+            }
+            seen.len()
+        }
+
+        /// how much an open item needs attention, 0 for closed ones:
+        /// deadline pressure (hard 100 at the day, +10 per day closer or
+        /// overdue, soft half of that), 10 per item waiting on it,
+        /// priority 30/20/10, one per day of age up to 20
+        pub fn score(&self, id: &str, now: i64) -> i64 {
+            let Some(i) = self.items.get(id).filter(|i| i.status().map_or(true, |s| s.is_open())) else {
+                return 0;
+            };
+            let days = |d: Option<&String>| d.and_then(|d| util::date_timestamp(d)).map(|t| (t - now) / 86400);
+            let mut score = 0;
+            if let Some(d) = days(i.deadline()) {
+                score += (100 - 10 * d).clamp(0, 200);
+            }
+            if let Some(d) = days(i.due()) {
+                score += (50 - 5 * d).clamp(0, 100);
+            }
+            score += 10 * self.waiting_on(id) as i64;
+            score += match i.priority() {
+                Some(1) => 30,
+                Some(2) => 20,
+                Some(3) => 10,
+                _ => 0,
+            };
+            score + ((now - i.timestamp()) / 86400).clamp(0, 20)
+        }
+
         /// open item with at least one open blocker
         pub fn is_blocked(&self, id: &str) -> bool {
             self.items.get(id).is_some_and(|i| {
@@ -398,6 +439,7 @@ pub mod inner {
             blocks.sort();
             m.insert("blocks".into(), serde_json::json!(blocks));
             m.insert("ready".into(), self.is_ready(id).into());
+            m.insert("score".into(), self.score(id, util::timestamp()).into());
             let path = self.item_path(id);
             m.insert("path".into(), path.to_string_lossy().into());
             Some(serde_json::Value::Object(m))

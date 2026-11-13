@@ -142,6 +142,40 @@ fn add_derives_a_slug_id_from_the_title() {
 }
 
 #[test]
+fn asks_block_work_until_answered_with_done_m() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "work", "--todo", "-m", "# Work"]);
+    env.cake_ok(&d, &["add", "ask-db", "--todo", "-p", "work", "-t", "ask", "-m", "# Which db?\n\n- a) sqlite\n- b) files"]);
+    env.cake_ok(&d, &["block", "work", "--by", "ask-db"]);
+    assert_eq!(json_ids(&env, &d, &["ready", "-t", "~ask"]), Vec::<String>::new());
+    assert_eq!(json_ids(&env, &d, &["ready", "-t", "ask"]), vec!["ask-db"]);
+
+    env.cake_ok(&d, &["done", "ask-db", "-m", "b, keep it plain"]);
+    assert!(read_item(&d, "ask-db").ends_with("- b) files\n\nb, keep it plain\n"));
+    assert_eq!(json_ids(&env, &d, &["ready", "-t", "~ask"]), vec!["work"]);
+}
+
+#[test]
+fn ready_orders_by_score_deadline_before_prio() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "prio", "--todo", "--prio", "1", "-m", "# prio"]);
+    env.cake_ok(&d, &["add", "late", "--todo", "--deadline", "2000-01-01", "-m", "# late"]);
+    env.cake_ok(&d, &["add", "plain", "--todo", "-m", "# plain"]);
+    env.cake_ok(&d, &["add", "key", "--todo", "-m", "# key"]);
+    env.cake_ok(&d, &["add", "w1", "--todo", "--blocked-by", "key", "-m", "# w1"]);
+    env.cake_ok(&d, &["add", "w2", "--todo", "--blocked-by", "w1", "-m", "# w2"]);
+    env.cake_ok(&d, &["add", "w3", "--todo", "--blocked-by", "w1", "-m", "# w3"]);
+    env.cake_ok(&d, &["add", "w4", "--todo", "--blocked-by", "w1", "-m", "# w4"]);
+    assert_eq!(json_ids(&env, &d, &["ready"]), vec!["late", "key", "prio", "plain"]);
+    assert!(read_item(&d, "late").contains("deadline: 2000-01-01\n"));
+    env.cake_ok(&d, &["edit", "late", "--deadline", "-"]);
+    assert!(!read_item(&d, "late").contains("deadline"));
+    assert!(env.cake_err(&d, &["edit", "late", "--deadline", "soon"]).contains("invalid deadline"));
+}
+
+#[test]
 fn ls_filters_by_text_status_and_blockers() {
     let env = Env::new();
     let d = env.plain_store();
