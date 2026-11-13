@@ -11,11 +11,11 @@ sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
 
 - why: `cake ls` shows everything as a tree; the questions "what runs,
   what waits on me, what is due" need several commands today
-- `cake dash`, plain terminal output, one screen, ≤ 80 columns:
-  - running: items in progress with their timers (you and agents)
-  - waiting on you: open questions (count + top 3) and review items
-  - due: hard deadlines in the next 7 days, overdue soft dates
-  - time: tracked today and this week
-- no new dependency, refreshes only when you run it again
-- user (morning form): "approve but needs more planning"
-- done when: shows the real store on one screen
+- sections (user answer a): running (items in progress with timers),
+  waiting on you (open questions, review items), due (hard deadlines in
+  7 days, overdue soft dates)
+- time as a pie chart per goal: the "cake" the project is named after
+  (user); period switchable: day, week, month, year
+- opens after the morning form, easy to skip (one key or a config switch)
+- no new dependency
+- done when: shows the real store on one screen, pie included
