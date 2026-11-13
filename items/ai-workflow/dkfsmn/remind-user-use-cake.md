@@ -1,5 +1,6 @@
 ---
 id: remind-user-use-cake
+status: todo
 parent: "[[dkfsmn]]"
 created: 2026-11-13T18:39:06+01:00
 by: claude-code
