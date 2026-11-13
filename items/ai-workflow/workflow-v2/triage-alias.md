@@ -1,6 +1,6 @@
 ---
 id: triage-alias
-status: task
+status: review
 tags: [plan]
 parent: "[[workflow-v2]]"
 blocked_by: ["[[form-modules]]"]
@@ -22,3 +22,5 @@ owner: sevenuz
 - the triage module and `cake triage` run it; without the alias the
   module is skipped
 - done when: `cake triage` runs a real agent pass on a scratch store
+
+changed: aliases starting with ! run in sh, triage/work examples with --max-turns in config.default.hjson; commit addbb98; try: add the triage alias to your config, then cake triage
