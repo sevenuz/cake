@@ -1,11 +1,12 @@
 ---
 id: plain-ascii-output-everywhere
-status: todo
+status: done
 tags: [cli]
 parent: "[[improve-io-too-many]]"
 created: 2026-11-13T19:05:26+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+closed: 2026-11-13T20:13:35+01:00
 ---
 # Plain ASCII output everywhere
 
