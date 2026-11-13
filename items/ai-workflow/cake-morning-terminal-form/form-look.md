@@ -1,5 +1,6 @@
 ---
 id: form-look
+status: todo
 tags: [tui]
 parent: "[[cake-morning-terminal-form]]"
 created: 2026-11-13T20:22:42+01:00
