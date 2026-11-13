@@ -17,3 +17,4 @@ sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
   unicode, ascii; env CAKE_STYLE wins
 - color off with NO_COLOR or when output is not a terminal
 - done when: ls, show, status and the form follow it ✓ (ce124c2)
+- try: `CAKE_STYLE=ascii cake ls`, `NO_COLOR=1 cake show ai-workflow`
