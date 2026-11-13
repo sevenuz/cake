@@ -1,7 +1,7 @@
 ---
 id: cake-morning-terminal-form
 status: todo
-tags: [plan, review]
+tags: [plan]
 parent: "[[ai-workflow]]"
 blocked_by: ["[[deadline-field-asks-score]]"]
 created: 2026-11-13T17:35:30+01:00
