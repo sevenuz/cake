@@ -22,7 +22,6 @@ pub struct Config {
     pub aliases: BTreeMap<String, String>,
     pub style: String,
     pub scrollview_threshold: i8,
-    pub animations: bool,
     pub form: Vec<String>,
     pub form_width: u16,
     pub usage_tracking: bool,
@@ -44,7 +43,6 @@ impl Default for Config {
             aliases: BTreeMap::new(),
             style: default_style(),
             scrollview_threshold: 30,
-            animations: true,
             form: crate::form::MODULES.iter().map(|m| m.to_string()).collect(),
             form_width: 100,
             usage_tracking: true,
@@ -79,20 +77,19 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   // A line starting with ! is a shell command, like in git. The form's
   // triage step runs the `triage` alias; examples for Claude Code:
   //   triage: plans only, the AI may use nothing but cake:
-  //     "!claude -p --max-turns 40 --allowedTools 'Bash(cake *)' 'Triage this cake store with the cake skill: for tasks assigned to ai without subtasks, split them into subtasks or ask questions; apply answers and comments; do not implement anything; end with a short summary.'"
+  //     "!claude -p 'Triage this cake store with the cake skill: for tasks assigned to ai without subtasks, split them into subtasks or ask questions; apply answers and comments; do not implement anything; end with a short summary.' --max-turns 40 --allowedTools 'Bash(cake *)'"
   //   work: the full agent run; it edits code, so it needs Read, Edit,
   //   Write and the build tools of the project, e.g.
-  //     "!claude -p --max-turns 80 --allowedTools 'Bash(cake *)' 'Bash(cargo *)' 'Bash(git *)' Read Edit Write 'Run the agent run of the cake skill for this store until nothing is ready or the reviews are full, then a short summary.'"
-  //   --max-turns is the emergency stop; the normal brake is max_review
-  //   in the store config.
+  //     "!claude -p 'Run the agent run of the cake skill for this store until nothing is ready or the reviews are full, then a short summary.' --max-turns 80 --allowedTools 'Bash(cake *)' 'Bash(cargo *)' 'Bash(git *)' Read Edit Write"
+  //   The prompt comes right after -p: --allowedTools takes several values
+  //   and would swallow it. --max-turns is the emergency stop; the normal
+  //   brake is max_review in the store config.
   aliases: {}
   // characters: auto (ascii without a UTF-8 locale), unicode, ascii;
   // env CAKE_STYLE wins. Colors: theme.hjson, off with NO_COLOR.
   style: auto
   // lines from which cake show opens a pager, -1 never
   scrollview_threshold: 30
-  // the cake at the end of the form; false: shown without animation
-  animations: true
   // modules of `cake` in order: news (what agents did), sort (inbox and
   // tasks without assignee), answer (questions for you), review (your
   // finished work), mine (your tasks), triage (runs the triage alias),

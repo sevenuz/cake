@@ -769,7 +769,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 _ => config.form.clone(),
             };
             let triage = aliases.contains_key("triage");
-            let options = form::Options { modules, all: cli.global, animations: config.animations, width: config.form_width, triage };
+            let options = form::Options { modules, all: cli.global, width: config.form_width, triage };
             return form::run(&root, &config.user(&root), options);
         }
         _ => (),

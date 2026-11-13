@@ -453,44 +453,6 @@ fn tree_lines(
     out
 }
 
-/// the cake with `eaten` of its 4 slices gone, from the right
-fn cake_art(eaten: usize) -> Vec<Line<'static>> {
-    let t = theme::t();
-    let n = 4;
-    let left = n - eaten.min(n);
-    let (mut flame, mut candle, mut top) = (String::from(" "), String::from(" "), String::from(" "));
-    for i in 0..n {
-        let here = i < left;
-        flame += if here { "   ,  " } else { "      " };
-        candle += if here { "   |  " } else { "      " };
-        top += if here { "______" } else { "      " };
-        flame.push(' ');
-        candle.push(' ');
-        top.push(if here && i + 1 < left { '_' } else { ' ' });
-    }
-    let row = |fill: &dyn Fn(usize, bool) -> &'static str| {
-        let mut s = String::from(if left > 0 { "|" } else { " " });
-        for i in 0..n {
-            let here = i < left;
-            s += fill(i, here);
-            s.push(if here || i + 1 < left { '|' } else { ' ' });
-        }
-        s
-    };
-    let frost = row(&|_, here| if here { "~~~~~~" } else { "      " });
-    let body = row(&|_, _| "      ");
-    let base = row(&|i, here| if here { "______" } else if i == left { " . , ." } else { "      " });
-    vec![
-        Line::from(Span::styled(flame, Style::default().fg(t.doing))),
-        Line::from(Span::raw(candle)),
-        Line::from(Span::raw(top)),
-        Line::from(Span::styled(frost, Style::default().fg(t.code))),
-        Line::from(Span::raw(body)),
-        Line::from(Span::raw(base)),
-        Line::from(Span::styled("=".repeat(n * 7 + 1), dim())),
-    ]
-}
-
 /// the modules a form can run, in their default order
 pub const MODULES: &[&str] = &["news", "sort", "answer", "review", "mine", "triage"];
 /// all known modules (dump is optional)
@@ -549,7 +511,6 @@ pub struct Options {
     pub modules: Vec<String>,
     /// all known stores, not only `root`
     pub all: bool,
-    pub animations: bool,
     /// widest column, 0 none
     pub width: u16,
     /// the triage alias exists
@@ -587,19 +548,16 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
     }
     let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), step: 0, handled: 0, total, max_width: o.width };
     let mut counts = vec![0usize; o.modules.len()];
-    let mut finished = 0;
     let mut run_triage = false;
     let result = (|| -> Result<(), Box<dyn Error>> {
         for (n, m) in o.modules.iter().enumerate() {
             ui.step = n;
             if m == "triage" {
                 run_triage = o.triage;
-                finished += 1;
                 continue;
             }
             if m == "dump" {
                 counts[n] += dump(&mut ui, &Cake { root }, &stores[0].0)?;
-                finished += 1;
                 continue;
             }
             for ((name, sroot), since) in stores.iter().zip(&since) {
@@ -617,39 +575,11 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
                     return Ok(());
                 }
             }
-            finished += 1;
         }
         Ok(())
     })();
-    let worked = counts.iter().filter(|c| **c > 0).count().min(finished).min(4);
     let summary: Vec<String> = o.modules.iter().zip(&counts).filter(|(_, c)| **c > 0).map(|(m, c)| format!("{} {}", m, c)).collect();
-    let summary = if summary.is_empty() { "nothing waiting, enjoy the cake".to_string() } else { summary.join(", ") };
-    let end = (|| -> Result<(), Box<dyn Error>> {
-        result.as_ref().map_err(|e| e.to_string())?;
-        ui.step = o.modules.len();
-        let frames = if o.animations { 0..=worked } else { worked..=worked };
-        let mut skip = false;
-        for eaten in frames {
-            if skip && eaten < worked {
-                continue;
-            }
-            let mut card = cake_art(eaten);
-            card.push(Line::default());
-            card.push(Line::from(Span::styled(summary.clone(), bold())));
-            if run_triage {
-                card.push(Line::from(Span::styled("next: cake triage", dim())));
-            }
-            let screen = Screen { card_title: "done".into(), card, keys: keys(&[("any key", "close")]), ..Default::default() };
-            ui.draw(&screen)?;
-            // a key skips the animation; the next one closes
-            if o.animations && eaten < worked && !skip && event::poll(std::time::Duration::from_millis(350))? {
-                let _ = event::read()?;
-                skip = true;
-            }
-        }
-        key()?;
-        Ok(())
-    })();
+    let summary = if summary.is_empty() { "nothing waiting".to_string() } else { summary.join(", ") };
     ratatui::restore();
     for (_, r) in &stores {
         if let Some(f) = last_run_file(r) {
@@ -657,7 +587,6 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         }
     }
     result?;
-    end?;
     println!("{}", summary);
     if run_triage {
         println!("running cake triage ...");
@@ -712,9 +641,6 @@ mod tests {
         let pos = |text: &str| lines.iter().position(|l| l.contains(text)).unwrap_or_else(|| panic!("{} missing", text));
         assert!(pos("ANSWER") < pos("cake CLI") && pos("cake CLI") < pos("by hand") && pos("by hand") < pos("confirm"));
         assert!(lines[pos("Plain ASCII")].contains("a) yes"), "decided items keep their answer");
-        for eaten in 0..=4 {
-            println!("{}", cake_art(eaten).iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n"));
-        }
         let opened = render(Some("sync"));
         println!("{}", opened.join("\n"));
         assert_eq!(opened.iter().position(|l| l.contains("two machines")), Some(opened.iter().position(|l| l.contains("Sync across")).unwrap() + 1), "opened under its line");

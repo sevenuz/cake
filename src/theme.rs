@@ -20,7 +20,7 @@ const DEFAULT: &str = r##"// cake colors: names (red, lightgreen, gray, darkgray
   code: "#d3869b"
   quote: "#fabd2f"
   // lists and status
-  dim: "darkgray"
+  dim: "gray"
   running: "#b8bb26"
   doing: "#fabd2f"
   // form
@@ -56,7 +56,7 @@ impl Default for Raw {
             bold: s("#fabd2f"),
             code: s("#d3869b"),
             quote: s("#fabd2f"),
-            dim: s("darkgray"),
+            dim: s("gray"),
             running: s("#b8bb26"),
             doing: s("#fabd2f"),
             question: s("#fabd2f"),

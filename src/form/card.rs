@@ -36,7 +36,16 @@ fn decide(
     let body = body_of(item);
     let (context, mut options) = match kind {
         Kind::Answer => split_options(&body),
-        Kind::Review => (body.clone(), vec![('a', "ok, done".into()), ('b', "drop".into())]),
+        Kind::Review => {
+            // a parent: its parts with their result
+            let parts: Vec<String> = all
+                .iter()
+                .filter(|c| str_of(c, "parent") == str_of(item, "id") && !c["status"].is_null())
+                .map(|c| format!("- {} {}", if str_of(c, "status") == "done" { style::g().check } else { style::g().dropped }, str_of(c, "title")))
+                .collect();
+            let text = if parts.is_empty() { body.clone() } else { format!("{}\n\nparts:\n{}", body, parts.join("\n")) };
+            (text, vec![('a', "ok, done".into()), ('b', "drop".into())])
+        }
     };
     let free = match kind {
         Kind::Answer => "own words",
@@ -46,7 +55,8 @@ fn decide(
     options.push((free_key, format!("{} {}", g.ellipsis, free)));
     let tree = overview(all, goal, targets);
     let width = column_width(ui.term.size()?.width, ui.max_width);
-    let (mut sel, mut hints, mut help) = (None::<usize>, false, false);
+    // the first option (the recommended one) is preselected: enter takes it
+    let (mut sel, mut hints, mut help) = (Some(0usize), false, false);
     let mut opened: Option<String> = None;
     let mut note: Option<(String, bool)> = None;
     loop {
@@ -205,38 +215,50 @@ fn targets(cake: &Cake, kind: Kind, user: &str) -> Result<(Vec<Value>, Vec<Strin
 /// a step in one store, grouped by goal, the most urgent goal first;
 /// returns (counted, quit)
 pub(super) fn run(ui: &mut Ui, cake: &Cake, kind: Kind, user: &str, store: &str) -> Result<(usize, bool), Box<dyn Error>> {
-    let (all, ids) = targets(cake, kind, user)?;
-    let items: Vec<&Value> = ids.iter().filter_map(|id| find(&all, id)).collect();
-    let mut goals: Vec<(&Value, Vec<&Value>)> = vec![];
-    for it in &items {
-        let goal = goal_of(&all, it);
-        match goals.iter_mut().find(|(g, _)| str_of(g, "id") == str_of(goal, "id")) {
-            Some((_, list)) => list.push(it),
-            None => goals.push((goal, vec![it])),
-        }
-    }
-    let score = |v: &&Value| v["score"].as_i64().unwrap_or(0);
-    goals.sort_by_key(|(_, list)| std::cmp::Reverse(list.iter().map(score).max().unwrap_or(0)));
-    let mut decided = std::collections::HashMap::new();
+    // reload after each pass: a decision can make new items due (a parent
+    // goes to review when its last part is done)
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut counted = 0;
-    'goals: for (goal, list) in &goals {
-        for (i, it) in list.iter().enumerate() {
-            match decide(ui, cake, kind, it, &all, goal, list, &decided, store)? {
-                Outcome::Next(result, c) => {
-                    ui.handled += 1;
-                    counted += c as usize;
-                    if let Some(r) = result {
-                        decided.insert(str_of(it, "id").to_string(), r);
+    loop {
+        let (all, ids) = targets(cake, kind, user)?;
+        let items: Vec<&Value> = ids.iter().filter(|id| !seen.contains(*id)).filter_map(|id| find(&all, id)).collect();
+        if items.is_empty() {
+            return Ok((counted, false));
+        }
+        ui.total += items.iter().filter(|_| !seen.is_empty()).count();
+        let mut goals: Vec<(&Value, Vec<&Value>)> = vec![];
+        for it in &items {
+            let goal = goal_of(&all, it);
+            match goals.iter_mut().find(|(g, _)| str_of(g, "id") == str_of(goal, "id")) {
+                Some((_, list)) => list.push(it),
+                None => goals.push((goal, vec![it])),
+            }
+        }
+        let score = |v: &&Value| v["score"].as_i64().unwrap_or(0);
+        goals.sort_by_key(|(_, list)| std::cmp::Reverse(list.iter().map(score).max().unwrap_or(0)));
+        let mut decided = std::collections::HashMap::new();
+        'goals: for (goal, list) in &goals {
+            for (i, it) in list.iter().enumerate() {
+                seen.insert(str_of(it, "id").to_string());
+                match decide(ui, cake, kind, it, &all, goal, list, &decided, store)? {
+                    Outcome::Next(result, c) => {
+                        ui.handled += 1;
+                        counted += c as usize;
+                        if let Some(r) = result {
+                            decided.insert(str_of(it, "id").to_string(), r);
+                        }
                     }
+                    Outcome::NextGoal => {
+                        for rest in &list[i..] {
+                            seen.insert(str_of(rest, "id").to_string());
+                        }
+                        ui.handled += list.len() - i;
+                        continue 'goals;
+                    }
+                    Outcome::Quit => return Ok((counted, true)),
                 }
-                Outcome::NextGoal => {
-                    ui.handled += list.len() - i;
-                    continue 'goals;
-                }
-                Outcome::Quit => return Ok((counted, true)),
             }
         }
     }
-    Ok((counted, false))
 }
 

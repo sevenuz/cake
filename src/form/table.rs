@@ -84,9 +84,10 @@ fn rows(cake: &Cake, kind: Kind, user: &str, since: i64) -> Result<Vec<Row>, Box
         out.push(Row {
             id: str_of(i, "id").to_string(),
             title: str_of(i, "title").to_string(),
+            // shown as a group heading above the row, not in its title
             prefix: match (depth, parent) {
                 (0, _) | (_, None) => String::new(),
-                (_, Some(p)) => format!("{} › ", p),
+                (_, Some(p)) => p,
             },
             status,
             what,
@@ -130,16 +131,24 @@ fn render(kind: Kind, rows: &[Row], cur: usize, opened: Option<usize>, width: u1
     let (head, fixed) = match kind {
         Kind::Sort => (format!("  {:<6} {{}} {:<9} {:<7} {:<8} !", "kind", "who", "due", "deadline"), 2 + 7 + 10 + 8 + 9 + 2),
         Kind::News => (format!("  {:<6} {:<9} {{}} {:<6}", "do", "what", "status"), 2 + 7 + 10 + 7),
-        Kind::Mine => (format!("  {:<6} {{}} {:<7} {:<8} !", "do", "due", "deadline"), 2 + 7 + 8 + 9 + 2),
+        Kind::Mine => (format!("  {:<6} {{}} {:<9} {:<7} {:<8} !", "do", "who", "due", "deadline"), 2 + 7 + 10 + 8 + 9 + 2),
     };
     let title_w = w.saturating_sub(fixed).max(10);
     out.push(Line::from(Span::styled(head.replace("{}", &cut("title", title_w)), dim())));
+    let mut group = String::new();
     for (n, r) in rows.iter().enumerate() {
+        if r.prefix != group {
+            group = r.prefix.clone();
+            if !group.is_empty() {
+                out.push(Line::from(Span::styled(format!("  {}", cut(&group, w.saturating_sub(2)).trim_end()), bold().fg(t.dim))));
+            }
+        }
+        let indent = if group.is_empty() { "" } else { "  " };
         let here = n == cur;
         let mark = if here { g.select } else { " " };
         let action = r.action.map_or(g.note.to_string(), |a| a.to_string());
         let who = |r: &Row| r.who.as_deref().map(|w| if w == user { "me" } else { w }).unwrap_or("").to_string();
-        let title = cut(&format!("{}{}", r.prefix, r.title), title_w);
+        let title = cut(&format!("{}{}", indent, r.title), title_w);
         let text = match kind {
             Kind::Sort => format!(
                 "{} {:<6} {} {:<9} {:<7} {:<8} {}",
@@ -153,10 +162,11 @@ fn render(kind: Kind, rows: &[Row], cur: usize, opened: Option<usize>, width: u1
             ),
             Kind::News => format!("{} {:<6} {:<9} {} {:<6}", mark, action, r.what, title, r.status),
             Kind::Mine => format!(
-                "{} {:<6} {} {:<7} {:<8} {}",
+                "{} {:<6} {} {:<9} {:<7} {:<8} {}",
                 mark,
                 action,
                 title,
+                cut(&who(r), 9),
                 short_date(&r.due),
                 short_date(&r.deadline),
                 r.prio.map_or("-".to_string(), |p| p.to_string())
@@ -233,7 +243,7 @@ pub(super) fn run(
                 ("?", "keys"),
             ]),
             Kind::News => keys(&[("o/h/x", "ok hold drop"), ("v", "view"), ("enter", "save"), ("esc", "skip"), ("?", "keys")]),
-            Kind::Mine => keys(&[("s/d/x/l", "start done drop later"), ("o", "open"), ("enter", "save"), ("esc", "skip")]),
+            Kind::Mine => keys(&[("s/d/x/l", "start done drop later"), ("w", "who"), ("o", "open"), ("enter", "save"), ("esc", "skip")]),
         };
         let mut screen = Screen {
             card_title: format!(
@@ -280,21 +290,21 @@ pub(super) fn run(
                 opened = if opened == Some(cur) { None } else { Some(cur) }
             }
             (Kind::Sort, KeyCode::Char('n')) => (row.action, next) = (Some("note"), true),
+            // task stays on the row: who and dates usually follow
             (Kind::Sort, KeyCode::Char('t')) => {
                 row.action = Some("task");
                 if row.who.is_none() {
                     row.who = Some(user.to_string());
                 }
-                next = true;
             }
             (Kind::Sort, KeyCode::Char('x')) | (Kind::News, KeyCode::Char('x')) | (Kind::Mine, KeyCode::Char('x')) => {
                 (row.action, next) = (Some("drop"), true)
             }
-            (Kind::Sort, KeyCode::Char('w')) => {
+            (Kind::Sort, KeyCode::Char('w')) | (Kind::Mine, KeyCode::Char('w')) => {
                 let at = row.who.as_ref().and_then(|w| whos.iter().position(|x| x == w));
                 row.who = Some(whos[at.map_or(0, |a| (a + 1) % whos.len())].clone());
                 if row.action.is_none() {
-                    row.action = Some("task");
+                    row.action = Some(if kind == Kind::Mine { "assign" } else { "task" });
                 }
             }
             (Kind::Sort, KeyCode::Char('p')) => {
@@ -342,7 +352,7 @@ pub(super) fn run(
                 let below: Vec<usize> = rows
                     .iter()
                     .enumerate()
-                    .filter(|(_, x)| x.prefix.contains(&format!("{} › ", r.title)) || x.id.starts_with(&format!("{}/", id)))
+                    .filter(|(_, x)| x.prefix == r.title && x.id != id)
                     .map(|(n, _)| n)
                     .collect();
                 for n in &below {
@@ -417,7 +427,14 @@ fn save(ui: &mut Ui, screen: &mut Screen, cake: &Cake, kind: Kind, rows: &[Row],
                 (Kind::Mine, Some("done")) => {
                     cake.call(&["done", id])?;
                 }
+                (Kind::Mine, Some("assign")) => (),
                 _ => (),
+            }
+            // mine: a new who (e.g. ai) goes with any action
+            if kind == Kind::Mine && r.who.as_deref() != Some(user) {
+                if let Some(w) = &r.who {
+                    cake.call(&["assign", id, w])?;
+                }
             }
             if let Some(to) = &r.move_to {
                 cake.call(&["mv", id, "--to-store", to])?;
@@ -449,7 +466,7 @@ mod tests {
             row("pass", "renew passport", ""),
             row("blog", "blog post about cake", ""),
             row("sync", "sync errors unclear", ""),
-            row("step", "name the failed git step", "sync errors unclear › "),
+            row("step", "name the failed git step", "sync errors unclear"),
             row("land", "call landlord", ""),
         ];
         rows[0].action = Some("task");
