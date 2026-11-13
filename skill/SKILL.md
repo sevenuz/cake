@@ -68,7 +68,7 @@ and it is the file name. Ids never change.
   `done when` included. Ordering with `--blocked-by`. Link with `[[id]]`.
 - **Ready to approve** = `done when` present, no open asks, deadlines set
   when they matter. Only then is a planned item a candidate.
-- **The user's side** is `cake` (= `cake morning`): paper todos, your asks
+- **The user's side** is `cake` (= `cake morning`): new tasks, your asks
   by score, then your planned items to approve. Write asks and plans so
   they can be decided there without the chat.
 - **Docs:** your reference notes are top-level and tagged `doc`.

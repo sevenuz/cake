@@ -19,7 +19,7 @@ struct Cake<'a> {
 impl Cake<'_> {
     /// runs `cake --store <root> <args> --json`, returns the items
     fn call(&self, args: &[&str]) -> Result<Vec<Value>, Box<dyn Error>> {
-        let out = Command::new(std::env::current_exe()?)
+        let out = Command::new(exe())
             .arg("--store")
             .arg(self.root)
             .args(args)
@@ -32,6 +32,22 @@ impl Cake<'_> {
             return Err(error::invalid(e["message"].as_str().unwrap_or("cake failed").to_string()));
         }
         Ok(v["items"].as_array().cloned().unwrap_or_default())
+    }
+}
+
+/// this binary; after a rebuild while the form runs, Linux names the old
+/// one `… (deleted)`, then the new file at that path (or cake on PATH)
+fn exe() -> std::path::PathBuf {
+    let exe = std::env::current_exe().unwrap_or_default();
+    if exe.is_file() {
+        return exe;
+    }
+    let path = exe.to_string_lossy();
+    let replaced = std::path::PathBuf::from(path.strip_suffix(" (deleted)").unwrap_or(&path));
+    if replaced.is_file() {
+        replaced
+    } else {
+        "cake".into()
     }
 }
 
@@ -180,7 +196,7 @@ fn planned(skin: &MadSkin, cake: &Cake, user: &str, header: &dyn Fn()) -> Result
     Ok(step)
 }
 
-/// paper todos go to `root`; questions and planned items come from all
+/// new tasks go to `root`; questions and planned items come from all
 /// known stores (stores.json, global), `root` first
 pub fn run(skin: &MadSkin, root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
     let same = |a: &Path, b: &Path| std::fs::canonicalize(a).ok() == std::fs::canonicalize(b).ok();
@@ -195,7 +211,10 @@ pub fn run(skin: &MadSkin, root: &Path, user: &str) -> Result<(), Box<dyn Error>
         }
     };
 
-    skin.print_text(&format!("# Morning\n**1 · Paper todos** for *{}*, one per line, empty line ends:", stores[0].0));
+    skin.print_text(&format!(
+        "# Morning\n**1 · New tasks** you already know (e.g. from a paper list) for *{}*,\none per line, empty line ends:",
+        stores[0].0
+    ));
     let here = Cake { root };
     let mut added = 0;
     while let Some(line) = read_line("+ ")? {

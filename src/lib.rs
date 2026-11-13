@@ -303,7 +303,7 @@ pub enum Commands {
         #[arg(skip)]
         new_tags: Option<String>,
     },
-    /// guided pass: paper todos, questions by score, approve planned items
+    /// guided pass: new tasks, questions by score, approve planned items
     Morning {},
     /// move an item under a parent, or with its subtree to another store
     Mv {
