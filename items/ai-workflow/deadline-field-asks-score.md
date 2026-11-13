@@ -1,5 +1,6 @@
 ---
 id: deadline-field-asks-score
+status: todo
 tags: [plan]
 parent: "[[ai-workflow]]"
 created: 2026-11-13T17:35:30+01:00
