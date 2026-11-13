@@ -16,3 +16,4 @@ time:
 - when the user mentions "later", "todo", "idea": offer `cake add`
 - skill rule first; a session start brief is [[qzf5dz]]
 - done when: skill rule ✓ (13a156b) + one session where the reminder fired
+- try: in a Claude session mention "we should ... later": Claude offers `cake add`
