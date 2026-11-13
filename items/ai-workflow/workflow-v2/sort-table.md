@@ -1,5 +1,6 @@
 ---
 id: sort-table
+status: todo
 tags: [plan, tui]
 parent: "[[workflow-v2]]"
 blocked_by: ["[[form-modules]]"]
