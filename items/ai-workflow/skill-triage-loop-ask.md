@@ -1,11 +1,12 @@
 ---
 id: skill-triage-loop-ask
-status: doing
+status: done
 tags: [plan, review]
 parent: "[[ai-workflow]]"
 created: 2026-11-13T17:35:30+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+closed: 2026-11-13T18:07:29+01:00
 time:
   - 2026-11-13T17:50:11+01:00/2026-11-13T17:51:06+01:00
 ---
