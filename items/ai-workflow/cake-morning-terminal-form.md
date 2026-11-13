@@ -21,3 +21,4 @@ sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
 - also: `cake do` (approve), space separated ids
 - done when: full pass on a scratch store ✓, on the real store (user)
 - commit: f45844f
+- try: run `cake`; your note "the input is always at the bottom" below is solved by the TUI (3cc0626)
