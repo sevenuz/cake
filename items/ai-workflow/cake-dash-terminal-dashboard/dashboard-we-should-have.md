@@ -1,6 +1,7 @@
 ---
 id: dashboard-we-should-have
 status: todo
+tags: [triaged]
 parent: "[[cake-dash-terminal-dashboard]]"
 created: 2026-11-13T19:36:11+01:00
 by: sevenuz
