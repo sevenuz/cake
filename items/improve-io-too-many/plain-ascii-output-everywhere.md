@@ -1,7 +1,7 @@
 ---
 id: plain-ascii-output-everywhere
 status: todo
-tags: [cli]
+tags: [cli, review]
 parent: "[[improve-io-too-many]]"
 created: 2026-11-13T19:05:26+01:00
 by: claude-code
