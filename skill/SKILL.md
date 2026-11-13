@@ -50,7 +50,7 @@ and it is the file name. Ids never change.
  you: cake add -p <idea>   planned · (cleaned up, split, `done when`)
       asks                 ○ #ask  blocks what it is about
                              │ user: cake done <ask> -m ANSWER (unblocks)
-                             │ user: cake todo <id>            (approve)
+                             │ user: cake do <id>              (approve)
                            todo ○  (ready if no open blockers)
                              │ cake start <id>                 (timer runs)
                            doing ◐  stuck? new ask, next item
@@ -66,6 +66,9 @@ and it is the file name. Ids never change.
   `done when` included. Ordering with `--blocked-by`. Link with `[[id]]`.
 - **Ready to approve** = `done when` present, no open asks, deadlines set
   when they matter. Only then is a planned item a candidate.
+- **The user's side** is `cake` (= `cake morning`): paper todos, your asks
+  by score, then your planned items to approve. Write asks and plans so
+  they can be decided there without the chat.
 - **Docs:** your reference notes are top-level and tagged `doc`.
 - **Time:** start your timer on approved items you work on, stop it when you
   pause or request review. The owner of an item tracks its time.
@@ -131,7 +134,7 @@ cake add [ID] --json [--todo] [-p ID] [-t TAGS] [--blocked-by IDS] [--prio N] [-
 cake edit <id> --json -m -              # replace the body (your items only)
 cake edit <id> --json --prio 1 --due 2026-10-30 --deadline 2026-11-15   # 0 / - clear
 cake start|stop <id> --json             # timer; start sets doing
-cake todo <ids> --json                  # status
+cake do <ids> --json                    # approve: status todo (alias todo, reopen)
 cake done|drop <ids> [-m NOTE] --json   # -m appends a note (answer, reason)
 cake tag <ids> a,~b --json              # add a, remove b
 cake mv <id> <parent|-> --json
@@ -139,8 +142,8 @@ cake block <id> --by <ids> --json       # unblock removes
 cake rm <ids> --json
 ```
 
-Ids: any unique prefix (≥ 2 chars) works; several ids comma separated
-(`cake done a,b`), never space separated. Selectors (and; `--or`): `-s TEXT`,
+Ids: any unique prefix (≥ 2 chars) works; several ids space or comma
+separated (`cake done a b`). `cake tag`: the last word are the tags. Selectors (and; `--or`): `-s TEXT`,
 `--status todo,doing|done|dropped|none` (none = notes), `-t tag,~not`,
 `-p PARENT`, `--mine`, `--by NAME`, `--ready`, `--blocked`, `--childless`,
 `-A` (with done/dropped).

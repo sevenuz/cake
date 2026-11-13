@@ -3,6 +3,7 @@ mod config;
 mod error;
 mod git;
 mod item;
+mod morning;
 mod out;
 mod selector;
 mod store;
@@ -52,7 +53,12 @@ pub struct Cli {
 #[derive(Args)]
 #[command(next_help_heading = "Selectors (combined with and)")]
 pub struct SelectorArgs {
-    /// item ids, comma separated
+    /// item ids, space or comma separated
+    #[arg(value_name = "IDS", num_args = 0..)]
+    words: Vec<String>,
+
+    /// `words` joined, set by `Commands::normalize`
+    #[arg(skip)]
     ids: Option<String>,
 
     /// items with these children
@@ -281,20 +287,23 @@ pub enum Commands {
         #[arg(short, long)]
         message: Option<String>,
     },
-    /// set status todo: turns a note into a task or reopens it
-    #[command(visible_alias("reopen"))]
+    /// approve: status todo, worked on once unblocked; also reopens
+    #[command(name = "do", visible_aliases(["todo", "reopen"]))]
     Todo {
         #[command(flatten)]
         selector: SelectorArgs,
     },
-    /// add tags, ~tag removes: cake tag [IDS] TAGS
+    /// add tags, ~tag removes: cake tag [IDS] TAGS (the last word are the tags)
     Tag {
         #[command(flatten)]
         selector: SelectorArgs,
 
-        /// tags to add, ~tag to remove
+        /// tags to add, ~tag to remove: the last positional word
+        #[arg(skip)]
         new_tags: Option<String>,
     },
+    /// guided pass: paper todos, questions by score, approve planned items
+    Morning {},
     /// move an item under a parent
     Mv {
         id: String,
@@ -383,6 +392,34 @@ impl Commands {
             _ => (),
         }
         Ok(())
+    }
+
+    /// joins positional ids; for tag the last word holds the tags
+    fn normalize(&mut self) {
+        let join = |w: &[String]| (!w.is_empty()).then(|| w.join(","));
+        match self {
+            Commands::Tag { selector, new_tags } => {
+                let w = std::mem::take(&mut selector.words);
+                if w.len() >= 2 {
+                    *new_tags = Some(w[w.len() - 1].clone());
+                    selector.ids = join(&w[..w.len() - 1]);
+                } else {
+                    selector.ids = join(&w);
+                }
+            }
+            Commands::Remove { selector }
+            | Commands::Start { selector }
+            | Commands::Stop { selector }
+            | Commands::Done { selector, .. }
+            | Commands::Drop { selector, .. }
+            | Commands::Todo { selector }
+            | Commands::List { selector, .. }
+            | Commands::Ready { selector, .. } => {
+                let w = std::mem::take(&mut selector.words);
+                selector.ids = join(&w);
+            }
+            _ => (),
+        }
     }
 
     /// true for commands that change items
@@ -509,7 +546,15 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = args().collect();
     out::set_json(args.iter().any(|a| a == "--json")); // for errors before parsing
     let config = Config::new()?;
-    let aliases = config.aliases(&guess_root(&args)?)?;
+    let mut aliases = config.aliases(&guess_root(&args)?)?;
+    // agents and the morning form get the documented built-ins
+    if config.agent().is_some() || std::env::var_os(morning::PLAIN_ENV).is_some() {
+        let builtin: Vec<String> = Cli::command()
+            .get_subcommands()
+            .flat_map(|c| std::iter::once(c.get_name().to_string()).chain(c.get_all_aliases().map(String::from)))
+            .collect();
+        aliases.retain(|k, _| !builtin.contains(k));
+    }
     let alias_help: String = aliases
         .iter()
         .map(|(k, v)| format!("  {:<8} {}\n", k, v))
@@ -527,6 +572,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Err(e) => e.exit(),
     };
     out::set_json(cli.json);
+    if let Some(c) = cli.command.as_mut() {
+        c.normalize();
+    }
 
     // You can see how many times a particular flag or argument occurred
     // Note, only flags can have multiple occurrences
@@ -544,6 +592,18 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         None => util::find_store(&current_dir()?)?,
     };
     debug(&format!("Store: {}", root.display()));
+
+    // the form runs every change as its own cake call: no lock while waiting
+    let interactive = std::io::stdin().is_terminal() && std::io::stdout().is_terminal() && !out::json();
+    match &cli.command {
+        Some(Commands::Morning {}) if !interactive => {
+            return Err(error::invalid("cake morning needs a terminal and no --json."))
+        }
+        Some(Commands::Morning {}) | None if interactive => {
+            return morning::run(&config.build_skin()?, &root, &config.user(&root))
+        }
+        _ => (),
+    }
 
     // editors and stdin are read before taking the lock, so other commands are
     // not blocked meanwhile and `cake show x --json | … | cake edit x -m -` works
@@ -700,6 +760,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Init {}) => commands::init(debug, &config, cli.global)?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
+        Some(Commands::Morning {}) => unreachable!("handled before the lock"),
         None => {
             if !out::json() {
                 Cli::command().print_help()?;
@@ -789,9 +850,32 @@ mod tests {
     }
 
     #[test]
+    fn ids_may_be_space_separated_and_tag_takes_the_last_word() {
+        let parse = |args: &[&str]| {
+            let mut cli = Cli::try_parse_from(args).unwrap();
+            cli.command.as_mut().unwrap().normalize();
+            cli.command.unwrap()
+        };
+        match parse(&["cake", "done", "a", "b,c", "-m", "x"]) {
+            Commands::Done { selector, .. } => assert_eq!(selector.ids.as_deref(), Some("a,b,c")),
+            _ => panic!("expected done"),
+        }
+        match parse(&["cake", "tag", "a", "b", "x,~y"]) {
+            Commands::Tag { selector, new_tags } => {
+                assert_eq!(selector.ids.as_deref(), Some("a,b"));
+                assert_eq!(new_tags.as_deref(), Some("x,~y"));
+            }
+            _ => panic!("expected tag"),
+        }
+        assert!(matches!(parse(&["cake", "do", "a"]), Commands::Todo { .. }));
+        assert!(matches!(parse(&["cake", "todo", "a"]), Commands::Todo { .. }));
+    }
+
+    #[test]
     fn tag_parses_ids_before_new_tags_and_flattened_selector_flags() {
-        let cli =
+        let mut cli =
             Cli::try_parse_from(["cake", "tag", "a,b", "x,y", "-t", "~z", "-rr", "--or"]).unwrap();
+        cli.command.as_mut().unwrap().normalize();
         match cli.command {
             Some(Commands::Tag { selector, new_tags }) => {
                 assert_eq!(selector.ids.as_deref(), Some("a,b"));
