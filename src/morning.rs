@@ -1,7 +1,7 @@
 //! `cake morning`: a guided pass over what needs you. Every change runs as
 //! its own `cake` call, so agents keep working while you think.
 
-use crate::error;
+use crate::{error, style};
 use serde_json::Value;
 use std::error::Error;
 use std::io::{BufRead, Write};
@@ -90,125 +90,149 @@ struct Step {
     quit: bool,
 }
 
-/// an item: title, where it is in the tree, body indented
-fn show(item: &Value, all: &[Value], label: &str) {
-    let mut path = vec![];
-    let mut cur = str_of(item, "parent").to_string();
-    while let Some(p) = all.iter().find(|i| str_of(i, "id") == cur) {
-        path.push(str_of(p, "title").to_string());
-        cur = str_of(p, "parent").to_string();
-        if path.len() > 3 {
-            break;
-        }
-    }
-    path.reverse();
-    println!();
-    println!("{} {}", label.dark_grey(), str_of(item, "title").bold());
-    let mut meta = format!("id {}", str_of(item, "id"));
-    if !path.is_empty() {
-        meta += &format!(", in: {}", path.join(" > "));
-    }
-    println!("{}", meta.dark_grey());
-    for l in body_of(item).lines() {
-        println!("    {}", l);
-    }
-}
-
 fn done(text: &str) {
-    println!("{}", format!("  -> {}", text).green());
+    println!("{}", format!("    {}", text).green());
 }
 
 fn failed(e: Box<dyn Error>) {
-    println!("{}", format!("  !! {}", e).red());
+    println!("{}", format!("    {}", e).red());
 }
 
-/// open questions of one store by score; a letter picks an option line
-fn questions(cake: &Cake, header: &dyn Fn()) -> Result<Step, Box<dyn Error>> {
-    let mut step = Step { count: 0, shown: 0, quit: false };
-    let asks = cake.call(&["ready", "-t", "ask", "-l"])?;
-    let all = cake.call(&["ls"])?;
-    step.shown = asks.len();
-    if !asks.is_empty() {
-        header();
-    }
-    for (n, ask) in asks.iter().enumerate() {
-        let id = str_of(ask, "id");
-        let body = body_of(ask);
-        show(ask, &all, &format!("[{}/{}]", n + 1, asks.len()));
-        println!("{}", "  answer: option letter or your own words | Enter skip | q quit".dark_grey());
-        loop {
-            let Some(input) = read_line("  > ")? else {
-                step.quit = true;
-                return Ok(step);
-            };
-            match input.as_str() {
-                "" => break,
-                "q" => {
-                    step.quit = true;
-                    return Ok(step);
-                }
-                _ => {
-                    let answer = answer_text(&body, &input);
-                    match cake.call(&["done", id, "-m", &answer]) {
-                        Ok(_) => {
-                            done(&format!("answered: {}", answer));
-                            step.count += 1;
-                            break;
-                        }
-                        Err(e) => failed(e),
-                    }
-                }
-            }
+fn find<'a>(all: &'a [Value], id: &str) -> Option<&'a Value> {
+    all.iter().find(|i| str_of(i, "id") == id)
+}
+
+/// the top-level item above `item`
+fn goal_of<'a>(all: &'a [Value], item: &'a Value) -> &'a Value {
+    let mut cur = item;
+    for _ in 0..crate::store::MAX_DEPTH {
+        match find(all, str_of(cur, "parent")) {
+            Some(p) => cur = p,
+            None => break,
         }
     }
-    Ok(step)
+    cur
 }
 
-/// plans an agent wrote for you to approve: its notes with `done when`,
-/// without children of their own (parents are overviews) and without an
-/// open question
-fn planned(cake: &Cake, user: &str, header: &dyn Fn()) -> Result<Step, Box<dyn Error>> {
-    let mut step = Step { count: 0, shown: 0, quit: false };
-    let all = cake.call(&["ls", "-l"])?;
-    let side = |a: &Value| a["tags"].as_array().is_some_and(|t| t.iter().any(|t| t == "ask" || t == "reply"));
-    let open_side = |a: &Value| side(a) && matches!(str_of(a, "status"), "todo" | "doing");
-    let kids = |i: &Value| -> Vec<&Value> {
-        let ids: Vec<&str> = i["children"].as_array().into_iter().flatten().filter_map(|c| c.as_str()).collect();
-        all.iter().filter(|a| ids.contains(&str_of(a, "id"))).collect()
-    };
-    let planned: Vec<&Value> = all
-        .iter()
-        .filter(|i| i["status"].is_null() && str_of(i, "by") != user)
-        .filter(|i| !i["tags"].as_array().is_some_and(|t| t.iter().any(|t| t == "doc")))
-        .filter(|i| str_of(i, "body").contains("done when"))
-        .filter(|i| kids(i).iter().all(|k| side(k)) && !kids(i).iter().any(|k| open_side(k)))
-        .collect();
-    step.shown = planned.len();
-    if !planned.is_empty() {
-        header();
-    }
-    for (n, item) in planned.iter().enumerate() {
-        let id = str_of(item, "id");
-        show(item, &all, &format!("[{}/{}]", n + 1, planned.len()));
-        println!(
-            "{}",
-            "  d approve | t approve with dates | x drop | Enter skip | q quit\n  anything else: a comment for the agent, the plan stays open"
-                .dark_grey()
-        );
-        let Some(input) = read_line("  > ")? else {
-            step.quit = true;
-            return Ok(step);
-        };
-        let result = match input.as_str() {
-            "" => continue,
-            "q" => {
-                step.quit = true;
-                return Ok(step);
+/// the goal's tree, only branches that lead to `targets` (marked ?);
+/// with `hints` each line gets a number to open it; returns the lines' ids
+fn overview(all: &[Value], goal: &Value, targets: &[&Value], hints: bool) -> Vec<String> {
+    let mut keep: Vec<String> = vec![];
+    for t in targets {
+        let mut cur = Some(*t);
+        while let Some(c) = cur {
+            if !keep.iter().any(|k| k == str_of(c, "id")) {
+                keep.push(str_of(c, "id").to_string());
             }
-            "d" => cake.call(&["do", id]).map(|_| "approved, agents may start it".to_string()),
-            "t" => {
-                let due = read_line("  due, soft target (2026-11-30, Enter none): ")?.unwrap_or_default();
-                let deadline = read_line("  deadline, hard limit (Enter none): ")?.unwrap_or_default();
+            cur = find(all, str_of(c, "parent"));
+        }
+    }
+    let g = style::g();
+    let mut out = vec![];
+    fn walk(
+        all: &[Value],
+        keep: &[String],
+        targets: &[&Value],
+        hints: bool,
+        id: &str,
+        prefix: (&str, &str),
+        out: &mut Vec<String>,
+    ) {
+        let g = style::g();
+        let item = find(all, id).unwrap();
+        let target = targets.iter().any(|t| str_of(t, "id") == id);
+        let hint = if hints { format!("[{}] ", out.len() + 1) } else { String::new() };
+        let title = str_of(item, "title");
+        let text = if out.is_empty() {
+            title.bold().to_string()
+        } else if target {
+            format!("? {}", title).yellow().to_string()
+        } else {
+            title.to_string()
+        };
+        println!("  {}{}{}", prefix.0.dark_grey(), hint.cyan(), text);
+        out.push(id.to_string());
+        let children: Vec<&str> = all
+            .iter()
+            .filter(|i| str_of(i, "parent") == id && keep.iter().any(|k| k == str_of(i, "id")))
+            .map(|i| str_of(i, "id"))
+            .collect();
+        for (n, c) in children.iter().enumerate() {
+            let last = n + 1 == children.len();
+            let own = format!("{}{}", prefix.1, if last { g.last } else { g.branch });
+            let below = format!("{}{}", prefix.1, if last { g.space } else { g.pipe });
+            walk(all, keep, targets, hints, c, (&own, &below), out);
+        }
+    }
+    let _ = g;
+    walk(all, &keep, targets, hints, str_of(goal, "id"), ("", ""), &mut out);
+    out
+}
+
+/// prints the body of a numbered overview line
+fn open(all: &[Value], goal: &Value, targets: &[&Value]) -> Result<(), Box<dyn Error>> {
+    let ids = overview(all, goal, targets, true);
+    let Some(input) = read_line("    open: ")? else { return Ok(()) };
+    match input.parse::<usize>().ok().and_then(|n| ids.get(n.wrapping_sub(1))) {
+        Some(id) => {
+            let item = find(all, id).unwrap();
+            println!("\n  {}", str_of(item, "title").bold());
+            for l in body_of(item).lines() {
+                println!("    {}", l);
+            }
+            println!();
+        }
+        None => println!("{}", "    no such number".dark_grey()),
+    }
+    Ok(())
+}
+
+#[derive(PartialEq)]
+enum Kind {
+    /// agents' questions, answered with a letter or own words
+    Ask,
+    /// agents' plans to approve
+    Plan,
+}
+
+/// what the user did with one item
+enum Outcome {
+    Next,
+    NextGoal,
+    Quit,
+}
+
+/// one item of a step: shows it, reads keys until it is decided
+fn decide(cake: &Cake, kind: &Kind, item: &Value, all: &[Value], goal: &Value, targets: &[&Value], counter: &str) -> Result<(Outcome, bool), Box<dyn Error>> {
+    let id = str_of(item, "id");
+    let body = body_of(item);
+    println!("\n  {} {}", str_of(item, "title").bold(), counter.dark_grey());
+    for l in body.lines() {
+        println!("    {}", l);
+    }
+    let legend = match kind {
+        Kind::Ask => "letter or own words | f open | Enter skip | n next goal | q quit",
+        Kind::Plan => "d approve | t approve with dates | x drop | own words: comment\n    f open | Enter skip | n next goal | q quit",
+    };
+    println!("{}", format!("    {}", legend).dark_grey());
+    loop {
+        let Some(input) = read_line("  > ")? else { return Ok((Outcome::Quit, false)) };
+        let result = match (kind, input.as_str()) {
+            (_, "") => return Ok((Outcome::Next, false)),
+            (_, "q") => return Ok((Outcome::Quit, false)),
+            (_, "n") => return Ok((Outcome::NextGoal, false)),
+            (_, "f") => {
+                open(all, goal, targets)?;
+                continue;
+            }
+            (Kind::Ask, text) => {
+                let answer = answer_text(&body, text);
+                cake.call(&["done", id, "-m", &answer]).map(|_| format!("answered: {}", answer))
+            }
+            (Kind::Plan, "d") => cake.call(&["do", id]).map(|_| "approved".to_string()),
+            (Kind::Plan, "t") => {
+                let due = read_line("    due, soft target (2026-11-30, Enter none): ")?.unwrap_or_default();
+                let deadline = read_line("    deadline, hard limit (Enter none): ")?.unwrap_or_default();
                 let mut args = vec!["edit", id];
                 if !due.is_empty() {
                     args.extend(["--due", &due]);
@@ -219,19 +243,82 @@ fn planned(cake: &Cake, user: &str, header: &dyn Fn()) -> Result<Step, Box<dyn E
                 let edit = if args.len() > 2 { cake.call(&args).map(|_| ()) } else { Ok(()) };
                 edit.and_then(|_| cake.call(&["do", id])).map(|_| "approved with dates".to_string())
             }
-            "x" => cake.call(&["drop", id]).map(|_| "dropped".to_string()),
-            comment => cake
+            (Kind::Plan, "x") => cake.call(&["drop", id]).map(|_| "dropped".to_string()),
+            (Kind::Plan, comment) => cake
                 .call(&["add", "--todo", "-p", id, "-t", "reply", "-m", comment])
                 .map(|_| "comment saved, the agent reworks the plan".to_string()),
         };
         match result {
             Ok(text) => {
-                if text.starts_with("approved") {
-                    step.count += 1;
-                }
+                let counts = text.starts_with("answered") || text.starts_with("approved");
                 done(&text);
+                return Ok((Outcome::Next, counts));
             }
             Err(e) => failed(e),
+        }
+    }
+}
+
+/// a step over one store: items grouped by goal, the goal with the most
+/// urgent item first, each goal with its overview
+fn step(cake: &Cake, kind: Kind, user: &str, header: &dyn Fn()) -> Result<Step, Box<dyn Error>> {
+    let mut step = Step { count: 0, shown: 0, quit: false };
+    let all = cake.call(&["ls", "-l"])?;
+    let targets: Vec<&Value> = match kind {
+        Kind::Ask => {
+            let ids: Vec<String> =
+                cake.call(&["ready", "-t", "ask"])?.iter().map(|i| str_of(i, "id").to_string()).collect();
+            all.iter().filter(|i| ids.iter().any(|id| id == str_of(i, "id"))).collect()
+        }
+        Kind::Plan => {
+            let side = |a: &Value| a["tags"].as_array().is_some_and(|t| t.iter().any(|t| t == "ask" || t == "reply"));
+            let open_side = |a: &Value| side(a) && matches!(str_of(a, "status"), "todo" | "doing");
+            let kids = |i: &Value| -> Vec<&Value> { all.iter().filter(|a| str_of(a, "parent") == str_of(i, "id")).collect() };
+            all.iter()
+                .filter(|i| i["status"].is_null() && str_of(i, "by") != user)
+                .filter(|i| !i["tags"].as_array().is_some_and(|t| t.iter().any(|t| t == "doc")))
+                .filter(|i| str_of(i, "body").contains("done when"))
+                .filter(|i| kids(i).iter().all(|k| side(k)) && !kids(i).iter().any(|k| open_side(k)))
+                .collect()
+        }
+    };
+    step.shown = targets.len();
+    if targets.is_empty() {
+        return Ok(step);
+    }
+    header();
+    let mut goals: Vec<(&Value, Vec<&Value>)> = vec![];
+    for t in &targets {
+        let goal = goal_of(&all, t);
+        match goals.iter_mut().find(|(g, _)| str_of(g, "id") == str_of(goal, "id")) {
+            Some((_, items)) => items.push(t),
+            None => goals.push((goal, vec![t])),
+        }
+    }
+    let score = |v: &&Value| v["score"].as_i64().unwrap_or(0);
+    goals.sort_by_key(|(_, items)| std::cmp::Reverse(items.iter().map(score).max().unwrap_or(0)));
+    let mut n = 0;
+    'goals: for (goal, items) in &goals {
+        println!();
+        overview(&all, goal, items, false);
+        for item in items {
+            n += 1;
+            let counter = format!("{}/{}", n, targets.len());
+            let (outcome, counted) = decide(cake, &kind, item, &all, goal, items, &counter)?;
+            if counted {
+                step.count += 1;
+            }
+            match outcome {
+                Outcome::Next => (),
+                Outcome::NextGoal => {
+                    n += items.len().saturating_sub(items.iter().position(|i| str_of(i, "id") == str_of(item, "id")).unwrap_or(0) + 1);
+                    continue 'goals;
+                }
+                Outcome::Quit => {
+                    step.quit = true;
+                    break 'goals;
+                }
+            }
         }
     }
     Ok(step)
@@ -275,7 +362,7 @@ pub fn run(root: &Path, user: &str, all: bool) -> Result<(), Box<dyn Error>> {
     println!("They block the work they are about until you answer.");
     let (mut answered, mut shown) = (0, 0);
     for (name, root) in &stores {
-        let step = questions(&Cake { root }, &|| header(name))?;
+        let step = step(&Cake { root }, Kind::Ask, user, &|| header(name))?;
         answered += step.count;
         shown += step.shown;
         if step.quit {
@@ -290,7 +377,7 @@ pub fn run(root: &Path, user: &str, all: bool) -> Result<(), Box<dyn Error>> {
     println!("Plans agents wrote for your notes. Approved ones are worked on, the others wait.");
     let (mut approved, mut shown) = (0, 0);
     for (name, root) in &stores {
-        let step = planned(&Cake { root }, user, &|| header(name))?;
+        let step = step(&Cake { root }, Kind::Plan, user, &|| header(name))?;
         approved += step.count;
         shown += step.shown;
         if step.quit {
