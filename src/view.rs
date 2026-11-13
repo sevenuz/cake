@@ -1,61 +1,46 @@
-// https://docs.rs/crate/termimad/latest/source/examples/scrollable/main.rs
-use std::error::Error;
-use std::io::{stdout, IsTerminal, Write};
-use termimad::crossterm::{
-    cursor::{Hide, Show},
-    event::{self, Event, KeyCode::*, KeyEvent},
-    queue,
-    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use termimad::terminal_size;
-
 use crate::config::Config;
+use crate::markdown;
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use ratatui::text::Text;
+use ratatui::widgets::{Paragraph, Wrap};
+use std::error::Error;
+use std::io::IsTerminal;
 
-fn view_area() -> termimad::Area {
-    let mut area = termimad::Area::full_screen();
-    let (width, _) = terminal_size();
-    area.pad_for_max_width(width); // we don't want a too wide text column
-    area
-}
-
-fn scroll_view(skin: termimad::MadSkin, text: String) -> Result<(), termimad::Error> {
-    let mut w = stdout(); // we could also have used stderr
-    queue!(w, EnterAlternateScreen)?;
-    terminal::enable_raw_mode()?;
-    queue!(w, Hide)?; // hiding the cursor
-    let mut view = termimad::MadView::from(text.clone(), view_area(), skin.clone());
-    loop {
-        view.write_on(&mut w)?;
-        w.flush()?;
-        match event::read() {
-            Ok(Event::Key(KeyEvent { code, .. })) => match code {
-                Up => view.try_scroll_lines(-1),
-                Down => view.try_scroll_lines(1),
-                PageUp => view.try_scroll_pages(-1),
-                PageDown => view.try_scroll_pages(1),
-                Char('j') => view.try_scroll_lines(1),
-                Char('k') => view.try_scroll_lines(-1),
-                Char('J') => view.try_scroll_pages(1),
-                Char('K') => view.try_scroll_pages(-1),
-                Char('g') => view.try_scroll_pages(-1000),
-                Char('G') => view.try_scroll_pages(1000),
-                _ => break,
-            },
-            Ok(Event::Resize(..)) => {
-                queue!(w, Clear(ClearType::All))?;
-                view.resize(&view_area());
+/// full screen pager: j/k or arrows scroll, J/K or PageUp/Down by page,
+/// g/G top/bottom, any other key quits
+fn scroll_view(text: &str) -> Result<(), Box<dyn Error>> {
+    let mut terminal = ratatui::init();
+    let mut offset: u16 = 0;
+    let result = (|| -> Result<(), Box<dyn Error>> {
+        loop {
+            let area = terminal.size()?;
+            let lines = markdown::render(text, area.width);
+            let w = area.width.max(1) as usize;
+            let total = lines.iter().map(|l| l.width().max(1).div_ceil(w)).sum::<usize>() as u16;
+            let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
+            let max = total.saturating_sub(area.height);
+            offset = offset.min(max);
+            terminal.draw(|f| f.render_widget(paragraph.scroll((offset, 0)), f.area()))?;
+            let page = area.height.saturating_sub(1).max(1);
+            match event::read()? {
+                Event::Key(k) if k.kind == KeyEventKind::Press => match k.code {
+                    KeyCode::Down | KeyCode::Char('j') => offset = offset.saturating_add(1),
+                    KeyCode::Up | KeyCode::Char('k') => offset = offset.saturating_sub(1),
+                    KeyCode::PageDown | KeyCode::Char('J') | KeyCode::Char(' ') => offset = offset.saturating_add(page),
+                    KeyCode::PageUp | KeyCode::Char('K') => offset = offset.saturating_sub(page),
+                    KeyCode::Char('g') | KeyCode::Home => offset = 0,
+                    KeyCode::Char('G') | KeyCode::End => offset = max,
+                    _ => return Ok(()),
+                },
+                _ => (),
             }
-            _ => {}
         }
-    }
-    terminal::disable_raw_mode()?;
-    queue!(w, Show)?; // we must restore the cursor
-    queue!(w, LeaveAlternateScreen)?;
-    w.flush()?;
-    Ok(())
+    })();
+    ratatui::restore();
+    result
 }
 
-/// renders markdown, silent in `--json` mode
+/// renders markdown, silent in `--json` mode; long text in a pager
 pub fn print(config: &Config, text: String) -> Result<(), Box<dyn Error>> {
     if crate::out::json() {
         return Ok(());
@@ -65,15 +50,12 @@ pub fn print(config: &Config, text: String) -> Result<(), Box<dyn Error>> {
         print!("{}", text);
         return Ok(());
     }
-    let mut skin = if crate::style::color() { config.build_skin()? } else { termimad::MadSkin::no_style() };
-    skin.bullet.set_char(crate::style::g().bullet);
-    skin.horizontal_rule.set_char(crate::style::g().rule);
-    if config.scrollview_threshold > -1
-        && text.lines().count() > config.scrollview_threshold.try_into()?
-    {
-        scroll_view(skin, text)?;
-    } else {
-        skin.print_text(&text);
+    if config.scrollview_threshold > -1 && text.lines().count() > config.scrollview_threshold.try_into()? {
+        return scroll_view(&text);
+    }
+    let width = ratatui::crossterm::terminal::size().map_or(80, |(w, _)| w);
+    for line in markdown::render(&text, width) {
+        println!("{}", markdown::ansi(&line));
     }
     Ok(())
 }

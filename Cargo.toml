@@ -11,7 +11,6 @@ nanoid = "0.4.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = "0.4.23"
-termimad = "0.25.5"
 deser-hjson = "2.2.0"
 serde_yaml_ng = "0.10"
 directories = "5.0.1"

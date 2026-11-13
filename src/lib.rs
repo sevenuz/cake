@@ -3,6 +3,7 @@ mod config;
 mod error;
 mod git;
 mod item;
+mod markdown;
 mod morning;
 mod out;
 mod selector;

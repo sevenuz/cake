@@ -3,7 +3,6 @@ use crate::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
-use termimad::MadSkin;
 
 // color scheme of madskin in separat hjson file -> gruvbox default theme
 // skin_path in config file
@@ -50,34 +49,11 @@ pub struct Config {
     /// env CAKE_STYLE wins. Color follows NO_COLOR and the terminal.
     #[serde(default = "default_style")]
     pub style: String,
-    /// searches in config dir for skin file (hjson)
-    skin_file_name: String,
     /// When output has more lines than the threshold, then show it in scrollview
     /// -1 to never go into scrollview
     /// 127 as maximum
     pub scrollview_threshold: i8,
 }
-
-const DEFAULT_SKIN_GRUVBOX: &str = r###"# This Hjson file is the default gruvbox skin.
-# Checkout following resources for more information:
-# https://github.com/Canop/termimad/blob/main/examples/skin-file/skin.hjson
-# https://docs.rs/termimad/latest/termimad/struct.MadSkin.html
-
-bold: "#fb0 bold"
-italic: dim italic
-strikeout: crossedout red
-bullet: ○ bold
-paragraph: gray(20)
-code_block: gray(2) gray(15) left
-headers: [
-    green bold underlined left
-    red underlined left
-    yellow left
-]
-quote: > yellow
-horizontal-rule: "~ #00cafe"
-table: "#540 left"
-scrollbar: "red yellow""###;
 
 fn default_git_branch() -> String {
     "cake/main".to_string()
@@ -175,7 +151,6 @@ impl Config {
                 aliases: BTreeMap::new(),
                 status: default_status(),
                 style: default_style(),
-                skin_file_name: "gruvbox.hjson".to_string(),
                 scrollview_threshold: 30,
             })
         }
@@ -187,35 +162,6 @@ impl Config {
             std::fs::write(util::config_file()?, serialized)?;
         }
         Ok(())
-    }
-
-    // markdown style
-    // should be configurable
-    // good defaults please :D
-    pub fn build_skin(&self) -> Result<MadSkin, Box<dyn Error>> {
-        // https://github.com/Canop/termimad/blob/main/examples/skin-file/main.rs
-        // read the skin file in a string
-        let path = util::config_path()?.join(&self.skin_file_name);
-        let hjson = fs::read_to_string(path.clone()).unwrap_or_else(|_| {
-            // write default theme
-            let _ = std::fs::write(path, DEFAULT_SKIN_GRUVBOX);
-            DEFAULT_SKIN_GRUVBOX.to_string()
-        });
-        // deserialize the Hjson into a skin
-        let skin: MadSkin = deser_hjson::from_str(&hjson)?;
-
-        // let mut skin = MadSkin::default();
-        // skin.set_headers_fg(rgb(255, 187, 0));
-        // skin.headers[0].set_fg(rgb(155, 187, 0));
-        // skin.headers[1].set_fg(rgb(155, 87, 0));
-        // skin.headers[0].align = Alignment::Left;
-        // skin.headers[1].align = Alignment::Left;
-        // skin.headers[2].align = Alignment::Left;
-        // skin.bold.set_fg(Yellow);
-        // skin.italic.set_fgbg(Magenta, rgb(30, 30, 40));
-        // skin.bullet = StyledChar::from_fg_char(Yellow, '⟡');
-        // skin.quote_mark.set_fg(Yellow);
-        return Ok(skin);
     }
 }
 
@@ -261,24 +207,5 @@ mod tests {
                 None => std::env::remove_var(v),
             }
         }
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn build_skin_writes_and_parses_default_theme_when_missing() {
-        let _sandbox = Sandbox::new();
-        let config = Config::new().unwrap();
-        assert!(config.build_skin().is_ok());
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn build_skin_errs_on_a_corrupt_skin_file_instead_of_silently_using_defaults() {
-        let _sandbox = Sandbox::new();
-        let config = Config::new().unwrap();
-        let skin_path = util::config_path().unwrap().join("gruvbox.hjson");
-        std::fs::write(&skin_path, "{ not valid hjson :::").unwrap();
-
-        assert!(config.build_skin().is_err());
     }
 }
