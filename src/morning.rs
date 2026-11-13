@@ -76,8 +76,17 @@ fn body_of(item: &Value) -> String {
 fn answer_text(body: &str, input: &str) -> String {
     if input.chars().count() == 1 {
         let tag = format!("- {})", input);
-        if let Some(l) = body.lines().find(|l| l.trim_start().starts_with(&tag)) {
-            return l.trim_start().trim_start_matches("- ").to_string();
+        let lines: Vec<&str> = body.lines().collect();
+        if let Some(n) = lines.iter().position(|l| l.trim_start().starts_with(&tag)) {
+            // an option may wrap: indented lines below belong to it
+            let mut text = lines[n].trim_start().trim_start_matches("- ").to_string();
+            for l in &lines[n + 1..] {
+                if l.trim().is_empty() || l.trim_start().starts_with("- ") || !l.starts_with(' ') {
+                    break;
+                }
+                text = format!("{} {}", text, l.trim());
+            }
+            return text;
         }
     }
     input.to_string()
@@ -408,6 +417,8 @@ mod tests {
     fn a_letter_picks_the_option_line() {
         let body = "Context.\n\n- a) sqlite (recommended)\n- b) files";
         assert_eq!(answer_text(body, "b"), "b) files");
+        let wrapped = "- a) by hand (recommended:\n  no code)\n- b) flag";
+        assert_eq!(answer_text(wrapped, "a"), "a) by hand (recommended: no code)");
         assert_eq!(answer_text(body, "c"), "c");
         assert_eq!(answer_text(body, "files, but plain"), "files, but plain");
     }
