@@ -1,7 +1,6 @@
 ---
 id: which-dashboard-sections
 status: done
-tags: [ask]
 parent: "[[cake-dash-terminal-dashboard]]"
 created: 2026-11-13T19:05:26+01:00
 by: claude-code

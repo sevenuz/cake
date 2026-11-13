@@ -1,7 +1,6 @@
 ---
 id: what-use-me-about
 status: done
-tags: [ask]
 parent: "[[dkfsmn]]"
 created: 2026-11-13T18:23:28+01:00
 by: claude-code

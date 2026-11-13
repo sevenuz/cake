@@ -1,7 +1,6 @@
 ---
 id: mzfwgt
 status: done
-tags: [triaged]
 parent: "[[zcgwhr]]"
 blocked_by: ["[[close-substructure-item-store]]"]
 created: 2026-10-28T12:48:20+01:00

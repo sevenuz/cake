@@ -1,11 +1,13 @@
 ---
 id: workflow-v2
-status: todo
+status: task
 tags: [plan]
 parent: "[[ai-workflow]]"
 created: 2026-11-13T23:04:17+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+assignee: claude-code
+owner: sevenuz
 ---
 # Workflow v2: inbox, task, review with assignees
 

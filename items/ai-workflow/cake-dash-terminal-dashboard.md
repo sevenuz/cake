@@ -1,5 +1,6 @@
 ---
 id: cake-dash-terminal-dashboard
+status: inbox
 tags: [plan]
 parent: "[[ai-workflow]]"
 blocked_by: ["[[deadline-field-asks-score]]"]

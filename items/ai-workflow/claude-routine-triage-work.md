@@ -1,5 +1,6 @@
 ---
 id: claude-routine-triage-work
+status: inbox
 tags: [plan]
 parent: "[[ai-workflow]]"
 blocked_by: ["[[skill-triage-loop-ask]]"]
@@ -20,3 +21,5 @@ sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
 - code changes go to a branch per item, never main; results come back as
   `review` items and questions
 - done when: one night produced questions and a review item
+
+comment (sevenuz, 2026-11-13): write me an explainable on that how i can set it up with multiple repos and claude routines and what i have to push write me an explainable on that how i can set it up with multiple repos and claude routines and what i have to push

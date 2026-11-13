@@ -1,12 +1,14 @@
 ---
 id: triage-alias
-status: todo
+status: task
 tags: [plan]
 parent: "[[workflow-v2]]"
 blocked_by: ["[[form-modules]]"]
 created: 2026-11-13T23:04:17+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+assignee: claude-code
+owner: sevenuz
 ---
 # Shell aliases and the triage prompt
 

@@ -1,12 +1,14 @@
 ---
 id: nmqs6e
-status: todo
+status: task
 tags: [search]
 parent: "[[zcgwhr]]"
 blocked_by: ["[[s1k16e]]"]
 created: 2026-10-27T12:19:28+01:00
 by: claude-code
-sessions: [69b1d969-f2c3-4f41-b58d-a996441f99e2]
+sessions: [69b1d969-f2c3-4f41-b58d-a996441f99e2, 81954e9f-9185-4d55-a366-5581de2aacd6]
+assignee: claude-code
+owner: sevenuz
 ---
 # SQLite index for fast search in big stores
 

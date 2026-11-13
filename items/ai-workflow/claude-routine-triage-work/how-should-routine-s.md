@@ -1,7 +1,6 @@
 ---
 id: how-should-routine-s
 status: done
-tags: [ask]
 parent: "[[claude-routine-triage-work]]"
 created: 2026-11-13T19:05:26+01:00
 by: claude-code
