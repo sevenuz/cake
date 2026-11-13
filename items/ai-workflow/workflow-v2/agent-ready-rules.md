@@ -1,5 +1,6 @@
 ---
 id: agent-ready-rules
+status: todo
 tags: [plan]
 parent: "[[workflow-v2]]"
 blocked_by: ["[[statuses-and-assignee]]"]
