@@ -303,7 +303,7 @@ pub enum Commands {
         #[arg(skip)]
         new_tags: Option<String>,
     },
-    /// guided pass: new tasks, questions by score, approve planned items
+    /// guided pass: new tasks, questions by score, plans to approve; -g: all stores
     Morning {},
     /// move an item under a parent, or with its subtree to another store
     Mv {
@@ -611,7 +611,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             return Err(error::invalid("cake morning needs a terminal and no --json."))
         }
         Some(Commands::Morning {}) | None if interactive => {
-            return morning::run(&config.build_skin()?, &root, &config.user(&root))
+            return morning::run(&root, &config.user(&root), cli.global)
         }
         _ => (),
     }

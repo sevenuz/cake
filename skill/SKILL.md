@@ -28,6 +28,10 @@ your session in `sessions`, your commits are tagged `[<agent>]`.
 - **Short but complete:** titles ≤ 60 chars, bodies as bullets, no prose.
   Aim for 3–5 bullets, but use more rather than lose details; split into
   children only when parts are worked on separately.
+- **Readable without the chat:** the user decides in `cake`, days later.
+  First bullet `why:` the problem in plain words, then what changes for
+  the user, then `done when`. No internal shorthand, no bare file or
+  function names without saying what they do.
 - **No `cake sync`** unless asked. Cite items by id.
 - **Capture from the chat:** when the user mentions something for later
   ("todo", "later", "idea", "we should …") or a decision worth keeping,
@@ -72,9 +76,10 @@ and it is the file name. Ids never change.
   `done when` included. Ordering with `--blocked-by`. Link with `[[id]]`.
 - **Ready to approve** = `done when` present, no open asks, deadlines set
   when they matter. Only then is a planned item a candidate.
-- **The user's side** is `cake` (= `cake morning`): new tasks, your asks
-  by score, then your planned items to approve. Write asks and plans so
-  they can be decided there without the chat.
+- **The user's side** is `cake` (= `cake morning`, `-g`: all stores): new
+  tasks, your asks by score, then your plans to approve (your notes with
+  `done when` and no children of their own). Free text on a plan becomes
+  a reply: a todo item by the user tagged `reply` under your plan.
 - **Docs:** your reference notes are top-level and tagged `doc`.
 - **Time:** start your timer on approved items you work on, stop it when you
   pause or request review. The owner of an item tracks its time.
@@ -131,7 +136,9 @@ Per store in stores.json (`cake --store <path> … --json`), `-g` first so
 moved ideas are triaged in their project:
 
 1. `cake sync --json` (only in a routine).
-2. Apply answered asks (`cake ls -t ask --status done --json`, newest).
+2. Apply answered asks (`cake ls -t ask --status done --json`, newest)
+   and replies (`cake ls -t reply --status todo --json`): rework the
+   plan, add asks if needed, then `cake done <reply>`.
 3. Triage the inbox.
 4. Work: `cake ready --by <you> -t ~ask --json` plus `-t ai`, highest
    score first. Code on a branch per item, never push to main. Stuck →
