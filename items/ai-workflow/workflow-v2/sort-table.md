@@ -1,6 +1,6 @@
 ---
 id: sort-table
-status: task
+status: review
 tags: [plan, tui]
 parent: "[[workflow-v2]]"
 blocked_by: ["[[form-modules]]"]
@@ -19,3 +19,5 @@ owner: sevenuz
 - one key decides and moves to the next row; nothing is saved until
   enter; undecided rows stay in the inbox
 - done when: 10 dumped ideas sorted in under a minute
+
+changed: inbox and tasks without assignee in one table: n/t/x, w who, d/D dates, p prio, m move store, A subtree, o open, enter saves; commit 5aeb0b5; try: cake form sort
