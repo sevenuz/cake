@@ -1,12 +1,13 @@
 ---
 id: claude-routine-triage-work
-status: inbox
+status: dropped
 tags: [plan]
 parent: "[[ai-workflow]]"
 blocked_by: ["[[skill-triage-loop-ask]]"]
 created: 2026-11-13T17:35:30+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+closed: 2026-11-13T23:49:15+01:00
 ---
 # Nightly Claude routine: triage and work while you sleep
 
