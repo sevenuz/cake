@@ -1,5 +1,6 @@
 ---
 id: cake-morning-terminal-form
+status: todo
 tags: [plan]
 parent: "[[ai-workflow]]"
 blocked_by: ["[[deadline-field-asks-score]]"]
