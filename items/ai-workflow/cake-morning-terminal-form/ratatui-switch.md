@@ -1,7 +1,7 @@
 ---
 id: ratatui-switch
 status: doing
-tags: [cli, review]
+tags: [cli]
 parent: "[[cake-morning-terminal-form]]"
 created: 2026-11-13T19:51:15+01:00
 by: claude-code
