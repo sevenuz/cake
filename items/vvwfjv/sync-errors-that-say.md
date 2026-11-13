@@ -1,5 +1,6 @@
 ---
 id: sync-errors-that-say
+status: todo
 tags: [git]
 parent: "[[vvwfjv]]"
 created: 2026-11-13T18:39:06+01:00
