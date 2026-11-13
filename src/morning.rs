@@ -1,13 +1,17 @@
 //! `cake morning`: a guided pass over what needs you. Every change runs as
 //! its own `cake` call, so agents keep working while you think.
 
-use crate::{error, style};
+use crate::{error, markdown, style, theme};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::{DefaultTerminal, Frame};
 use serde_json::Value;
 use std::error::Error;
-use std::io::{BufRead, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use ratatui::crossterm::style::Stylize;
 
 /// set for the form's own cake calls: built-ins without alias overrides
 pub const PLAIN_ENV: &str = "CAKE_PLAIN";
@@ -51,16 +55,6 @@ fn exe() -> std::path::PathBuf {
     }
 }
 
-fn read_line(prompt: &str) -> Result<Option<String>, Box<dyn Error>> {
-    print!("{}", prompt);
-    std::io::stdout().flush()?;
-    let mut line = String::new();
-    if std::io::stdin().lock().read_line(&mut line)? == 0 {
-        return Ok(None); // end of input
-    }
-    Ok(Some(line.trim().to_string()))
-}
-
 fn str_of<'a>(v: &'a Value, key: &str) -> &'a str {
     v[key].as_str().unwrap_or("")
 }
@@ -92,21 +86,6 @@ fn answer_text(body: &str, input: &str) -> String {
     input.to_string()
 }
 
-/// what a step did: count, and whether the user quit the step
-struct Step {
-    count: usize,
-    shown: usize,
-    quit: bool,
-}
-
-fn done(text: &str) {
-    println!("{}", format!("    {}", text).green());
-}
-
-fn failed(e: Box<dyn Error>) {
-    println!("{}", format!("    {}", e).red());
-}
-
 fn find<'a>(all: &'a [Value], id: &str) -> Option<&'a Value> {
     all.iter().find(|i| str_of(i, "id") == id)
 }
@@ -123,82 +102,62 @@ fn goal_of<'a>(all: &'a [Value], item: &'a Value) -> &'a Value {
     cur
 }
 
-/// the goal's tree, only branches that lead to `targets` (marked ?);
-/// with `hints` each line gets a number to open it; returns the lines' ids
-fn overview(all: &[Value], goal: &Value, targets: &[&Value], hints: bool) -> Vec<String> {
-    let mut keep: Vec<String> = vec![];
+/// options `- a) …` of a question (wrapped lines joined) and the rest
+fn split_options(body: &str) -> (String, Vec<(char, String)>) {
+    let mut context = vec![];
+    let mut options: Vec<(char, String)> = vec![];
+    for l in body.lines() {
+        let t = l.trim_start();
+        let mut c = t.chars();
+        match (c.next(), c.next(), c.next(), c.next()) {
+            (Some('-'), Some(' '), Some(k), Some(')')) if k.is_ascii_lowercase() => {
+                options.push((k, t[4..].trim().to_string()));
+            }
+            _ if !options.is_empty() && l.starts_with(' ') && !t.is_empty() => {
+                let last = options.last_mut().unwrap();
+                last.1 = format!("{} {}", last.1, t);
+            }
+            _ => context.push(l),
+        }
+    }
+    (context.join("\n").trim().to_string(), options)
+}
+
+/// keys for hints on the overview, like vimium
+const HINTS: &str = "123456789abcdeghijklmoprtuvwxyz";
+
+/// the goal's tree, only branches that lead to `targets`: (prefix, id)
+fn overview(all: &[Value], goal: &Value, targets: &[&Value]) -> Vec<(String, String)> {
+    let mut keep: Vec<&str> = vec![];
     for t in targets {
         let mut cur = Some(*t);
         while let Some(c) = cur {
-            if !keep.iter().any(|k| k == str_of(c, "id")) {
-                keep.push(str_of(c, "id").to_string());
+            if !keep.contains(&str_of(c, "id")) {
+                keep.push(str_of(c, "id"));
             }
             cur = find(all, str_of(c, "parent"));
         }
     }
-    let g = style::g();
-    let mut out = vec![];
-    fn walk(
-        all: &[Value],
-        keep: &[String],
-        targets: &[&Value],
-        hints: bool,
-        id: &str,
-        prefix: (&str, &str),
-        out: &mut Vec<String>,
-    ) {
+    fn walk(all: &[Value], keep: &[&str], id: &str, prefix: (&str, &str), out: &mut Vec<(String, String)>) {
         let g = style::g();
-        let item = find(all, id).unwrap();
-        let target = targets.iter().any(|t| str_of(t, "id") == id);
-        let hint = if hints { format!("[{}] ", out.len() + 1) } else { String::new() };
-        let title = str_of(item, "title");
-        let text = if out.is_empty() {
-            title.bold().to_string()
-        } else if target {
-            format!("? {}", title).yellow().to_string()
-        } else {
-            title.to_string()
-        };
-        println!("  {}{}{}", prefix.0.dark_grey(), hint.cyan(), text);
-        out.push(id.to_string());
-        let children: Vec<&str> = all
-            .iter()
-            .filter(|i| str_of(i, "parent") == id && keep.iter().any(|k| k == str_of(i, "id")))
-            .map(|i| str_of(i, "id"))
-            .collect();
+        out.push((prefix.0.to_string(), id.to_string()));
+        let children: Vec<&str> =
+            all.iter().filter(|i| str_of(i, "parent") == id && keep.contains(&str_of(i, "id"))).map(|i| str_of(i, "id")).collect();
         for (n, c) in children.iter().enumerate() {
             let last = n + 1 == children.len();
             let own = format!("{}{}", prefix.1, if last { g.last } else { g.branch });
             let below = format!("{}{}", prefix.1, if last { g.space } else { g.pipe });
-            walk(all, keep, targets, hints, c, (&own, &below), out);
+            walk(all, keep, c, (&own, &below), out);
         }
     }
-    let _ = g;
-    walk(all, &keep, targets, hints, str_of(goal, "id"), ("", ""), &mut out);
+    let mut out = vec![];
+    walk(all, &keep, str_of(goal, "id"), ("", ""), &mut out);
     out
 }
 
-/// prints the body of a numbered overview line
-fn open(all: &[Value], goal: &Value, targets: &[&Value]) -> Result<(), Box<dyn Error>> {
-    let ids = overview(all, goal, targets, true);
-    let Some(input) = read_line("    open: ")? else { return Ok(()) };
-    match input.parse::<usize>().ok().and_then(|n| ids.get(n.wrapping_sub(1))) {
-        Some(id) => {
-            let item = find(all, id).unwrap();
-            println!("\n  {}", str_of(item, "title").bold());
-            for l in body_of(item).lines() {
-                println!("    {}", l);
-            }
-            println!();
-        }
-        None => println!("{}", "    no such number".dark_grey()),
-    }
-    Ok(())
-}
-
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 enum Kind {
-    /// agents' questions, answered with a letter or own words
+    /// agents' questions, answered with an option or own words
     Ask,
     /// agents' plans to approve
     Plan,
@@ -206,43 +165,252 @@ enum Kind {
 
 /// what the user did with one item
 enum Outcome {
-    Next,
+    /// counted: answered or approved
+    Next(bool),
     NextGoal,
     Quit,
 }
 
-/// one item of a step: shows it, reads keys until it is decided
-fn decide(cake: &Cake, kind: &Kind, item: &Value, all: &[Value], goal: &Value, targets: &[&Value], counter: &str) -> Result<(Outcome, bool), Box<dyn Error>> {
-    let id = str_of(item, "id");
-    let body = body_of(item);
-    println!("\n  {} {}", str_of(item, "title").bold(), counter.dark_grey());
-    for l in body.lines() {
-        println!("    {}", l);
-    }
-    let legend = match kind {
-        Kind::Ask => "letter or own words | f open | Enter skip | n next goal | q quit",
-        Kind::Plan => "d approve | t approve with dates | x drop | own words: comment\n    f open | Enter skip | n next goal | q quit",
-    };
-    println!("{}", format!("    {}", legend).dark_grey());
+struct Ui {
+    term: DefaultTerminal,
+    /// green or red line shown with the next screen
+    flash: Option<(String, bool)>,
+}
+
+fn key() -> Result<KeyEvent, Box<dyn Error>> {
     loop {
-        let Some(input) = read_line("  > ")? else { return Ok((Outcome::Quit, false)) };
-        let result = match (kind, input.as_str()) {
-            (_, "") => return Ok((Outcome::Next, false)),
-            (_, "q") => return Ok((Outcome::Quit, false)),
-            (_, "n") => return Ok((Outcome::NextGoal, false)),
-            (_, "f") => {
-                open(all, goal, targets)?;
+        if let Event::Key(k) = event::read()? {
+            if k.kind == KeyEventKind::Press {
+                return Ok(k);
+            }
+        }
+    }
+}
+
+fn ctrl_c(k: &KeyEvent) -> bool {
+    k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c')
+}
+
+fn dim() -> Style {
+    Style::default().fg(theme::t().dim)
+}
+
+impl Ui {
+    /// draws `body` with a footer: the flash line, then `legend`
+    fn draw(&mut self, title: &str, body: &dyn Fn(&mut Frame, Rect), legend: Line) -> Result<(), Box<dyn Error>> {
+        let flash = self.flash.clone();
+        self.term.draw(|f| {
+            let [top, main, foot] =
+                Layout::vertical([Constraint::Length(1), Constraint::Min(1), Constraint::Length(2)]).areas(f.area());
+            f.render_widget(Paragraph::new(Span::styled(title.to_string(), Style::default().add_modifier(Modifier::BOLD))), top);
+            body(f, main);
+            let first = match &flash {
+                Some((text, ok)) => {
+                    Line::from(Span::styled(text.clone(), Style::default().fg(if *ok { theme::t().ok } else { theme::t().error })))
+                }
+                None => Line::default(),
+            };
+            f.render_widget(Paragraph::new(vec![first, legend]), foot);
+        })?;
+        Ok(())
+    }
+
+    /// a line of text at the bottom; None on Esc
+    fn input(&mut self, title: &str, body: &dyn Fn(&mut Frame, Rect), prompt: &str) -> Result<Option<String>, Box<dyn Error>> {
+        let mut buf = String::new();
+        loop {
+            let line = Line::from(vec![
+                Span::styled(format!("{} ", prompt), Style::default().fg(theme::t().hint)),
+                Span::raw(buf.clone()),
+                Span::styled("_", dim()),
+            ]);
+            self.draw(title, body, line)?;
+            let k = key()?;
+            match k.code {
+                _ if ctrl_c(&k) => return Ok(None),
+                KeyCode::Enter => return Ok(Some(buf.trim().to_string())),
+                KeyCode::Esc => return Ok(None),
+                KeyCode::Backspace => {
+                    buf.pop();
+                }
+                KeyCode::Char(c) => buf.push(c),
+                _ => (),
+            }
+        }
+    }
+}
+
+fn legend(parts: &[(&str, &str)]) -> Line<'static> {
+    let mut spans = vec![];
+    for (n, (k, what)) in parts.iter().enumerate() {
+        if n > 0 {
+            spans.push(Span::styled("  ", dim()));
+        }
+        spans.push(Span::styled(k.to_string(), Style::default().fg(theme::t().hint)));
+        spans.push(Span::styled(format!(" {}", what), dim()));
+    }
+    Line::from(spans)
+}
+
+/// one item: overview on top, the item below, an opened item beside it
+#[allow(clippy::too_many_arguments)]
+fn decide(
+    ui: &mut Ui,
+    cake: &Cake,
+    kind: Kind,
+    item: &Value,
+    all: &[Value],
+    goal: &Value,
+    targets: &[&Value],
+    title: &str,
+) -> Result<Outcome, Box<dyn Error>> {
+    let t = theme::t();
+    let id = str_of(item, "id").to_string();
+    let body = body_of(item);
+    let (context, options) = match kind {
+        Kind::Ask => split_options(&body),
+        Kind::Plan => (
+            body.clone(),
+            vec![('a', "approve".to_string()), ('b', "approve with dates".to_string()), ('c', "drop".to_string())],
+        ),
+    };
+    let tree = overview(all, goal, targets);
+    let mut hints = false;
+    let mut opened: Option<String> = None;
+    loop {
+        let render = |f: &mut Frame, area: Rect| {
+            let tree_h = (tree.len() as u16 + 1).min(area.height / 3).max(2);
+            let [top, rest] = Layout::vertical([Constraint::Length(tree_h), Constraint::Min(1)]).areas(area);
+            let lines: Vec<Line> = tree
+                .iter()
+                .enumerate()
+                .map(|(n, (prefix, nid))| {
+                    let node = find(all, nid).unwrap();
+                    let mut spans = vec![Span::styled(prefix.clone(), dim())];
+                    if hints {
+                        let h = HINTS.chars().nth(n).map_or(' ', |c| c);
+                        spans.push(Span::styled(format!("[{}] ", h), Style::default().fg(t.hint).add_modifier(Modifier::BOLD)));
+                    }
+                    let is_target = targets.iter().any(|x| str_of(x, "id") == nid);
+                    let text = str_of(node, "title").to_string();
+                    spans.push(if *nid == id {
+                        Span::styled(format!("? {}", text), Style::default().fg(t.question).add_modifier(Modifier::BOLD))
+                    } else if is_target {
+                        Span::styled(format!("? {}", text), Style::default().fg(t.question))
+                    } else if n == 0 {
+                        Span::styled(text, Style::default().add_modifier(Modifier::BOLD))
+                    } else {
+                        Span::raw(text)
+                    });
+                    Line::from(spans)
+                })
+                .collect();
+            f.render_widget(Paragraph::new(lines), top);
+            let (main, side) = match &opened {
+                Some(_) => {
+                    let [a, b] = Layout::horizontal([Constraint::Percentage(55), Constraint::Percentage(45)]).areas(rest);
+                    (a, Some(b))
+                }
+                None => (rest, None),
+            };
+            let mut text: Vec<Line> = vec![Line::from(Span::styled(
+                str_of(item, "title").to_string(),
+                Style::default().add_modifier(Modifier::BOLD),
+            ))];
+            text.push(Line::default());
+            text.extend(markdown::render(&context, main.width));
+            text.push(Line::default());
+            for (k, o) in &options {
+                text.push(Line::from(vec![
+                    Span::styled(format!("  {}) ", k), Style::default().fg(t.hint).add_modifier(Modifier::BOLD)),
+                    Span::raw(o.clone()),
+                ]));
+            }
+            f.render_widget(Paragraph::new(Text::from(text)).wrap(Wrap { trim: false }), main);
+            if let (Some(side), Some(oid)) = (side, &opened) {
+                let node = find(all, oid).unwrap();
+                let lines = markdown::render(&body_of(node), side.width.saturating_sub(2));
+                let block = Block::default().borders(Borders::LEFT).border_style(dim()).title(Span::styled(
+                    format!(" {}", str_of(node, "title")),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ));
+                f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }).block(block), side);
+            }
+        };
+        let keys = match (kind, hints) {
+            (_, true) => legend(&[("1-9 a-z", "open"), ("esc", "back")]),
+            (Kind::Ask, false) => {
+                let range = match options.len() {
+                    0 => String::new(),
+                    1 => "a".to_string(),
+                    n => format!("a-{}", options[n - 1].0),
+                };
+                let mut parts = vec![];
+                if !range.is_empty() {
+                    parts.push((range.as_str(), "choose"));
+                }
+                parts.extend([("i", "own words"), ("s", "skip"), ("f", "open"), ("n", "next goal"), ("q", "quit")]);
+                legend(&parts)
+            }
+            (Kind::Plan, false) => legend(&[("a-c", "choose"), ("i", "comment"), ("s", "skip"), ("f", "open"), ("n", "next goal"), ("q", "quit")]),
+        };
+        let keys = if opened.is_some() && !hints {
+            let mut l = keys;
+            l.spans.push(Span::styled("  esc", Style::default().fg(t.hint)));
+            l.spans.push(Span::styled(" close", dim()));
+            l
+        } else {
+            keys
+        };
+        ui.draw(title, &render, keys)?;
+        let k = key()?;
+        if ctrl_c(&k) {
+            return Ok(Outcome::Quit);
+        }
+        let KeyCode::Char(c) = k.code else {
+            if k.code == KeyCode::Esc {
+                hints = false;
+                opened = None;
+            }
+            continue;
+        };
+        if hints {
+            hints = false;
+            if let Some(n) = HINTS.find(c) {
+                if let Some((_, nid)) = tree.get(n) {
+                    opened = Some(nid.clone());
+                }
+            }
+            continue;
+        }
+        ui.flash = None;
+        let result: Result<(String, bool), Box<dyn Error>> = match (kind, c) {
+            (_, 'q') => return Ok(Outcome::Quit),
+            (_, 'n') => return Ok(Outcome::NextGoal),
+            (_, 's') => return Ok(Outcome::Next(false)),
+            (_, 'f') => {
+                hints = true;
                 continue;
             }
-            (Kind::Ask, text) => {
-                let answer = answer_text(&body, text);
-                cake.call(&["done", id, "-m", &answer]).map(|_| format!("answered: {}", answer))
+            (Kind::Ask, 'i') => match ui.input(title, &render, "your answer:")? {
+                Some(text) if !text.is_empty() => cake.call(&["done", &id, "-m", &text]).map(|_| (format!("answered: {}", text), true)),
+                _ => continue,
+            },
+            (Kind::Plan, 'i') => match ui.input(title, &render, "comment for the agent:")? {
+                Some(text) if !text.is_empty() => cake
+                    .call(&["add", "--todo", "-p", &id, "-t", "reply", "-m", &text])
+                    .map(|_| ("comment saved, the agent reworks the plan".to_string(), false)),
+                _ => continue,
+            },
+            (Kind::Ask, c) if options.iter().any(|(k, _)| *k == c) => {
+                let answer = answer_text(&body, &c.to_string());
+                cake.call(&["done", &id, "-m", &answer]).map(|_| (format!("answered: {}", answer), true))
             }
-            (Kind::Plan, "d") => cake.call(&["do", id]).map(|_| "approved".to_string()),
-            (Kind::Plan, "t") => {
-                let due = read_line("    due, soft target (2026-11-30, Enter none): ")?.unwrap_or_default();
-                let deadline = read_line("    deadline, hard limit (Enter none): ")?.unwrap_or_default();
-                let mut args = vec!["edit", id];
+            (Kind::Plan, 'a') => cake.call(&["do", &id]).map(|_| ("approved".to_string(), true)),
+            (Kind::Plan, 'b') => {
+                let Some(due) = ui.input(title, &render, "due, soft target (2026-11-30, enter none):")? else { continue };
+                let Some(deadline) = ui.input(title, &render, "deadline, hard limit (enter none):")? else { continue };
+                let mut args = vec!["edit", id.as_str()];
                 if !due.is_empty() {
                     args.extend(["--due", &due]);
                 }
@@ -250,33 +418,28 @@ fn decide(cake: &Cake, kind: &Kind, item: &Value, all: &[Value], goal: &Value, t
                     args.extend(["--deadline", &deadline]);
                 }
                 let edit = if args.len() > 2 { cake.call(&args).map(|_| ()) } else { Ok(()) };
-                edit.and_then(|_| cake.call(&["do", id])).map(|_| "approved with dates".to_string())
+                edit.and_then(|_| cake.call(&["do", &id])).map(|_| ("approved with dates".to_string(), true))
             }
-            (Kind::Plan, "x") => cake.call(&["drop", id]).map(|_| "dropped".to_string()),
-            (Kind::Plan, comment) => cake
-                .call(&["add", "--todo", "-p", id, "-t", "reply", "-m", comment])
-                .map(|_| "comment saved, the agent reworks the plan".to_string()),
+            (Kind::Plan, 'c') => cake.call(&["drop", &id]).map(|_| ("dropped".to_string(), false)),
+            _ => continue,
         };
         match result {
-            Ok(text) => {
-                let counts = text.starts_with("answered") || text.starts_with("approved");
-                done(&text);
-                return Ok((Outcome::Next, counts));
+            Ok((text, counted)) => {
+                ui.flash = Some((text, true));
+                return Ok(Outcome::Next(counted));
             }
-            Err(e) => failed(e),
+            Err(e) => ui.flash = Some((e.to_string(), false)),
         }
     }
 }
 
-/// a step over one store: items grouped by goal, the goal with the most
-/// urgent item first, each goal with its overview
-fn step(cake: &Cake, kind: Kind, user: &str, header: &dyn Fn()) -> Result<Step, Box<dyn Error>> {
-    let mut step = Step { count: 0, shown: 0, quit: false };
+/// the items of a step in one store, grouped by goal, the goal with the
+/// most urgent item first; returns (counted, shown, quit)
+fn step(ui: &mut Ui, cake: &Cake, kind: Kind, user: &str, name: &str) -> Result<(usize, usize, bool), Box<dyn Error>> {
     let all = cake.call(&["ls", "-l"])?;
     let targets: Vec<&Value> = match kind {
         Kind::Ask => {
-            let ids: Vec<String> =
-                cake.call(&["ready", "-t", "ask"])?.iter().map(|i| str_of(i, "id").to_string()).collect();
+            let ids: Vec<String> = cake.call(&["ready", "-t", "ask"])?.iter().map(|i| str_of(i, "id").to_string()).collect();
             all.iter().filter(|i| ids.iter().any(|id| id == str_of(i, "id"))).collect()
         }
         Kind::Plan => {
@@ -291,11 +454,6 @@ fn step(cake: &Cake, kind: Kind, user: &str, header: &dyn Fn()) -> Result<Step, 
                 .collect()
         }
     };
-    step.shown = targets.len();
-    if targets.is_empty() {
-        return Ok(step);
-    }
-    header();
     let mut goals: Vec<(&Value, Vec<&Value>)> = vec![];
     for t in &targets {
         let goal = goal_of(&all, t);
@@ -306,98 +464,83 @@ fn step(cake: &Cake, kind: Kind, user: &str, header: &dyn Fn()) -> Result<Step, 
     }
     let score = |v: &&Value| v["score"].as_i64().unwrap_or(0);
     goals.sort_by_key(|(_, items)| std::cmp::Reverse(items.iter().map(score).max().unwrap_or(0)));
-    let mut n = 0;
+    let what = if kind == Kind::Ask { "Questions" } else { "Plans to approve" };
+    let (mut counted, mut n) = (0, 0);
     'goals: for (goal, items) in &goals {
-        println!();
-        overview(&all, goal, items, false);
-        for item in items {
+        for (i, item) in items.iter().enumerate() {
             n += 1;
-            let counter = format!("{}/{}", n, targets.len());
-            let (outcome, counted) = decide(cake, &kind, item, &all, goal, items, &counter)?;
-            if counted {
-                step.count += 1;
-            }
-            match outcome {
-                Outcome::Next => (),
+            let title = format!("{} {}/{}  {}", what, n, targets.len(), name);
+            match decide(ui, cake, kind, item, &all, goal, items, &title)? {
+                Outcome::Next(c) => counted += c as usize,
                 Outcome::NextGoal => {
-                    n += items.len().saturating_sub(items.iter().position(|i| str_of(i, "id") == str_of(item, "id")).unwrap_or(0) + 1);
+                    n += items.len() - i - 1;
                     continue 'goals;
                 }
-                Outcome::Quit => {
-                    step.quit = true;
-                    break 'goals;
-                }
+                Outcome::Quit => return Ok((counted, targets.len(), true)),
             }
         }
     }
-    Ok(step)
+    Ok((counted, targets.len(), false))
 }
 
-/// new tasks go to `root`; questions and planned items come from `root`,
-/// with `all` from every known store (stores.json, global)
+/// new tasks go to `root`; questions and plans come from `root`, with
+/// `all` from every known store (stores.json, global)
 pub fn run(root: &Path, user: &str, all: bool) -> Result<(), Box<dyn Error>> {
     let same = |a: &Path, b: &Path| std::fs::canonicalize(a).ok() == std::fs::canonicalize(b).ok();
     let known = crate::stores::all()?;
     let name = known.iter().find(|(_, s)| same(s, root)).map_or("this store".to_string(), |(n, _)| n.clone());
-    let mut stores: Vec<(String, std::path::PathBuf)> = vec![(name, root.to_path_buf())];
+    let mut stores: Vec<(String, PathBuf)> = vec![(name, root.to_path_buf())];
     if all {
         stores.extend(known.into_iter().filter(|(_, s)| !same(s, root)));
     }
-    let header = |name: &str| {
-        if stores.len() > 1 {
-            println!("\n{}", format!("== {} ==", name).bold());
-        }
-    };
-    let title = |t: &str| println!("\n{}", t.bold().underlined());
-
-    title(&format!("1/3 New tasks for {}", stores[0].0));
-    println!("Tasks you already know (e.g. from a paper list), one per line, empty line ends.");
-    let here = Cake { root };
-    let mut added = 0;
-    while let Some(line) = read_line("  + ")? {
-        if line.is_empty() {
-            break;
-        }
-        match here.call(&["add", "--todo", "-m", &line]) {
-            Ok(_) => {
-                done("added as todo");
-                added += 1;
+    let mut ui = Ui { term: ratatui::init(), flash: None };
+    let result = (|| -> Result<(usize, usize, usize), Box<dyn Error>> {
+        let here = Cake { root };
+        let mut added: Vec<String> = vec![];
+        let title = format!("New tasks  {}", stores[0].0);
+        loop {
+            let list = added.clone();
+            let body = |f: &mut Frame, area: Rect| {
+                let mut lines = vec![
+                    Line::from("Tasks you already know, e.g. from a paper list. Enter adds, empty enter or esc goes on."),
+                    Line::default(),
+                ];
+                lines.extend(list.iter().map(|t| Line::from(vec![Span::styled(format!("{} ", style::g().todo), dim()), Span::raw(t.clone())])));
+                f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
+            };
+            match ui.input(&title, &body, "task:")? {
+                Some(text) if !text.is_empty() => match here.call(&["add", "--todo", "-m", &text]) {
+                    Ok(_) => {
+                        added.push(text);
+                        ui.flash = None;
+                    }
+                    Err(e) => ui.flash = Some((e.to_string(), false)),
+                },
+                _ => break,
             }
-            Err(e) => failed(e),
         }
-    }
-
-    title("2/3 Questions from agents");
-    println!("They block the work they are about until you answer.");
-    let (mut answered, mut shown) = (0, 0);
-    for (name, root) in &stores {
-        let step = step(&Cake { root }, Kind::Ask, user, &|| header(name))?;
-        answered += step.count;
-        shown += step.shown;
-        if step.quit {
-            break;
+        let (mut answered, mut approved) = (0, 0);
+        'steps: for kind in [Kind::Ask, Kind::Plan] {
+            for (name, root) in &stores {
+                let (counted, _, quit) = step(&mut ui, &Cake { root }, kind, user, name)?;
+                if kind == Kind::Ask {
+                    answered += counted;
+                } else {
+                    approved += counted;
+                }
+                if quit {
+                    break 'steps;
+                }
+            }
         }
+        Ok((added.len(), answered, approved))
+    })();
+    let last_flash = ui.flash.take();
+    ratatui::restore();
+    let (added, answered, approved) = result?;
+    if let Some((text, ok)) = last_flash {
+        println!("{}", theme::fg(&text, if ok { theme::t().ok } else { theme::t().error }));
     }
-    if shown == 0 {
-        println!("{}", "  none open".dark_grey());
-    }
-
-    title("3/3 Plans to approve");
-    println!("Plans agents wrote for your notes. Approved ones are worked on, the others wait.");
-    let (mut approved, mut shown) = (0, 0);
-    for (name, root) in &stores {
-        let step = step(&Cake { root }, Kind::Plan, user, &|| header(name))?;
-        approved += step.count;
-        shown += step.shown;
-        if step.quit {
-            break;
-        }
-    }
-    if shown == 0 {
-        println!("{}", "  none waiting".dark_grey());
-    }
-
-    title("Done");
     println!("{} added, {} answered, {} approved", added, answered, approved);
     for (name, root) in &stores {
         let ready = Cake { root }.call(&["ready", "-t", "~ask,~reply"])?;

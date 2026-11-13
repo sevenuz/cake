@@ -68,7 +68,6 @@ impl Default for Raw {
 }
 
 #[derive(Clone, Copy)]
-#[allow(dead_code)] // markdown and form colors are used from the next commits on
 pub struct Theme {
     pub heading: Color,
     pub bold: Color,
