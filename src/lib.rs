@@ -660,6 +660,17 @@ fn guess_root(args: &[String]) -> Result<PathBuf, Box<dyn Error>> {
 
 /// replaces an alias in the command position with its command line, once,
 /// so an alias may override a built-in command: ls = "ls --status todo"
+/// an alias starting with `!` is a shell command (like git): its line
+/// and the remaining arguments, run with sh in the current directory
+fn shell_alias(args: &[String], aliases: &BTreeMap<String, String>) -> Option<(String, Vec<String>)> {
+    let mut i = 1;
+    while i < args.len() && args[i].starts_with('-') {
+        i += if args[i] == "--store" { 2 } else { 1 };
+    }
+    let line = aliases.get(args.get(i)?)?.strip_prefix('!')?;
+    Some((line.trim().to_string(), args[i + 1..].to_vec()))
+}
+
 fn expand_alias(args: &[String], aliases: &BTreeMap<String, String>) -> Result<Vec<String>, Box<dyn Error>> {
     let mut i = 1;
     while i < args.len() && args[i].starts_with('-') {
@@ -688,6 +699,16 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             .flat_map(|c| std::iter::once(c.get_name().to_string()).chain(c.get_all_aliases().map(String::from)))
             .collect();
         aliases.retain(|k, _| !builtin.contains(k));
+    }
+    if let Some((line, rest)) = shell_alias(&args, &aliases) {
+        // "$@" passes the remaining arguments on
+        let status = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("{} \"$@\"", line))
+            .arg("cake")
+            .args(rest)
+            .status()?;
+        std::process::exit(status.code().unwrap_or(1));
     }
     let alias_help: String = aliases
         .iter()
@@ -1033,6 +1054,18 @@ mod tests {
             s(&["cake", "ls", "--status", "todo", "-t", "x"]),
             "an alias may override a built-in, expanded once"
         );
+    }
+
+    #[test]
+    fn bang_aliases_are_shell_commands_with_the_remaining_args() {
+        let s = |v: &[&str]| v.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        let aliases: BTreeMap<String, String> =
+            [("triage".to_string(), "!claude -p 'x'".to_string()), ("rev".to_string(), "ls".to_string())].into();
+        assert_eq!(
+            shell_alias(&s(&["cake", "-g", "triage", "a", "b"]), &aliases),
+            Some(("claude -p 'x'".to_string(), s(&["a", "b"])))
+        );
+        assert_eq!(shell_alias(&s(&["cake", "rev"]), &aliases), None);
     }
 
     #[test]

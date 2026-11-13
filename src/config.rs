@@ -71,7 +71,16 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   // cake status: mine, others, ready, today, review, tag:<name>
   status: ["mine", "others", "ready", "today", "review"]
   // own commands, may override built-ins for you (not for agents):
-  // review: "ls -t review", ls: "ls --mine"
+  // check: "ls --status review", ls: "ls --mine".
+  // A line starting with ! is a shell command, like in git. The form's
+  // triage step runs the `triage` alias; examples for Claude Code:
+  //   triage: plans only, the AI may use nothing but cake:
+  //     "!claude -p --max-turns 40 --allowedTools 'Bash(cake *)' 'Triage this cake store with the cake skill: for tasks assigned to ai without subtasks, split them into subtasks or ask questions; apply answers and comments; do not implement anything; end with a short summary.'"
+  //   work: the full agent run; it edits code, so it needs Read, Edit,
+  //   Write and the build tools of the project, e.g.
+  //     "!claude -p --max-turns 80 --allowedTools 'Bash(cake *)' 'Bash(cargo *)' 'Bash(git *)' Read Edit Write 'Run the agent run of the cake skill for this store until nothing is ready or the reviews are full, then a short summary.'"
+  //   --max-turns is the emergency stop; the normal brake is max_review
+  //   in the store config.
   aliases: {}
   // characters: auto (ascii without a UTF-8 locale), unicode, ascii;
   // env CAKE_STYLE wins. Colors: theme.hjson, off with NO_COLOR.
