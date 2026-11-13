@@ -19,3 +19,5 @@ time:
 - `cake` (morning): paper todos to the current store, questions and
   planned items from all stores, one section each
 - done when: tests for lookup, registration, morning over 2 stores
+- stores.json separate from config.hjson (cake writes it, keeps your hjson comments)
+- commit: 45cf693
