@@ -28,6 +28,10 @@ your session in `sessions`, your commits are tagged `[<agent>]`.
 - **Short but complete:** titles ≤ 60 chars, bodies as bullets, no prose.
   Aim for 3–5 bullets, but use more rather than lose details; split into
   children only when parts are worked on separately.
+- **Designs agreed in chat** go into a `doc` note under the plan before
+  any implementation, complete enough to build from without the chat:
+  decisions with reasons, rejected options, exact formats and keys, edge
+  cases, an example. Bullet limits apply to plans, not to these.
 - **Readable without the chat:** the user decides in `cake`, days later.
   First bullet `why:` the problem in plain words, then what changes for
   the user, then `done when`. No internal shorthand, no bare file or
