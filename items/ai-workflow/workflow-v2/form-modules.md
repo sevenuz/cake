@@ -1,6 +1,6 @@
 ---
 id: form-modules
-status: task
+status: review
 tags: [plan]
 parent: "[[workflow-v2]]"
 blocked_by: ["[[agent-ready-rules]]"]
@@ -24,3 +24,5 @@ owner: sevenuz
 - triage: runs the `triage` alias if there is one
 - done when: each module runs alone and in the default order, tested in
   a 60 column terminal
+
+changed: cake runs config form (news, sort, answer, review, mine, triage), cake form <modules> runs single ones, dump optional, form_width; commit 5aeb0b5; try: cake form review
