@@ -64,27 +64,29 @@ fn decide(
         if !card.is_empty() {
             card.push(Line::default());
         }
-        for (n, (k, text)) in options.iter().enumerate() {
+        for (n, (_, text)) in options.iter().enumerate() {
             let chosen = sel == Some(n);
             let mark = if chosen { g.select } else { " " };
             let s = if chosen { bold().fg(t.hint) } else { Style::default() };
             card.push(Line::from(vec![
-                Span::styled(format!("{} {}) ", mark, k), Style::default().fg(t.hint)),
+                Span::styled(format!("{} {}) ", mark, n + 1), Style::default().fg(t.hint)),
                 Span::styled(text.clone(), s),
             ]));
         }
+        let k = &ui.keys;
         let key_line = if hints {
-            keys(&[("1-9 a-z", "open"), ("esc", "back")])
+            keys(&[("1-9 a-z", "open"), (&k.keys_of(Act::Back), "back")])
         } else {
-            let mut parts = vec![("a-".to_string() + &free_key.to_string(), "choose".to_string())];
-            if sel.is_some() {
-                parts.push(("enter".into(), "confirm".into()));
-            }
-            parts.push(("f".into(), "open".into()));
+            let mut parts: Vec<(String, String)> = vec![
+                (format!("1-{}", options.len()), "choose".into()),
+                (k.keys_of(Act::Confirm), "confirm".into()),
+                (k.keys_of(Act::Insert), "own words".into()),
+                (k.keys_of(Act::Hints), "open".into()),
+            ];
             if opened.is_some() {
-                parts.push(("esc".into(), "close".into()));
+                parts.push((k.keys_of(Act::Back), "close".into()));
             }
-            parts.extend([("s".into(), "skip".into()), ("?".into(), "keys".into())]);
+            parts.extend([(k.keys_of(Act::Next), "skip".into()), (k.keys_of(Act::Help), "keys".into())]);
             let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
             keys(&parts)
         };
@@ -94,59 +96,73 @@ fn decide(
             card,
             keys: key_line,
             note: note.take(),
-            help,
+            help: if help { ui.keys.help() } else { vec![] },
         };
         ui.draw(&screen)?;
-        let k = key()?;
-        if ctrl_c(&k) {
-            return Ok(Outcome::Quit);
-        }
         if help {
             help = false;
+            let _ = ui.keys.act()?;
             continue;
         }
         if hints {
             hints = false;
-            if let KeyCode::Char(c) = k.code {
+            if let TextKey::Char(c) = ui.keys.text()? {
                 if let Some((_, nid)) = HINTS.find(c).and_then(|n| tree.get(n)) {
                     opened = Some(nid.clone());
                 }
             }
             continue;
         }
-        let pick = match k.code {
-            KeyCode::Esc => {
+        let pick = match ui.keys.act()? {
+            Act::Back => {
                 opened = None;
-                sel = None;
                 continue;
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            Act::Down => {
                 sel = Some(sel.map_or(0, |s| (s + 1).min(options.len() - 1)));
                 continue;
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            Act::Up => {
                 sel = Some(sel.map_or(0, |s| s.saturating_sub(1)));
                 continue;
             }
-            KeyCode::Char('q') => return Ok(Outcome::Quit),
-            KeyCode::Char('n') => return Ok(Outcome::NextGoal),
-            KeyCode::Char('s') => return Ok(Outcome::Next(None, false)),
-            KeyCode::Char('?') => {
+            Act::Top => {
+                sel = Some(0);
+                continue;
+            }
+            Act::Bottom => {
+                sel = Some(options.len() - 1);
+                continue;
+            }
+            Act::Choose(n) if (n as usize) <= options.len() => {
+                sel = Some(n as usize - 1);
+                continue;
+            }
+            Act::Quit => return Ok(Outcome::Quit),
+            Act::SkipGoal => return Ok(Outcome::NextGoal),
+            Act::Next => return Ok(Outcome::Next(None, false)),
+            Act::Help => {
                 help = true;
                 continue;
             }
-            KeyCode::Char('f') => {
+            Act::Hints => {
                 hints = true;
                 continue;
             }
-            KeyCode::Char('i') => options.len() - 1,
-            KeyCode::Char(c) => {
-                if let Some(n) = options.iter().position(|(k, _)| *k == c) {
-                    sel = Some(n);
-                }
+            Act::Feedback => {
+                feedback(ui, &mut screen, cake, store, &format!("{} card {}", if kind == Kind::Answer { "answer" } else { "review" }, id))?;
+                note = screen.note.take();
                 continue;
             }
-            KeyCode::Enter => match sel {
+            Act::Insert => options.len() - 1,
+            // review shortcuts: c done, dd/x drop
+            Act::Complete if kind == Kind::Review => 0,
+            Act::Drop if kind == Kind::Review => 1,
+            Act::Command => match ui.input(&mut screen, ":")?.as_deref() {
+                Some("q") | Some("q!") => return Ok(Outcome::Quit),
+                _ => continue,
+            },
+            Act::Confirm => match sel {
                 Some(n) => n,
                 None => {
                     note = Some(("choose an option first".to_string(), false));

@@ -24,6 +24,7 @@ pub struct Config {
     pub scrollview_threshold: i8,
     pub form: Vec<String>,
     pub form_width: u16,
+    pub keys: BTreeMap<String, String>,
     pub usage_tracking: bool,
     pub score: crate::store::ScoreWeights,
     pub footprint: crate::footprint::Footprint,
@@ -45,6 +46,7 @@ impl Default for Config {
             scrollview_threshold: 30,
             form: crate::form::MODULES.iter().map(|m| m.to_string()).collect(),
             form_width: 100,
+            keys: BTreeMap::new(),
             usage_tracking: true,
             score: Default::default(),
             footprint: Default::default(),
@@ -97,6 +99,15 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   form: ["news", "sort", "answer", "review", "mine", "triage"]
   // widest column of the form, 0 the whole terminal
   form_width: 100
+  // form keys, vim notation, several per action; defaults:
+  //   down "j <down>", up "k <up>", top "gg <home>", bottom "G <end>",
+  //   half_down "<c-d> <pagedown>", half_up "<c-u> <pageup>",
+  //   open "l <right>", back "h <left> <esc>", confirm "<cr>", insert "i",
+  //   task "t", note "n", drop "dd x", complete "c", timer "s", who "w",
+  //   prio "p", undo "u", next "J", previous "K", skip_goal "}",
+  //   hints "f", subtree "A", feedback "F", command ":", help "?", quit "q",
+  //   escape (leaving text input) "<esc> jk"; cards choose with 1-9
+  keys: {}
 
   // tokens per item from agents (cake usage); false: the Claude hook does nothing
   usage_tracking: true

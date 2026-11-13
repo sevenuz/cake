@@ -4,10 +4,13 @@
 //! call, so agents keep working while you think.
 
 mod card;
+mod keys;
 mod table;
 
+use keys::{Act, Keymap, Text as TextKey};
+
 use crate::{error, markdown, style, theme};
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventKind};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
@@ -184,9 +187,6 @@ fn key() -> Result<KeyEvent, Box<dyn Error>> {
     }
 }
 
-fn ctrl_c(k: &KeyEvent) -> bool {
-    k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c')
-}
 
 /// what one screen shows, top to bottom in a centered column
 #[derive(Default)]
@@ -197,7 +197,8 @@ struct Screen {
     keys: Line<'static>,
     /// red error, or a neutral line like "saving"
     note: Option<(String, bool)>,
-    help: bool,
+    /// the help overlay: (keys, what), empty when closed
+    help: Vec<(String, String)>,
 }
 
 struct Ui {
@@ -209,6 +210,7 @@ struct Ui {
     total: usize,
     /// widest column (config form_width)
     max_width: u16,
+    keys: Keymap,
 }
 
 /// wrapped height of `lines` at `width`
@@ -229,19 +231,6 @@ fn keys(parts: &[(&str, &str)]) -> Line<'static> {
     Line::from(spans)
 }
 
-const HELP: &[(&str, &str)] = &[
-    ("j/k", "move (arrows too)"),
-    ("a-e", "cards: choose an option, enter confirms"),
-    ("i", "cards: own words, a comment or what should change"),
-    ("f", "cards: numbers on the tree, a number opens that item"),
-    ("o", "tables: open the text of the row"),
-    ("enter", "tables: save all decisions, go on"),
-    ("esc", "close, cancel typing; tables: go on without saving"),
-    ("s", "skip this item"),
-    ("n", "cards: skip the rest of this goal"),
-    ("q", "quit (ctrl-c too); what was saved stays"),
-    ("?", "this help"),
-];
 
 /// step names (done ones ✓, the current one big in its color) and the
 /// progress bar over all items
@@ -293,7 +282,7 @@ impl Ui {
     /// a line of text inside the card; None on esc
     fn input(&mut self, screen: &mut Screen, prompt: &str) -> Result<Option<String>, Box<dyn Error>> {
         let base = screen.card.clone();
-        let keys_before = std::mem::replace(&mut screen.keys, keys(&[("enter", "save"), ("esc", "cancel")]));
+        let keys_before = std::mem::replace(&mut screen.keys, keys(&[("<cr>", "save"), ("<esc> jk", "cancel")]));
         let mut buf = String::new();
         let result = loop {
             screen.card = base.clone();
@@ -305,16 +294,14 @@ impl Ui {
                 Span::styled("_", dim()),
             ]));
             self.draw(screen)?;
-            let k = key()?;
-            match k.code {
-                _ if ctrl_c(&k) => break None,
-                KeyCode::Enter => break Some(buf.trim().to_string()),
-                KeyCode::Esc => break None,
-                KeyCode::Backspace => {
+            match self.keys.text()? {
+                TextKey::Submit => break Some(buf.trim().to_string()),
+                TextKey::Escape => break None,
+                TextKey::Backspace => {
                     buf.pop();
                 }
-                KeyCode::Char(c) => buf.push(c),
-                _ => (),
+                TextKey::Char('\0') => (),
+                TextKey::Char(c) => buf.push(c),
             }
         };
         screen.card = base;
@@ -365,12 +352,13 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
                 let s = if *error { Style::default().fg(theme::t().error) } else { dim() };
                 f.render_widget(Paragraph::new(Span::styled(text.clone(), s)), note_a);
             }
-            if screen.help {
-                let lines: Vec<Line> = HELP
+            if !screen.help.is_empty() {
+                let lines: Vec<Line> = screen
+                    .help
                     .iter()
                     .map(|(k, what)| {
                         Line::from(vec![
-                            Span::styled(format!("{:<6}", k), Style::default().fg(theme::t().hint)),
+                            Span::styled(format!("{:<18}", k), Style::default().fg(theme::t().hint)),
                             Span::raw(what.to_string()),
                         ])
                     })
@@ -386,6 +374,18 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
                     pop,
                 );
             }
+}
+
+/// F: a note about this screen into the inbox, tag form-feedback
+fn feedback(ui: &mut Ui, screen: &mut Screen, cake: &Cake, store: &str, place: &str) -> Result<(), Box<dyn Error>> {
+    if let Some(text) = ui.input(screen, "feedback on this screen:")?.filter(|t| !t.is_empty()) {
+        let body = format!("# {}\n\n- where: {} ({})", text, place, store);
+        match ui.save(screen, || cake.call(&["add", "-t", "form-feedback", "-m", &body]))? {
+            Ok(_) => screen.note = Some(("feedback saved to the inbox".into(), false)),
+            Err(e) => screen.note = Some((e.to_string(), true)),
+        }
+    }
+    Ok(())
 }
 
 /// what the user did with one item
@@ -515,6 +515,8 @@ pub struct Options {
     pub width: u16,
     /// the triage alias exists
     pub triage: bool,
+    /// config `keys`: action -> keys in vim notation
+    pub keys: std::collections::BTreeMap<String, String>,
 }
 
 /// runs the modules on `root` (with `all`: every known store); dump goes
@@ -546,7 +548,8 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
             };
         }
     }
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), step: 0, handled: 0, total, max_width: o.width };
+    let keymap = Keymap::new(&o.keys)?;
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), step: 0, handled: 0, total, max_width: o.width, keys: keymap };
     let mut counts = vec![0usize; o.modules.len()];
     let mut run_triage = false;
     let result = (|| -> Result<(), Box<dyn Error>> {

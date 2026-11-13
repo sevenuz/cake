@@ -24,6 +24,8 @@ struct Row {
     /// sort: note, task, drop; news: ok, hold, drop; mine: start, stop, done, drop, later
     action: Option<&'static str>,
     who: Option<String>,
+    /// who it was before, to see a change
+    orig_who: Option<String>,
     due: Option<String>,
     deadline: Option<String>,
     prio: Option<u64>,
@@ -93,6 +95,7 @@ fn rows(cake: &Cake, kind: Kind, user: &str, since: i64) -> Result<Vec<Row>, Box
             what,
             action: None,
             who: i["assignee"].as_str().map(String::from),
+            orig_who: i["assignee"].as_str().map(String::from),
             due: i["due"].as_str().map(String::from),
             deadline: i["deadline"].as_str().map(String::from),
             prio: i["priority"].as_u64(),
@@ -228,23 +231,37 @@ pub(super) fn run(
     let whos = who_cycle(root, user);
     let (mut cur, mut opened, mut help, mut note) = (0usize, None::<usize>, false, None::<(String, bool)>);
     let mut quit_armed = false;
+    let page = 10usize;
     loop {
         let width = column_width(ui.term.size()?.width, ui.max_width).saturating_sub(4);
-        let key_line = match kind {
-            Kind::Sort => keys(&[
-                ("n/t/x", "note task drop"),
-                ("w", "who"),
-                ("d/D", "due deadline"),
-                ("p", "prio"),
-                ("m", "move"),
-                ("A", "subtree"),
-                ("o", "open"),
-                ("enter", "save"),
-                ("?", "keys"),
-            ]),
-            Kind::News => keys(&[("o/h/x", "ok hold drop"), ("v", "view"), ("enter", "save"), ("esc", "skip"), ("?", "keys")]),
-            Kind::Mine => keys(&[("s/d/x/l", "start done drop later"), ("w", "who"), ("o", "open"), ("enter", "save"), ("esc", "skip")]),
+        let k = &ui.keys;
+        let ks = |a: Act| k.keys_of(a);
+        let parts: Vec<(String, String)> = match kind {
+            Kind::Sort => vec![
+                (format!("{}/{}/{}", ks(Act::Task), ks(Act::Note), ks(Act::Drop)), "task note drop".into()),
+                (ks(Act::Who), "who".into()),
+                (ks(Act::Prio), "prio".into()),
+                (":due :deadline :move".into(), "".into()),
+                (ks(Act::Open), "open".into()),
+                (ks(Act::Confirm), "save".into()),
+                (ks(Act::Help), "keys".into()),
+            ],
+            Kind::News => vec![
+                (ks(Act::Who), "who (hold: back to you)".into()),
+                (ks(Act::Drop), "drop".into()),
+                (ks(Act::Open), "open".into()),
+                (ks(Act::Confirm), "save".into()),
+                (ks(Act::Back), "skip".into()),
+            ],
+            Kind::Mine => vec![
+                (format!("{}/{}/{}", ks(Act::Timer), ks(Act::Complete), ks(Act::Drop)), "start done drop".into()),
+                (ks(Act::Who), "who".into()),
+                (ks(Act::Open), "open".into()),
+                (ks(Act::Confirm), "save".into()),
+                (ks(Act::Back), "skip".into()),
+            ],
         };
+        let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
         let mut screen = Screen {
             card_title: format!(
                 "{} · {}",
@@ -256,105 +273,86 @@ pub(super) fn run(
                 store
             ),
             card: render(kind, &rows, cur, opened, width, user),
-            keys: key_line,
+            keys: keys(&parts),
             note: note.take(),
-            help,
+            help: if help { ui.keys.help() } else { vec![] },
             ..Default::default()
         };
         ui.draw(&screen)?;
-        let k = key()?;
-        if ctrl_c(&k) {
-            return Ok((0, true));
-        }
+        let act = ui.keys.act()?;
         if help {
             help = false;
             continue;
         }
         let decided = rows.iter().filter(|r| r.action.is_some() || r.move_to.is_some()).count();
-        let row = &mut rows[cur];
+        let last = rows.len() - 1;
         let mut next = false;
-        match (kind, k.code) {
-            (_, KeyCode::Down) | (_, KeyCode::Char('j')) => cur = (cur + 1).min(rows.len() - 1),
-            (_, KeyCode::Up) | (_, KeyCode::Char('k')) => cur = cur.saturating_sub(1),
-            (_, KeyCode::Char('?')) => help = true,
-            (_, KeyCode::Esc) => return Ok((0, false)),
-            (_, KeyCode::Char('q')) => {
+        match act {
+            Act::Down => cur = (cur + 1).min(last),
+            Act::Up => cur = cur.saturating_sub(1),
+            Act::Top => cur = 0,
+            Act::Bottom => cur = last,
+            Act::HalfDown => cur = (cur + page).min(last),
+            Act::HalfUp => cur = cur.saturating_sub(page),
+            Act::Help => help = true,
+            Act::Open => opened = if opened == Some(cur) { None } else { Some(cur) },
+            Act::Back if opened.is_some() => opened = None,
+            Act::Back => return Ok((0, false)),
+            Act::Quit => {
                 if decided > 0 && !quit_armed {
                     quit_armed = true;
-                    note = Some(("unsaved decisions: enter saves, q again quits without them".into(), true));
+                    note = Some(("unsaved decisions: <cr> saves, q again quits without them".into(), true));
                     continue;
                 }
                 return Ok((0, true));
             }
-            (Kind::Sort, KeyCode::Char('o')) | (Kind::Mine, KeyCode::Char('o')) | (Kind::News, KeyCode::Char('v')) => {
-                opened = if opened == Some(cur) { None } else { Some(cur) }
+            Act::Feedback => {
+                let place = format!("{} table, row {}", if kind == Kind::Sort { "sort" } else if kind == Kind::News { "news" } else { "mine" }, rows[cur].id);
+                feedback(ui, &mut screen, cake, store, &place)?;
+                note = screen.note.take();
             }
-            (Kind::Sort, KeyCode::Char('n')) => (row.action, next) = (Some("note"), true),
+            Act::Note if kind == Kind::Sort => (rows[cur].action, next) = (Some("note"), true),
             // task stays on the row: who and dates usually follow
-            (Kind::Sort, KeyCode::Char('t')) => {
-                row.action = Some("task");
-                if row.who.is_none() {
-                    row.who = Some(user.to_string());
-                }
+            Act::Task if kind == Kind::Sort => {
+                rows[cur].action = Some("task");
+                rows[cur].who.get_or_insert(user.to_string());
             }
-            (Kind::Sort, KeyCode::Char('x')) | (Kind::News, KeyCode::Char('x')) | (Kind::Mine, KeyCode::Char('x')) => {
-                (row.action, next) = (Some("drop"), true)
+            Act::Drop => (rows[cur].action, next) = (Some("drop"), true),
+            Act::Complete if kind == Kind::Mine => (rows[cur].action, next) = (Some("done"), true),
+            Act::Timer if kind == Kind::Mine => {
+                let start = rows[cur].status != "doing";
+                (rows[cur].action, next) = (Some(if start { "start" } else { "stop" }), true)
             }
-            (Kind::Sort, KeyCode::Char('w')) | (Kind::Mine, KeyCode::Char('w')) => {
+            Act::Who => {
+                let row = &mut rows[cur];
                 let at = row.who.as_ref().and_then(|w| whos.iter().position(|x| x == w));
                 row.who = Some(whos[at.map_or(0, |a| (a + 1) % whos.len())].clone());
                 if row.action.is_none() {
-                    row.action = Some(if kind == Kind::Mine { "assign" } else { "task" });
+                    row.action = Some(match kind {
+                        Kind::Sort => "task",
+                        _ => "assign",
+                    });
                 }
             }
-            (Kind::Sort, KeyCode::Char('p')) => {
+            Act::Prio if kind != Kind::News => {
+                let row = &mut rows[cur];
                 row.prio = match row.prio {
                     None => Some(1),
                     Some(3) => None,
                     Some(p) => Some(p + 1),
-                }
-            }
-            (Kind::Sort, KeyCode::Char('m')) if !stores.is_empty() => {
-                let at = row.move_to.as_ref().and_then(|m| stores.iter().position(|x| x == m));
-                row.move_to = match at {
-                    None => Some(stores[0].clone()),
-                    Some(a) if a + 1 < stores.len() => Some(stores[a + 1].clone()),
-                    Some(_) => None,
                 };
-            }
-            (Kind::Sort, KeyCode::Char(c @ ('d' | 'D'))) => {
-                let prompt = if c == 'd' { "due, soft target (fri, +3d, 30.11.; - none):" } else { "deadline, hard limit (same forms; - none):" };
-                let title = rows[cur].title.clone();
-                screen.card.push(Line::from(Span::styled(title, bold())));
-                if let Some(text) = ui.input(&mut screen, prompt)? {
-                    let value = match text.as_str() {
-                        "" => continue,
-                        "-" => None,
-                        t => match util::parse_date(t) {
-                            Ok(d) => Some(d),
-                            Err(e) => {
-                                note = Some((e, true));
-                                continue;
-                            }
-                        },
-                    };
-                    let row = &mut rows[cur];
-                    if c == 'd' { row.due = value } else { row.deadline = value }
-                    if row.action.is_none() {
-                        row.action = Some("task");
-                        row.who.get_or_insert(user.to_string());
-                    }
+                if row.action.is_none() {
+                    row.action = Some(if kind == Kind::Sort { "task" } else { "assign" });
+                    row.who.get_or_insert(user.to_string());
                 }
             }
-            (Kind::Sort, KeyCode::Char('A')) => {
-                // the row's decision for everything below it
-                let (id, r) = (row.id.clone(), row.clone());
-                let below: Vec<usize> = rows
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, x)| x.prefix == r.title && x.id != id)
-                    .map(|(n, _)| n)
-                    .collect();
+            Act::Undo => {
+                rows[cur].action = None;
+                rows[cur].move_to = None;
+            }
+            Act::Subtree if kind == Kind::Sort => {
+                let r = rows[cur].clone();
+                let below: Vec<usize> = rows.iter().enumerate().filter(|(_, x)| x.prefix == r.title && x.id != r.id).map(|(n, _)| n).collect();
                 for n in &below {
                     let x = &mut rows[*n];
                     x.action = r.action;
@@ -363,25 +361,70 @@ pub(super) fn run(
                 }
                 note = Some((format!("{} rows below took this decision", below.len()), false));
             }
-            (Kind::News, KeyCode::Char('o')) => (row.action, next) = (Some("ok"), true),
-            (Kind::News, KeyCode::Char('h')) => (row.action, next) = (Some("hold"), true),
-            (Kind::Mine, KeyCode::Char('s')) => {
-                (row.action, next) = (Some(if row.status == "doing" { "stop" } else { "start" }), true)
+            Act::Command => {
+                let Some(line) = ui.input(&mut screen, ":")? else { continue };
+                let (cmd, arg) = line.split_once(' ').map_or((line.as_str(), ""), |(c, a)| (c, a.trim()));
+                match cmd {
+                    "w" => {
+                        let n = save(ui, &mut screen, cake, kind, &rows, user)?;
+                        return Ok((n, false));
+                    }
+                    "wq" | "x" => {
+                        let n = save(ui, &mut screen, cake, kind, &rows, user)?;
+                        return Ok((n, true));
+                    }
+                    "q" if decided > 0 => note = Some(("unsaved decisions: :w saves, :q! quits without them".into(), true)),
+                    "q" | "q!" => return Ok((0, true)),
+                    "due" | "deadline" if kind != Kind::News => {
+                        let value = match arg {
+                            "" | "-" => Ok(None),
+                            a => util::parse_date(a).map(Some),
+                        };
+                        match value {
+                            Ok(v) => {
+                                let row = &mut rows[cur];
+                                if cmd == "due" { row.due = v } else { row.deadline = v }
+                                if row.action.is_none() {
+                                    row.action = Some(if kind == Kind::Sort { "task" } else { "assign" });
+                                    row.who.get_or_insert(user.to_string());
+                                }
+                            }
+                            Err(e) => note = Some((e, true)),
+                        }
+                    }
+                    "who" => match crate::config::Config::default().who(root, arg) {
+                        Ok(w) => {
+                            let w = if arg == "me" { Some(user.to_string()) } else { w };
+                            rows[cur].who = w;
+                            if rows[cur].action.is_none() {
+                                rows[cur].action = Some(if kind == Kind::Sort { "task" } else { "assign" });
+                            }
+                        }
+                        Err(e) => note = Some((e.to_string(), true)),
+                    },
+                    "prio" => match arg.parse::<u64>() {
+                        Ok(p) if (1..=3).contains(&p) => rows[cur].prio = Some(p),
+                        Ok(0) | Err(_) if arg.is_empty() || arg == "-" || arg == "0" => rows[cur].prio = None,
+                        _ => note = Some(("prio is 1, 2, 3 or - for none".into(), true)),
+                    },
+                    "move" if kind == Kind::Sort => {
+                        if stores.iter().any(|s| s == arg) {
+                            rows[cur].move_to = Some(arg.to_string());
+                        } else {
+                            note = Some((format!("no store '{}': {}", arg, stores.join(", ")), true));
+                        }
+                    }
+                    other => note = Some((format!("unknown command :{}", other), true)),
+                }
             }
-            (Kind::Mine, KeyCode::Char('d')) => (row.action, next) = (Some("done"), true),
-            (Kind::Mine, KeyCode::Char('l')) => (row.action, next) = (Some("later"), true),
-            (_, KeyCode::Char('u')) => {
-                row.action = None;
-                row.move_to = None;
-            }
-            (_, KeyCode::Enter) => {
+            Act::Confirm => {
                 let n = save(ui, &mut screen, cake, kind, &rows, user)?;
                 return Ok((n, false));
             }
             _ => (),
         }
         if next {
-            cur = (cur + 1).min(rows.len() - 1);
+            cur = (cur + 1).min(last);
         }
     }
 }
@@ -412,12 +455,6 @@ fn save(ui: &mut Ui, screen: &mut Screen, cake: &Cake, kind: Kind, rows: &[Row],
                     args.extend(["--due", &due, "--deadline", &deadline, "--prio", &prio]);
                     cake.call(&args)?;
                 }
-                (Kind::News, Some("hold")) => {
-                    cake.call(&["assign", id, "me"])?;
-                    if r.status == "doing" {
-                        cake.call(&["do", id])?;
-                    }
-                }
                 (Kind::Mine, Some("start")) => {
                     cake.call(&["start", id])?;
                 }
@@ -430,10 +467,14 @@ fn save(ui: &mut Ui, screen: &mut Screen, cake: &Cake, kind: Kind, rows: &[Row],
                 (Kind::Mine, Some("assign")) => (),
                 _ => (),
             }
-            // mine: a new who (e.g. ai) goes with any action
-            if kind == Kind::Mine && r.who.as_deref() != Some(user) {
+            // a new who (news, mine; sort sets it with the task)
+            if kind != Kind::Sort && r.who != r.orig_who {
                 if let Some(w) = &r.who {
                     cake.call(&["assign", id, w])?;
+                    // held back: a started item waits as a task
+                    if kind == Kind::News && r.status == "doing" {
+                        cake.call(&["do", id])?;
+                    }
                 }
             }
             if let Some(to) = &r.move_to {
