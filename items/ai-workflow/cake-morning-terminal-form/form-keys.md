@@ -17,6 +17,12 @@ time:
 Agreed with the user on 2026-11-14. Every form module follows this; a
 change to the form is checked against it first.
 
+## Model (like lazygit panels, aerc mail lists)
+- modules are tabs in the header; h/l walk them, empty ones are passed
+- items inside a module: j/k (rows, options), J/K (cards, like aerc's
+  next/previous message), <c-d>/<c-u> scroll long text
+- leaving a table with h/l saves it, like leaving a field; u undoes a row
+
 ## Principles
 - vim first: motions, modes, operators and : commands mean what they mean
   in vim; domain actions take letters vim leaves free in a list
@@ -29,11 +35,13 @@ change to the form is checked against it first.
 ## Normal mode
 | keys | action | where |
 |---|---|---|
+| h l, <left> <right> | previous, next module (tables save first) | all |
 | j k, <down> <up> | down, up (rows; options in cards) | all |
+| J K | next, previous item | cards |
 | gg G | first, last | all |
-| <c-d> <c-u> | half a page down, up | all |
-| l <right> | open the item's text under its line | all |
-| h <left> <esc> | close, back | all |
+| <c-d> <c-u> | scroll the card text half a page | all |
+| o <space> | open the row's text under it | tables |
+| <esc> | close, cancel (never leaves the module) | all |
 | <cr> | cards: confirm the chosen option; tables: save all | all |
 | 1-9 | cards: choose option n (enter confirms) | cards |
 | i | insert text: own answer, comment, change request | all |
@@ -45,7 +53,6 @@ change to the form is checked against it first.
 | w | who: cycle you, ai, agents, people | sort, mine, news |
 | p | prio: cycle 1, 2, 3, none | sort, mine |
 | u | undo the row's decision | tables |
-| J K | next, previous item without deciding | cards |
 | } | skip the rest of this goal | cards |
 | f | hint keys on the tree, a key opens that item | cards |
 | F | feedback on this screen (an inbox item, tag form-feedback) | all |
@@ -89,3 +96,4 @@ help, quit, escape). Several keys per action, space separated.
   scenarios pass, screen page reviewed by the user
 
 changed: vim-like keymap in all modules (1-9 options, dd/x drop, :due/:who/:move, jk leaves text), config keys, F feedback, scenario test; commits ea3ace7, bfda786; screens: https://claude.ai/artifact/32aUj3LK2Bgds1a5zSS85h; try: cake, then ? for all keys
+
