@@ -20,3 +20,4 @@ time:
   ls keep their look (theme colors)
 - commits: eef986f theme, a038543 markdown+pager (termimad gone), 3cc0626 TUI form
 - release binary 2.84 MB -> 1.77 MB
+- try: `cake` (form), `cake show ai-workflow` (markdown), colors in ~/.config/cake/theme.hjson
