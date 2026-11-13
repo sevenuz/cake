@@ -1,5 +1,6 @@
 ---
 id: skill-v2
+status: todo
 tags: [plan, skill]
 parent: "[[workflow-v2]]"
 blocked_by: ["[[agent-ready-rules]]"]
