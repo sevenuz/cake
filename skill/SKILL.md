@@ -139,7 +139,8 @@ cake block <id> --by <ids> --json       # unblock removes
 cake rm <ids> --json
 ```
 
-Ids: any unique prefix (≥ 2 chars) works. Selectors (and; `--or`): `-s TEXT`,
+Ids: any unique prefix (≥ 2 chars) works; several ids comma separated
+(`cake done a,b`), never space separated. Selectors (and; `--or`): `-s TEXT`,
 `--status todo,doing|done|dropped|none` (none = notes), `-t tag,~not`,
 `-p PARENT`, `--mine`, `--by NAME`, `--ready`, `--blocked`, `--childless`,
 `-A` (with done/dropped).
