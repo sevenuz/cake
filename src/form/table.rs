@@ -539,7 +539,7 @@ mod tests {
         };
         let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 22)).unwrap();
         let names: Vec<String> = ["news", "sort", "answer"].iter().map(|s| s.to_string()).collect();
-        term.draw(|f| paint(f, &header(&names, 1, 1, 6, 72), &screen, 1, 100)).unwrap();
+        term.draw(|f| paint(f, &header(&names, &[0, 5, 1], 1, 1, 6, 72), &screen, 1, 100)).unwrap();
         let buf = term.backend().buffer().clone();
         let lines: Vec<String> = (0..buf.area.height)
             .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string())

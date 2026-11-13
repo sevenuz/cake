@@ -213,6 +213,8 @@ struct Ui {
     term: DefaultTerminal,
     /// the modules of this run, `step` the current one
     names: Vec<String>,
+    /// how many items each module had at the start
+    counts: Vec<usize>,
     step: usize,
     handled: usize,
     total: usize,
@@ -242,19 +244,21 @@ fn keys(parts: &[(&str, &str)]) -> Line<'static> {
 
 /// step names (done ones ✓, the current one big in its color) and the
 /// progress bar over all items
-fn header(names: &[String], step: usize, handled: usize, total: usize, width: u16) -> Vec<Line<'static>> {
+fn header(names: &[String], counts: &[usize], step: usize, handled: usize, total: usize, width: u16) -> Vec<Line<'static>> {
         let g = style::g();
         let mut steps = vec![];
         for (n, name) in names.iter().enumerate() {
             if n > 0 {
                 steps.push(Span::styled(" · ", dim()));
             }
-            steps.push(if n < step {
-                Span::styled(format!("{} {}", g.check, name), dim())
-            } else if n == step {
-                Span::styled(name.to_uppercase(), bold().fg(step_color(n)))
+            // the count says where something waits; triage and dump have none
+            let count = counts.get(n).filter(|_| !matches!(name.as_str(), "triage" | "dump")).map_or(String::new(), |c| format!(" {}", c));
+            steps.push(if n == step {
+                Span::styled(format!("{}{}", name.to_uppercase(), count), bold().fg(step_color(n)))
+            } else if counts.get(n) == Some(&0) && !matches!(name.as_str(), "triage" | "dump") {
+                Span::styled(format!("{}{}", name, count), dim())
             } else {
-                Span::styled(name.to_string(), dim())
+                Span::styled(format!("{}{}", name, count), Style::default().fg(step_color(n)))
             });
         }
         let count = format!(" {} / {}", handled, total);
@@ -272,7 +276,7 @@ impl Ui {
     fn draw(&mut self, screen: &Screen) -> Result<(), Box<dyn Error>> {
         let size = self.term.size()?;
         let col_w = column_width(size.width, self.max_width);
-        let header_lines = header(&self.names, self.step, self.handled, self.total, col_w.saturating_sub(4));
+        let header_lines = header(&self.names, &self.counts, self.step, self.handled, self.total, col_w.saturating_sub(4));
         let (step, max) = (self.step, self.max_width);
         self.term.draw(|f| paint(f, &header_lines, screen, step, max))?;
         Ok(())
@@ -409,12 +413,13 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
     }
 }
 
-/// F: a note about this screen into the inbox, tag form-feedback
+/// F: feedback on this screen as a task for the AI (tag form-feedback),
+/// so it does not wait in the user's own inbox
 fn feedback(ui: &mut Ui, screen: &mut Screen, cake: &Cake, store: &str, place: &str) -> Result<(), Box<dyn Error>> {
     if let Some(text) = ui.input(screen, "feedback on this screen:")?.filter(|t| !t.is_empty()) {
         let body = format!("# {}\n\n- where: {} ({})", text, place, store);
-        match ui.save(screen, || cake.call(&["add", "-t", "form-feedback", "-m", &body]))? {
-            Ok(_) => screen.note = Some(("feedback saved to the inbox".into(), false)),
+        match ui.save(screen, || cake.call(&["add", "--task", "--assignee", "ai", "-t", "form-feedback", "-m", &body]))? {
+            Ok(_) => screen.note = Some(("feedback saved as a task for the AI".into(), false)),
             Err(e) => screen.note = Some((e.to_string(), true)),
         }
     }
@@ -517,6 +522,39 @@ fn last_run(root: &Path) -> i64 {
     last_run_file(root).and_then(|f| std::fs::read_to_string(f).ok()).and_then(|s| s.trim().parse().ok()).unwrap_or(0)
 }
 
+/// a screen without items (empty module, triage, the end): waits for a
+/// module move or quit; <cr> counts as `go` when `go` is given
+fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, go: Option<&str>) -> Result<Leave, Box<dyn Error>> {
+    let k = |a: Act| ui.keys.keys_of(a);
+    let mut parts = vec![];
+    if let Some(go) = go {
+        parts.push((k(Act::Confirm), go.to_string()));
+    }
+    parts.push((format!("{}/{}", k(Act::PrevModule), k(Act::NextModule)), "module".into()));
+    parts.push((k(Act::Quit), "quit".into()));
+    let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+    let mut help = false;
+    loop {
+        let screen = Screen {
+            card_title: title.to_string(),
+            card: lines.clone(),
+            keys: keys(&parts),
+            help: if help { ui.keys.help() } else { vec![] },
+            ..Default::default()
+        };
+        ui.draw(&screen)?;
+        help = false;
+        match ui.keys.act()? {
+            Act::PrevModule => return Ok(Leave::Prev),
+            Act::NextModule => return Ok(Leave::Next),
+            Act::Quit => return Ok(Leave::Quit),
+            Act::Confirm if go.is_some() => return Ok(Leave::Done),
+            Act::Help => help = true,
+            _ => (),
+        }
+    }
+}
+
 /// dump: one new item per line into the inbox of `root`
 fn dump(ui: &mut Ui, here: &Cake, store: &str) -> Result<usize, Box<dyn Error>> {
     let mut added: Vec<String> = vec![];
@@ -579,12 +617,12 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         stores.extend(known.into_iter().filter(|(_, s)| !same(s, root)));
     }
     let since: Vec<i64> = stores.iter().map(|(_, r)| last_run(r)).collect();
-    // count first, for the progress bar
-    let mut total = 0;
+    // count first: per module for the header, all for the progress bar
+    let mut per_module = vec![0usize; o.modules.len()];
     for ((_, root), since) in stores.iter().zip(&since) {
         let cake = Cake { root };
-        for m in &o.modules {
-            total += match m.as_str() {
+        for (n, m) in o.modules.iter().enumerate() {
+            per_module[n] += match m.as_str() {
                 "news" => table::count(&cake, table::Kind::News, user, *since)?,
                 "sort" => table::count(&cake, table::Kind::Sort, user, *since)?,
                 "mine" => table::count(&cake, table::Kind::Mine, user, *since)?,
@@ -594,8 +632,9 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
             };
         }
     }
+    let total = per_module.iter().sum();
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), step: 0, handled: 0, total, max_width: o.width, keys: keymap };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap };
     let mut counts = vec![0usize; o.modules.len()];
     let mut run_triage = false;
     let result = (|| -> Result<(), Box<dyn Error>> {
@@ -603,14 +642,33 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         // direction of travel
         let mut n = 0usize;
         let mut back = false;
+        let mut walked = false;
         while n < o.modules.len() {
             let m = &o.modules[n];
             ui.step = n;
             let leave = match m.as_str() {
-                "triage" => {
-                    run_triage = o.triage;
-                    Leave::Empty
+                // never on its own: only <cr> here starts it
+                "triage" if o.triage => {
+                    let lines = vec![
+                        Line::from("Runs your triage alias (claude -p ...) for this store once the form closes."),
+                        Line::from(Span::styled("It can take a few minutes; its answer is printed here in the terminal.", dim())),
+                    ];
+                    let l = still(&mut ui, "triage", lines, Some("run triage, close the form"))?;
+                    if l == Leave::Done {
+                        run_triage = true;
+                        return Ok(());
+                    }
+                    l
                 }
+                "triage" => still(
+                    &mut ui,
+                    "triage",
+                    vec![
+                        Line::from("No triage alias configured."),
+                        Line::from(Span::styled("config.default.hjson shows an example under aliases.", dim())),
+                    ],
+                    None,
+                )?,
                 "dump" => {
                     counts[n] += dump(&mut ui, &Cake { root }, &stores[0].0)?;
                     Leave::Done
@@ -645,6 +703,26 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
                     leave
                 }
             };
+            // an empty module is passed when the flow gets there by itself,
+            // but shows when the user walks there with h/l
+            let leave = if leave == Leave::Empty && walked {
+                still(&mut ui, &format!("{} · nothing here", m), vec![Line::from(Span::styled("Nothing waits here right now.", dim()))], None)?
+            } else {
+                leave
+            };
+            // after the last module: an end screen instead of closing by accident
+            let leave = if n + 1 == o.modules.len() && matches!(leave, Leave::Next | Leave::Done | Leave::Empty) {
+                let summary: Vec<String> = o.modules.iter().zip(&counts).filter(|(_, c)| **c > 0).map(|(m, c)| format!("{} {}", m, c)).collect();
+                let text = if summary.is_empty() { "Nothing decided this time.".to_string() } else { format!("Decided: {}.", summary.join(", ")) };
+                match still(&mut ui, "end of the form", vec![Line::from(text), Line::from(Span::styled("q closes the form, h goes back.", dim()))], None)? {
+                    Leave::Prev => Leave::Prev,
+                    Leave::Quit => Leave::Quit,
+                    _ => continue,
+                }
+            } else {
+                leave
+            };
+            walked = matches!(leave, Leave::Prev | Leave::Next);
             match leave {
                 Leave::Quit => return Ok(()),
                 Leave::Prev => {
@@ -717,7 +795,7 @@ mod tests {
                 ..Default::default()
             };
             let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 24)).unwrap();
-            term.draw(|f| paint(f, &header(&["news".into(), "sort".into(), "answer".into()], 2, 2, 5, 52), &screen, 2, 100)).unwrap();
+            term.draw(|f| paint(f, &header(&["news".into(), "sort".into(), "answer".into()], &[0, 2, 3], 2, 2, 5, 52), &screen, 2, 100)).unwrap();
             let buf = term.backend().buffer().clone();
             (0..buf.area.height)
                 .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string())
@@ -755,7 +833,7 @@ mod screens {
         let names: Vec<String> = MODULES.iter().map(|m| m.to_string()).collect();
         let col = column_width(width, 100);
         let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 26)).unwrap();
-        term.draw(|f| paint(f, &header(&names, step, 3, 9, col.saturating_sub(4)), screen, step, 100)).unwrap();
+        term.draw(|f| paint(f, &header(&names, &[1, 4, 1, 1, 2, 0], step, 3, 9, col.saturating_sub(4)), screen, step, 100)).unwrap();
         let buf = term.backend().buffer().clone();
         let mut lines: Vec<String> = (0..buf.area.height)
             .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string())

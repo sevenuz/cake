@@ -94,7 +94,8 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   scrollview_threshold: 30
   // modules of `cake` in order: news (what agents did), sort (inbox and
   // tasks without assignee), answer (questions for you), review (your
-  // finished work), mine (your tasks), triage (runs the triage alias),
+  // finished work), mine (your tasks), triage (runs the triage alias,
+  // only when you press enter there),
   // dump (type ideas into the inbox); `cake form review` runs one
   form: ["news", "sort", "answer", "review", "mine", "triage"]
   // widest column of the form, 0 the whole terminal

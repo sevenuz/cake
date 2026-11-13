@@ -89,8 +89,8 @@ keys = [
     "i", "may", "jk", "2", "\r",
     # review: c is done
     "c",
-    # mine: hand the task to ai, save
-    "w", "\r",
+    # mine: hand the task to ai, save; triage (no alias) and the end screen
+    "w", "\r", "l", "l", "q",
 ]
 form(keys)
 first, second = item("pass"), item("blog")
@@ -100,19 +100,26 @@ check("sort: the other one a note", note["status"] is None)
 check("answer: jk left the text, option 2 saved", item("raw")["status"] == "done" and "answer: b) with -d" in item("raw")["body"])
 check("review: c closed it", item("feat")["status"] == "done")
 check("mine: handed to ai", item("land")["assignee"] == "ai")
-print(f"keys: {len(keys)} for 6 decisions ({len(keys) / 6:.1f} per decision)")
+decisions = len(keys) - 3  # the last three only walk to the end
+print(f"keys: {decisions} for 6 decisions ({decisions / 6:.1f} per decision)")
 
 # the next morning: what the agent did since, held back to the user
 time.sleep(1.1)
 cake("add", "new", "--task", "-p", "sync", "--assignee", "claude-code", "-m", "# a new subtask", agent=True)
-form(["w", "\r", "l", "l", "l", "l"])
+form(["w", "\r"] + ["l"] * 7 + ["q"])
 check("news: hold gives it back to the user", item("new")["assignee"] == "jul")
 
 # h and l: leave sort without deciding, come back over the empty modules
 cake("add", "zz", "-m", "# idea for later")
 cake("add", "mytask", "--task", "--assignee", "me", "-m", "# my task")
-form(["l", "h", "t", "\r", "l", "l"])
+form(["l", "h", "t", "\r"] + ["l"] * 6 + ["q"])
 check("h/l: back in sort, the idea became a task", item("zz")["status"] == "task")
+
+# F on a screen: feedback becomes a task for the AI, not an inbox item
+cake("add", "yy", "-m", "# another idea")
+form(["F", "too many columns\r", "q", "q"])
+fb = [i for i in cake("ls", "-t", "form-feedback")["items"]]
+check("F: feedback is a task for ai", len(fb) == 1 and fb[0]["status"] == "task" and fb[0]["assignee"] == "ai")
 
 subprocess.run(["rm", "-rf", TMP])
 sys.exit(1 if failures else 0)

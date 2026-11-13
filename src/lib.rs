@@ -977,7 +977,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
         Some(Commands::Comment { id, .. }) => {
             let text = message.ok_or_else(|| error::invalid("No comment, use -m TEXT (- for stdin)."))?;
-            commands::comment(&mut store, id, &config.user(&root), &text)?
+            commands::comment(&mut store, id, &config.author(&root), &text)?
         }
         Some(Commands::List { selector, long, all }) => {
             let mut selector = selector.selector(&selector.ids)?;
