@@ -1,5 +1,6 @@
 ---
 id: statuses-and-assignee
+status: todo
 tags: [plan]
 parent: "[[workflow-v2]]"
 created: 2026-11-13T23:04:17+01:00
