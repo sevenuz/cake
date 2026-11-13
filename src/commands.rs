@@ -3,7 +3,7 @@ use crate::item::{Item, Status};
 use crate::store::Store;
 use crate::view;
 use crate::Selector;
-use crate::{error, git, out, say, util};
+use crate::{error, git, out, say, style, util};
 use std::error::Error;
 use std::collections::HashSet;
 use std::fs;
@@ -414,11 +414,11 @@ pub fn status(config: &Config, store: &Store) -> Result<Report, Box<dyn Error>> 
             "mine" => parts.extend(mine.iter().map(|(i, s)| {
                 let mut title: String = i.title().chars().take(24).collect();
                 if title.len() < i.title().len() {
-                    title.push('…');
+                    title.push_str(style::g().more);
                 }
-                format!("▶ {} {} {}", short[i.id()], title, hm(*s))
+                format!("{} {} {} {}", style::g().running, short[i.id()], title, hm(*s))
             })),
-            "others" if others > 0 => parts.push(format!("▶ {} others", others)),
+            "others" if others > 0 => parts.push(format!("{} {} others", style::g().running, others)),
             "ready" if ready > 0 => parts.push(format!("ready {}", ready)),
             "today" if today > 0 => parts.push(format!("today {}", hm(today))),
             s if s.starts_with("tag:") => {
@@ -433,7 +433,7 @@ pub fn status(config: &Config, store: &Store) -> Result<Report, Box<dyn Error>> 
         }
     }
     if !parts.is_empty() {
-        say!("{}", parts.join(" · "));
+        say!("{}", parts.join(style::g().sep));
     }
     let mine: Vec<_> = mine
         .iter()
@@ -500,7 +500,7 @@ where
             .join("\n---\n");
         view::print(&config, text)?;
     } else if !out::json() {
-        let color = std::io::stdout().is_terminal();
+        let color = style::color();
         let short = store.short_ids();
         for (prefix, id) in &order {
             println!("{}{}", prefix, line(store.get_item(id).unwrap(), &short[id], color));
@@ -539,8 +539,9 @@ fn tree(store: &Store, ids: &HashSet<String>) -> Vec<(String, String)> {
         );
         for (n, c) in children.iter().enumerate() {
             let last = n + 1 == children.len();
-            let own = format!("{}{}", prefix.1, if last { "└─ " } else { "├─ " });
-            let below = format!("{}{}", prefix.1, if last { "   " } else { "│  " });
+            let g = style::g();
+            let own = format!("{}{}", prefix.1, if last { g.last } else { g.branch });
+            let below = format!("{}{}", prefix.1, if last { g.space } else { g.pipe });
             walk(store, ids, sorted, c, (&own, &below), out);
         }
     }
@@ -559,22 +560,23 @@ fn tree(store: &Store, ids: &HashSet<String>) -> Vec<(String, String)> {
 
 /// one list line: status marker, short id, title, tags
 fn line(item: &Item, short: &str, color: bool) -> String {
+    let g = style::g();
     let marker = match item.status() {
-        None => "·",
-        Some(Status::Todo) => "○",
-        Some(Status::Doing) if item.is_started() => "▶",
-        Some(Status::Doing) => "◐",
-        Some(Status::Done) => "✓",
-        Some(Status::Dropped) => "✗",
+        None => g.note,
+        Some(Status::Todo) => g.todo,
+        Some(Status::Doing) if item.is_started() => g.running,
+        Some(Status::Doing) => g.doing,
+        Some(Status::Done) => g.done,
+        Some(Status::Dropped) => g.dropped,
     };
     let tags: String = item.tags().iter().map(|t| format!(" #{}", t)).collect();
     let open = item.status().map_or(true, |s| s.is_open());
     if !color {
         return format!("{} {} {}{}", marker, short, item.title(), tags);
     }
-    let marker = match marker {
-        "▶" => marker.green().bold(),
-        "◐" => marker.yellow(),
+    let marker = match item.status() {
+        Some(Status::Doing) if item.is_started() => marker.green().bold(),
+        Some(Status::Doing) => marker.yellow(),
         _ => marker.stylize(),
     };
     let title = if open { item.title().stylize() } else { item.title().dark_grey() };
@@ -594,7 +596,7 @@ where
             let ids: HashSet<String> = item.children().iter().cloned().collect();
             let children = tree(store, &ids);
             if !children.is_empty() && !out::json() {
-                let color = std::io::stdout().is_terminal();
+                let color = style::color();
                 print!("{}", if item.content().ends_with('\n') { "\n" } else { "\n\n" });
                 let short = store.short_ids();
                 for (prefix, id) in children {

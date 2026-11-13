@@ -65,7 +65,9 @@ pub fn print(config: &Config, text: String) -> Result<(), Box<dyn Error>> {
         print!("{}", text);
         return Ok(());
     }
-    let skin = config.build_skin()?;
+    let mut skin = if crate::style::color() { config.build_skin()? } else { termimad::MadSkin::no_style() };
+    skin.bullet.set_char(crate::style::g().bullet);
+    skin.horizontal_rule.set_char(crate::style::g().rule);
     if config.scrollview_threshold > -1
         && text.lines().count() > config.scrollview_threshold.try_into()?
     {

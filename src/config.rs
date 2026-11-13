@@ -46,6 +46,10 @@ pub struct Config {
     /// store's .cake/config.hjson overrides them
     #[serde(default)]
     pub aliases: BTreeMap<String, String>,
+    /// characters: auto (ascii without a UTF-8 locale), unicode or ascii;
+    /// env CAKE_STYLE wins. Color follows NO_COLOR and the terminal.
+    #[serde(default = "default_style")]
+    pub style: String,
     /// searches in config dir for skin file (hjson)
     skin_file_name: String,
     /// When output has more lines than the threshold, then show it in scrollview
@@ -85,6 +89,10 @@ fn default_agent_env() -> Vec<String> {
 
 fn default_session_env() -> Vec<String> {
     vec!["CAKE_SESSION".to_string(), "CLAUDE_CODE_SESSION_ID".to_string()]
+}
+
+fn default_style() -> String {
+    "auto".to_string()
 }
 
 fn default_status() -> Vec<String> {
@@ -166,6 +174,7 @@ impl Config {
                 session_env: default_session_env(),
                 aliases: BTreeMap::new(),
                 status: default_status(),
+                style: default_style(),
                 skin_file_name: "gruvbox.hjson".to_string(),
                 scrollview_threshold: 30,
             })

@@ -58,6 +58,8 @@ impl Env {
             .env_remove("AI_AGENT")
             .env_remove("CAKE_SESSION")
             .env_remove("CLAUDE_CODE_SESSION_ID")
+            .env("CAKE_STYLE", "unicode")
+            .env_remove("NO_COLOR")
             .envs(identity())
             .envs(envs.iter().copied())
             .output()

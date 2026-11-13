@@ -8,6 +8,7 @@ mod out;
 mod selector;
 mod store;
 mod stores;
+mod style;
 #[cfg(test)]
 mod test_support;
 mod util;
@@ -552,6 +553,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = args().collect();
     out::set_json(args.iter().any(|a| a == "--json")); // for errors before parsing
     let config = Config::new()?;
+    style::init(&config.style);
     let mut aliases = config.aliases(&guess_root(&args)?)?;
     // agents and the morning form get the documented built-ins
     if config.agent().is_some() || std::env::var_os(morning::PLAIN_ENV).is_some() {

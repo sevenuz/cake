@@ -203,6 +203,21 @@ fn separate_store_is_found_from_its_dir_and_subtrees_move_between_stores() {
 }
 
 #[test]
+fn ascii_style_replaces_every_special_character() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "par", "--todo", "-m", "# parent"]);
+    env.cake_ok(&d, &["add", "kid", "-p", "par", "-m", "# kid"]);
+    env.cake_ok(&d, &["add", "end", "-p", "par", "--todo", "-m", "# end"]);
+    env.cake_ok(&d, &["done", "end"]);
+    let out = |style: &str| String::from_utf8(env.cake_env(&d, &["ls", "-A"], &[("CAKE_STYLE", style)]).stdout).unwrap();
+    assert_eq!(out("ascii"), "o pa parent\n|- x en end\n\\- - ki kid\n");
+    assert_eq!(out("unicode"), "○ pa parent\n├─ ✓ en end\n└─ · ki kid\n");
+    let show = String::from_utf8(env.cake_env(&d, &["show", "par"], &[("CAKE_STYLE", "ascii")]).stdout).unwrap();
+    assert!(show.is_ascii(), "{}", show);
+}
+
+#[test]
 fn ls_filters_by_text_status_and_blockers() {
     let env = Env::new();
     let d = env.plain_store();

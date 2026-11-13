@@ -301,7 +301,7 @@ impl Item {
         if !self.blocked_by.is_empty() {
             meta.push(format!("blocked by {}", self.blocked_by.join(", ")));
         }
-        format!("{}\n\n{}", meta.join(" · "), self.content)
+        format!("{}\n\n{}", meta.join(crate::style::g().sep), self.content)
     }
 
     pub fn id(&self) -> &String {
