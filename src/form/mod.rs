@@ -1,5 +1,10 @@
-//! `cake morning`: a guided pass over what needs you. Every change runs as
-//! its own `cake` call, so agents keep working while you think.
+//! `cake` / `cake form`: a guided pass over what needs you, made of
+//! modules (news, sort, answer, review, mine, triage, dump) run in the
+//! configured order or one by one. Every change runs as its own `cake`
+//! call, so agents keep working while you think.
+
+mod card;
+mod table;
 
 use crate::{error, markdown, style, theme};
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -155,31 +160,10 @@ fn overview(all: &[Value], goal: &Value, targets: &[&Value]) -> Vec<(String, Str
     out
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum Kind {
-    /// agents' questions: an option or own words
-    Ask,
-    /// work agents finished (tag review): ok, drop or change
-    Review,
-    /// agents' plans: approve, with dates, drop or a comment
-    Plan,
-}
-
-const STEPS: [&str; 4] = ["new tasks", "questions", "check", "plans"];
-
-impl Kind {
-    fn step(self) -> usize {
-        match self {
-            Kind::Ask => 1,
-            Kind::Review => 2,
-            Kind::Plan => 3,
-        }
-    }
-}
-
 fn step_color(step: usize) -> Color {
     let t = theme::t();
-    [t.hint, t.question, t.ok, t.heading].get(step).copied().unwrap_or(t.heading)
+    let colors = [t.hint, t.heading, t.question, t.ok, t.doing, t.code];
+    colors[step % colors.len()]
 }
 
 fn dim() -> Style {
@@ -218,9 +202,13 @@ struct Screen {
 
 struct Ui {
     term: DefaultTerminal,
+    /// the modules of this run, `step` the current one
+    names: Vec<String>,
     step: usize,
     handled: usize,
     total: usize,
+    /// widest column (config form_width)
+    max_width: u16,
 }
 
 /// wrapped height of `lines` at `width`
@@ -242,23 +230,25 @@ fn keys(parts: &[(&str, &str)]) -> Line<'static> {
 }
 
 const HELP: &[(&str, &str)] = &[
-    ("a-e", "choose an option (j/k or arrows move)"),
-    ("enter", "confirm the chosen option"),
-    ("i", "own words, a comment or what should change"),
-    ("f", "show numbers on the tree, a number opens that item"),
-    ("esc", "close an opened item, cancel typing"),
+    ("j/k", "move (arrows too)"),
+    ("a-e", "cards: choose an option, enter confirms"),
+    ("i", "cards: own words, a comment or what should change"),
+    ("f", "cards: numbers on the tree, a number opens that item"),
+    ("o", "tables: open the text of the row"),
+    ("enter", "tables: save all decisions, go on"),
+    ("esc", "close, cancel typing; tables: go on without saving"),
     ("s", "skip this item"),
-    ("n", "skip the rest of this goal"),
-    ("q", "quit (ctrl-c too), everything chosen is saved"),
+    ("n", "cards: skip the rest of this goal"),
+    ("q", "quit (ctrl-c too); what was saved stays"),
     ("?", "this help"),
 ];
 
 /// step names (done ones ✓, the current one big in its color) and the
 /// progress bar over all items
-fn header(step: usize, handled: usize, total: usize, width: u16) -> Vec<Line<'static>> {
+fn header(names: &[String], step: usize, handled: usize, total: usize, width: u16) -> Vec<Line<'static>> {
         let g = style::g();
         let mut steps = vec![];
-        for (n, name) in STEPS.iter().enumerate() {
+        for (n, name) in names.iter().enumerate() {
             if n > 0 {
                 steps.push(Span::styled(" · ", dim()));
             }
@@ -284,10 +274,10 @@ fn header(step: usize, handled: usize, total: usize, width: u16) -> Vec<Line<'st
 impl Ui {
     fn draw(&mut self, screen: &Screen) -> Result<(), Box<dyn Error>> {
         let size = self.term.size()?;
-        let col_w = size.width.saturating_sub(2).clamp(size.width.min(20), 72);
-        let header_lines = header(self.step, self.handled, self.total, col_w.saturating_sub(4));
-        let step = self.step;
-        self.term.draw(|f| paint(f, &header_lines, screen, step))?;
+        let col_w = column_width(size.width, self.max_width);
+        let header_lines = header(&self.names, self.step, self.handled, self.total, col_w.saturating_sub(4));
+        let (step, max) = (self.step, self.max_width);
+        self.term.draw(|f| paint(f, &header_lines, screen, step, max))?;
         Ok(())
     }
 
@@ -333,11 +323,17 @@ impl Ui {
     }
 }
 
+/// the column: the whole width minus a margin, at most `max` (0: no limit)
+fn column_width(area: u16, max: u16) -> u16 {
+    let w = area.saturating_sub(2).max(area.min(20));
+    if max == 0 { w } else { w.min(max) }
+}
+
 /// a screen into frame `f`: header box, tree, card, keys, note, help
-fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen, step: usize) {
+fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen, step: usize, max: u16) {
     let g = style::g();
             let area = f.area();
-            let width = area.width.saturating_sub(2).clamp(area.width.min(20), 72);
+            let width = column_width(area.width, max);
             let col = Rect { x: area.x + (area.width - width) / 2, y: area.y, width, height: area.height };
             let inner = width.saturating_sub(4);
             let tree_h = (screen.tree.len() as u16).min(col.height / 3);
@@ -457,264 +453,6 @@ fn tree_lines(
     out
 }
 
-/// one item: tree on top, the card with its options below; keys choose,
-/// enter confirms
-#[allow(clippy::too_many_arguments)]
-fn decide(
-    ui: &mut Ui,
-    cake: &Cake,
-    kind: Kind,
-    item: &Value,
-    all: &[Value],
-    goal: &Value,
-    targets: &[&Value],
-    decided: &std::collections::HashMap<String, String>,
-    store: &str,
-) -> Result<Outcome, Box<dyn Error>> {
-    let t = theme::t();
-    let g = style::g();
-    let id = str_of(item, "id").to_string();
-    let body = body_of(item);
-    let (context, mut options) = match kind {
-        Kind::Ask => split_options(&body),
-        Kind::Plan => (body.clone(), vec![('a', "approve".into()), ('b', "approve with dates".into()), ('c', "drop".into())]),
-        Kind::Review => (body.clone(), vec![('a', "ok, done".into()), ('b', "drop".into())]),
-    };
-    let free = match kind {
-        Kind::Ask => "own words",
-        Kind::Plan => "comment for the agent",
-        Kind::Review => "change something",
-    };
-    let free_key = (b'a' + options.len() as u8) as char;
-    options.push((free_key, format!("{} {}", g.ellipsis, free)));
-    let tree = overview(all, goal, targets);
-    let width = ui.term.size()?.width.saturating_sub(2).min(72);
-    let (mut sel, mut hints, mut help) = (None::<usize>, false, false);
-    let mut opened: Option<String> = None;
-    let mut note: Option<(String, bool)> = None;
-    loop {
-        let mut card = markdown::render(&context, width.saturating_sub(4));
-        if !card.is_empty() {
-            card.push(Line::default());
-        }
-        for (n, (k, text)) in options.iter().enumerate() {
-            let chosen = sel == Some(n);
-            let mark = if chosen { g.select } else { " " };
-            let s = if chosen { bold().fg(t.hint) } else { Style::default() };
-            card.push(Line::from(vec![
-                Span::styled(format!("{} {}) ", mark, k), Style::default().fg(t.hint)),
-                Span::styled(text.clone(), s),
-            ]));
-        }
-        let key_line = if hints {
-            keys(&[("1-9 a-z", "open"), ("esc", "back")])
-        } else {
-            let mut parts = vec![("a-".to_string() + &free_key.to_string(), "choose".to_string())];
-            if sel.is_some() {
-                parts.push(("enter".into(), "confirm".into()));
-            }
-            parts.push(("f".into(), "open".into()));
-            if opened.is_some() {
-                parts.push(("esc".into(), "close".into()));
-            }
-            parts.extend([("s".into(), "skip".into()), ("?".into(), "keys".into())]);
-            let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
-            keys(&parts)
-        };
-        let mut screen = Screen {
-            tree: tree_lines(all, &tree, targets, &id, decided, hints, opened.as_deref(), width),
-            card_title: format!("{} · {}", str_of(item, "title"), store),
-            card,
-            keys: key_line,
-            note: note.take(),
-            help,
-        };
-        ui.draw(&screen)?;
-        let k = key()?;
-        if ctrl_c(&k) {
-            return Ok(Outcome::Quit);
-        }
-        if help {
-            help = false;
-            continue;
-        }
-        if hints {
-            hints = false;
-            if let KeyCode::Char(c) = k.code {
-                if let Some((_, nid)) = HINTS.find(c).and_then(|n| tree.get(n)) {
-                    opened = Some(nid.clone());
-                }
-            }
-            continue;
-        }
-        let pick = match k.code {
-            KeyCode::Esc => {
-                opened = None;
-                sel = None;
-                continue;
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                sel = Some(sel.map_or(0, |s| (s + 1).min(options.len() - 1)));
-                continue;
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                sel = Some(sel.map_or(0, |s| s.saturating_sub(1)));
-                continue;
-            }
-            KeyCode::Char('q') => return Ok(Outcome::Quit),
-            KeyCode::Char('n') => return Ok(Outcome::NextGoal),
-            KeyCode::Char('s') => return Ok(Outcome::Next(None, false)),
-            KeyCode::Char('?') => {
-                help = true;
-                continue;
-            }
-            KeyCode::Char('f') => {
-                hints = true;
-                continue;
-            }
-            KeyCode::Char('i') => options.len() - 1,
-            KeyCode::Char(c) => {
-                if let Some(n) = options.iter().position(|(k, _)| *k == c) {
-                    sel = Some(n);
-                }
-                continue;
-            }
-            KeyCode::Enter => match sel {
-                Some(n) => n,
-                None => {
-                    note = Some(("choose an option first".to_string(), false));
-                    continue;
-                }
-            },
-            _ => continue,
-        };
-        // the chosen option, with text where it needs some
-        let last = pick == options.len() - 1;
-        let result: Result<(String, bool), Box<dyn Error>> = match (kind, pick) {
-            (_, _) if last => {
-                let prompt = match kind {
-                    Kind::Ask => "your answer:",
-                    Kind::Plan => "comment for the agent:",
-                    Kind::Review => "what should change:",
-                };
-                let Some(text) = ui.input(&mut screen, prompt)?.filter(|t| !t.is_empty()) else { continue };
-                ui.save(&mut screen, || match kind {
-                    Kind::Ask => cake.call(&["done", &id, "-m", &text]).map(|_| (text.clone(), true)),
-                    Kind::Plan => cake
-                        .call(&["add", "--todo", "-p", &id, "-t", "reply", "-m", &text])
-                        .map(|_| ("comment sent".to_string(), false)),
-                    Kind::Review => cake
-                        .call(&["add", "--todo", "-p", &id, "-t", "reply", "-m", &text])
-                        .and_then(|_| cake.call(&["tag", &id, "~review"]))
-                        .map(|_| ("sent back".to_string(), false)),
-                })?
-            }
-            (Kind::Ask, n) => {
-                let answer = answer_text(&body, &options[n].0.to_string());
-                ui.save(&mut screen, || cake.call(&["done", &id, "-m", &answer]).map(|_| (answer.clone(), true)))?
-            }
-            (Kind::Plan, 0) => ui.save(&mut screen, || cake.call(&["do", &id]).map(|_| ("approved".to_string(), true)))?,
-            (Kind::Plan, 1) => {
-                let Some(due) = ui.input(&mut screen, "due, soft target (fri, +3d, 30.11., 2026-11-30; enter for none):")? else { continue };
-                let Some(deadline) = ui.input(&mut screen, "deadline, hard limit (same forms; enter for none):")? else { continue };
-                ui.save(&mut screen, || {
-                    let mut args = vec!["edit", id.as_str()];
-                    if !due.is_empty() {
-                        args.extend(["--due", &due]);
-                    }
-                    if !deadline.is_empty() {
-                        args.extend(["--deadline", &deadline]);
-                    }
-                    let edit = if args.len() > 2 { cake.call(&args).map(|_| ()) } else { Ok(()) };
-                    edit.and_then(|_| cake.call(&["do", &id])).map(|_| ("approved with dates".to_string(), true))
-                })?
-            }
-            (Kind::Plan, _) => ui.save(&mut screen, || cake.call(&["drop", &id]).map(|_| ("dropped".to_string(), false)))?,
-            (Kind::Review, 0) => ui.save(&mut screen, || {
-                cake.call(&["tag", &id, "~review"]).and_then(|_| cake.call(&["done", &id])).map(|_| ("done".to_string(), true))
-            })?,
-            (Kind::Review, _) => ui.save(&mut screen, || {
-                cake.call(&["tag", &id, "~review"]).and_then(|_| cake.call(&["drop", &id])).map(|_| ("dropped".to_string(), false))
-            })?,
-        };
-        match result {
-            Ok((text, counted)) => {
-                let short: String = text.chars().take(40).collect();
-                let short = if text.chars().count() > 40 { format!("{}{}", short, g.ellipsis) } else { short };
-                return Ok(Outcome::Next(Some(short), counted));
-            }
-            Err(e) => note = Some((e.to_string(), true)),
-        }
-    }
-}
-
-/// the items of a step in one store and the store's items
-fn targets(cake: &Cake, kind: Kind, user: &str) -> Result<(Vec<Value>, Vec<String>), Box<dyn Error>> {
-    let all = cake.call(&["ls", "-l"])?;
-    let tagged = |i: &Value, tag: &str| i["tags"].as_array().is_some_and(|t| t.iter().any(|t| t == tag));
-    let ids: Vec<String> = match kind {
-        Kind::Ask => {
-            let ready: Vec<String> = cake.call(&["ready", "-t", "ask"])?.iter().map(|i| str_of(i, "id").to_string()).collect();
-            all.iter().map(|i| str_of(i, "id").to_string()).filter(|id| ready.contains(id)).collect()
-        }
-        Kind::Review => all
-            .iter()
-            .filter(|i| tagged(i, "review") && matches!(str_of(i, "status"), "todo" | "doing"))
-            .map(|i| str_of(i, "id").to_string())
-            .collect(),
-        Kind::Plan => {
-            let side = |a: &Value| tagged(a, "ask") || tagged(a, "reply");
-            let open_side = |a: &Value| side(a) && matches!(str_of(a, "status"), "todo" | "doing");
-            let kids = |i: &Value| -> Vec<&Value> { all.iter().filter(|a| str_of(a, "parent") == str_of(i, "id")).collect() };
-            all.iter()
-                .filter(|i| i["status"].is_null() && str_of(i, "by") != user && !tagged(i, "doc"))
-                .filter(|i| str_of(i, "body").contains("done when"))
-                .filter(|i| kids(i).iter().all(|k| side(k)) && !kids(i).iter().any(|k| open_side(k)))
-                .map(|i| str_of(i, "id").to_string())
-                .collect()
-        }
-    };
-    Ok((all, ids))
-}
-
-/// a step in one store, grouped by goal, the most urgent goal first;
-/// returns (counted, quit)
-fn step(ui: &mut Ui, cake: &Cake, kind: Kind, user: &str, store: &str) -> Result<(usize, bool), Box<dyn Error>> {
-    let (all, ids) = targets(cake, kind, user)?;
-    let items: Vec<&Value> = ids.iter().filter_map(|id| find(&all, id)).collect();
-    let mut goals: Vec<(&Value, Vec<&Value>)> = vec![];
-    for it in &items {
-        let goal = goal_of(&all, it);
-        match goals.iter_mut().find(|(g, _)| str_of(g, "id") == str_of(goal, "id")) {
-            Some((_, list)) => list.push(it),
-            None => goals.push((goal, vec![it])),
-        }
-    }
-    let score = |v: &&Value| v["score"].as_i64().unwrap_or(0);
-    goals.sort_by_key(|(_, list)| std::cmp::Reverse(list.iter().map(score).max().unwrap_or(0)));
-    let mut decided = std::collections::HashMap::new();
-    let mut counted = 0;
-    'goals: for (goal, list) in &goals {
-        for (i, it) in list.iter().enumerate() {
-            match decide(ui, cake, kind, it, &all, goal, list, &decided, store)? {
-                Outcome::Next(result, c) => {
-                    ui.handled += 1;
-                    counted += c as usize;
-                    if let Some(r) = result {
-                        decided.insert(str_of(it, "id").to_string(), r);
-                    }
-                }
-                Outcome::NextGoal => {
-                    ui.handled += list.len() - i;
-                    continue 'goals;
-                }
-                Outcome::Quit => return Ok((counted, true)),
-            }
-        }
-    }
-    Ok((counted, false))
-}
-
 /// the cake with `eaten` of its 4 slices gone, from the right
 fn cake_art(eaten: usize) -> Vec<Line<'static>> {
     let t = theme::t();
@@ -753,66 +491,128 @@ fn cake_art(eaten: usize) -> Vec<Line<'static>> {
     ]
 }
 
-/// new tasks go to `root`; questions, work to check and plans come from
-/// `root`, with `all` from every known store (stores.json, global)
-pub fn run(root: &Path, user: &str, all: bool, animations: bool) -> Result<(), Box<dyn Error>> {
+/// the modules a form can run, in their default order
+pub const MODULES: &[&str] = &["news", "sort", "answer", "review", "mine", "triage"];
+/// all known modules (dump is optional)
+const KNOWN: &[&str] = &["news", "sort", "answer", "review", "mine", "triage", "dump"];
+
+/// when the form last ran in a store (for news), in the local state dir
+fn last_run_file(root: &Path) -> Option<PathBuf> {
+    let base = directories::BaseDirs::new()?;
+    let dir = base.state_dir().unwrap_or(base.data_local_dir()).join("cake");
+    std::fs::create_dir_all(&dir).ok()?;
+    let abs = std::fs::canonicalize(root).unwrap_or(root.to_path_buf());
+    Some(dir.join(format!("form{}", abs.to_string_lossy().replace('/', "%"))))
+}
+
+fn last_run(root: &Path) -> i64 {
+    last_run_file(root).and_then(|f| std::fs::read_to_string(f).ok()).and_then(|s| s.trim().parse().ok()).unwrap_or(0)
+}
+
+/// dump: one new item per line into the inbox of `root`
+fn dump(ui: &mut Ui, here: &Cake, store: &str) -> Result<usize, Box<dyn Error>> {
+    let mut added: Vec<String> = vec![];
+    let mut note = None;
+    loop {
+        let mut card = vec![
+            Line::from("Whatever is on your mind; it goes into the inbox."),
+            Line::from(Span::styled("Enter adds one, an empty enter goes on.", dim())),
+        ];
+        if !added.is_empty() {
+            card.push(Line::default());
+        }
+        for a in &added {
+            card.push(Line::from(vec![
+                Span::styled(format!("{} ", style::g().check), Style::default().fg(theme::t().ok)),
+                Span::raw(a.clone()),
+            ]));
+        }
+        let mut screen = Screen {
+            card_title: format!("dump · {}", store),
+            card,
+            keys: keys(&[("enter", "add / go on"), ("esc", "go on")]),
+            note: note.take(),
+            ..Default::default()
+        };
+        match ui.input(&mut screen, "idea:")? {
+            Some(text) if !text.is_empty() => match ui.save(&mut screen, || here.call(&["add", "-m", &text]))? {
+                Ok(_) => added.push(text),
+                Err(e) => note = Some((e.to_string(), true)),
+            },
+            _ => return Ok(added.len()),
+        }
+    }
+}
+
+pub struct Options {
+    /// modules in order
+    pub modules: Vec<String>,
+    /// all known stores, not only `root`
+    pub all: bool,
+    pub animations: bool,
+    /// widest column, 0 none
+    pub width: u16,
+    /// the triage alias exists
+    pub triage: bool,
+}
+
+/// runs the modules on `root` (with `all`: every known store); dump goes
+/// to `root`; triage runs `cake triage` after the form
+pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
+    if let Some(bad) = o.modules.iter().find(|m| !KNOWN.contains(&m.as_str())) {
+        return Err(error::invalid(format!("unknown form module '{}', use {}", bad, KNOWN.join(", "))));
+    }
     let same = |a: &Path, b: &Path| std::fs::canonicalize(a).ok() == std::fs::canonicalize(b).ok();
     let known = crate::stores::all()?;
     let name = known.iter().find(|(_, s)| same(s, root)).map_or("this store".to_string(), |(n, _)| n.clone());
     let mut stores: Vec<(String, PathBuf)> = vec![(name, root.to_path_buf())];
-    if all {
+    if o.all {
         stores.extend(known.into_iter().filter(|(_, s)| !same(s, root)));
     }
-    // count everything first for the progress bar
+    let since: Vec<i64> = stores.iter().map(|(_, r)| last_run(r)).collect();
+    // count first, for the progress bar
     let mut total = 0;
-    for (_, root) in &stores {
-        for kind in [Kind::Ask, Kind::Review, Kind::Plan] {
-            total += targets(&Cake { root }, kind, user)?.1.len();
+    for ((_, root), since) in stores.iter().zip(&since) {
+        let cake = Cake { root };
+        for m in &o.modules {
+            total += match m.as_str() {
+                "news" => table::count(&cake, table::Kind::News, user, *since)?,
+                "sort" => table::count(&cake, table::Kind::Sort, user, *since)?,
+                "mine" => table::count(&cake, table::Kind::Mine, user, *since)?,
+                "answer" => card::count(&cake, card::Kind::Answer, user)?,
+                "review" => card::count(&cake, card::Kind::Review, user)?,
+                _ => 0,
+            };
         }
     }
-    let mut ui = Ui { term: ratatui::init(), step: 0, handled: 0, total };
-    let mut counts = [0usize; 4];
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), step: 0, handled: 0, total, max_width: o.width };
+    let mut counts = vec![0usize; o.modules.len()];
     let mut finished = 0;
+    let mut run_triage = false;
     let result = (|| -> Result<(), Box<dyn Error>> {
-        let here = Cake { root };
-        let mut added: Vec<String> = vec![];
-        let mut note = None;
-        loop {
-            let mut card = vec![
-                Line::from("Tasks you already know, e.g. from a paper list."),
-                Line::from(Span::styled("Enter adds one, an empty enter goes on.", dim())),
-            ];
-            if !added.is_empty() {
-                card.push(Line::default());
+        for (n, m) in o.modules.iter().enumerate() {
+            ui.step = n;
+            if m == "triage" {
+                run_triage = o.triage;
+                finished += 1;
+                continue;
             }
-            for a in &added {
-                card.push(Line::from(vec![
-                    Span::styled(format!("{} ", style::g().check), Style::default().fg(theme::t().ok)),
-                    Span::raw(a.clone()),
-                ]));
+            if m == "dump" {
+                counts[n] += dump(&mut ui, &Cake { root }, &stores[0].0)?;
+                finished += 1;
+                continue;
             }
-            let mut screen = Screen {
-                card_title: format!("new tasks · {}", stores[0].0),
-                card,
-                keys: keys(&[("enter", "add / go on"), ("esc", "go on")]),
-                note: note.take(),
-                ..Default::default()
-            };
-            match ui.input(&mut screen, "task:")? {
-                Some(text) if !text.is_empty() => match ui.save(&mut screen, || here.call(&["add", "--todo", "-m", &text]))? {
-                    Ok(_) => added.push(text),
-                    Err(e) => note = Some((e.to_string(), true)),
-                },
-                _ => break,
-            }
-        }
-        counts[0] = added.len();
-        finished = 1;
-        for kind in [Kind::Ask, Kind::Review, Kind::Plan] {
-            ui.step = kind.step();
-            for (name, root) in &stores {
-                let (c, quit) = step(&mut ui, &Cake { root }, kind, user, name)?;
-                counts[kind.step()] += c;
+            for ((name, sroot), since) in stores.iter().zip(&since) {
+                let cake = Cake { root: sroot };
+                let (c, quit) = match m.as_str() {
+                    "news" => table::run(&mut ui, &cake, sroot, table::Kind::News, user, name, *since)?,
+                    "sort" => table::run(&mut ui, &cake, sroot, table::Kind::Sort, user, name, *since)?,
+                    "mine" => table::run(&mut ui, &cake, sroot, table::Kind::Mine, user, name, *since)?,
+                    "answer" => card::run(&mut ui, &cake, card::Kind::Answer, user, name)?,
+                    "review" => card::run(&mut ui, &cake, card::Kind::Review, user, name)?,
+                    _ => (0, false),
+                };
+                counts[n] += c;
                 if quit {
                     return Ok(());
                 }
@@ -821,47 +621,49 @@ pub fn run(root: &Path, user: &str, all: bool, animations: bool) -> Result<(), B
         }
         Ok(())
     })();
-    // the end: a slice per finished step with something in it, then the summary
-    let worked = counts.iter().filter(|c| **c > 0).count().min(finished);
-    let summary = format!(
-        "{} added, {} answered, {} checked, {} approved",
-        counts[0], counts[1], counts[2], counts[3]
-    );
+    let worked = counts.iter().filter(|c| **c > 0).count().min(finished).min(4);
+    let summary: Vec<String> = o.modules.iter().zip(&counts).filter(|(_, c)| **c > 0).map(|(m, c)| format!("{} {}", m, c)).collect();
+    let summary = if summary.is_empty() { "nothing waiting, enjoy the cake".to_string() } else { summary.join(", ") };
     let end = (|| -> Result<(), Box<dyn Error>> {
         result.as_ref().map_err(|e| e.to_string())?;
-        ui.step = 4;
-        let frames = if animations { 0..=worked } else { worked..=worked };
+        ui.step = o.modules.len();
+        let frames = if o.animations { 0..=worked } else { worked..=worked };
+        let mut skip = false;
         for eaten in frames {
+            if skip && eaten < worked {
+                continue;
+            }
             let mut card = cake_art(eaten);
             card.push(Line::default());
-            card.push(Line::from(Span::styled(
-                if ui.total == 0 && counts[0] == 0 { "nothing waiting, enjoy the cake".to_string() } else { summary.clone() },
-                bold(),
-            )));
-            let screen = Screen {
-                card_title: "done".into(),
-                card,
-                keys: keys(&[("any key", "close")]),
-                ..Default::default()
-            };
+            card.push(Line::from(Span::styled(summary.clone(), bold())));
+            if run_triage {
+                card.push(Line::from(Span::styled("next: cake triage", dim())));
+            }
+            let screen = Screen { card_title: "done".into(), card, keys: keys(&[("any key", "close")]), ..Default::default() };
             ui.draw(&screen)?;
-            if animations && eaten < worked && event::poll(std::time::Duration::from_millis(350))? {
+            // a key skips the animation; the next one closes
+            if o.animations && eaten < worked && !skip && event::poll(std::time::Duration::from_millis(350))? {
                 let _ = event::read()?;
-                continue;
+                skip = true;
             }
         }
         key()?;
         Ok(())
     })();
     ratatui::restore();
+    for (_, r) in &stores {
+        if let Some(f) = last_run_file(r) {
+            let _ = std::fs::write(f, crate::util::timestamp().to_string());
+        }
+    }
     result?;
     end?;
     println!("{}", summary);
-    for (name, root) in &stores {
-        let ready = Cake { root }.call(&["ready", "-t", "~ask,~reply"])?;
-        let agents = ready.iter().filter(|i| str_of(i, "by") != user).count();
-        if !ready.is_empty() {
-            println!("  {}: {} ready for agents, {} for you", name, agents, ready.len() - agents);
+    if run_triage {
+        println!("running cake triage ...");
+        let status = Command::new(exe()).arg("--store").arg(root).arg("triage").status()?;
+        if !status.success() {
+            return Err(error::invalid("cake triage failed"));
         }
     }
     Ok(())
@@ -899,7 +701,7 @@ mod tests {
                 ..Default::default()
             };
             let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 24)).unwrap();
-            term.draw(|f| paint(f, &header(1, 2, 5, 52), &screen, 1)).unwrap();
+            term.draw(|f| paint(f, &header(&["news".into(), "sort".into(), "answer".into()], 2, 2, 5, 52), &screen, 2, 100)).unwrap();
             let buf = term.backend().buffer().clone();
             (0..buf.area.height)
                 .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string())
@@ -908,7 +710,7 @@ mod tests {
         let lines = render(None);
         println!("{}", lines.join("\n"));
         let pos = |text: &str| lines.iter().position(|l| l.contains(text)).unwrap_or_else(|| panic!("{} missing", text));
-        assert!(pos("QUESTIONS") < pos("cake CLI") && pos("cake CLI") < pos("by hand") && pos("by hand") < pos("confirm"));
+        assert!(pos("ANSWER") < pos("cake CLI") && pos("cake CLI") < pos("by hand") && pos("by hand") < pos("confirm"));
         assert!(lines[pos("Plain ASCII")].contains("a) yes"), "decided items keep their answer");
         for eaten in 0..=4 {
             println!("{}", cake_art(eaten).iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n"));

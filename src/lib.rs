@@ -6,7 +6,7 @@ mod git;
 mod item;
 mod markdown;
 mod migrate;
-mod morning;
+mod form;
 mod out;
 mod selector;
 mod store;
@@ -391,8 +391,12 @@ pub enum Commands {
         #[arg(skip)]
         new_tags: Option<String>,
     },
-    /// guided pass: new tasks, questions by score, plans to approve; -g: all stores
+    /// the form: config `form` modules in order; -g: all stores
     Morning {},
+    /// run only these form modules: news sort answer review mine triage dump
+    Form {
+        modules: Vec<String>,
+    },
     /// move a store from the tag based workflow to inbox/task/review with
     /// assignees; shows the changes, --apply makes them
     Migrate {
@@ -693,7 +697,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     store::init_weights(config.score.clone());
     let mut aliases = config.aliases(&guess_root(&args)?)?;
     // agents and the morning form get the documented built-ins
-    if config.agent().is_some() || std::env::var_os(morning::PLAIN_ENV).is_some() {
+    if config.agent().is_some() || std::env::var_os(form::PLAIN_ENV).is_some() {
         let builtin: Vec<String> = Cli::command()
             .get_subcommands()
             .flat_map(|c| std::iter::once(c.get_name().to_string()).chain(c.get_all_aliases().map(String::from)))
@@ -756,11 +760,17 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     // the form runs every change as its own cake call: no lock while waiting
     let interactive = std::io::stdin().is_terminal() && std::io::stdout().is_terminal() && !out::json();
     match &cli.command {
-        Some(Commands::Morning {}) if !interactive => {
-            return Err(error::invalid("cake morning needs a terminal and no --json."))
+        Some(Commands::Morning {}) | Some(Commands::Form { .. }) if !interactive => {
+            return Err(error::invalid("the form needs a terminal and no --json."))
         }
-        Some(Commands::Morning {}) | None if interactive => {
-            return morning::run(&root, &config.user(&root), cli.global, config.animations)
+        Some(Commands::Morning {}) | Some(Commands::Form { .. }) | None if interactive => {
+            let modules = match &cli.command {
+                Some(Commands::Form { modules }) if !modules.is_empty() => modules.clone(),
+                _ => config.form.clone(),
+            };
+            let triage = aliases.contains_key("triage");
+            let options = form::Options { modules, all: cli.global, animations: config.animations, width: config.form_width, triage };
+            return form::run(&root, &config.user(&root), options);
         }
         _ => (),
     }
@@ -979,7 +989,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Init {}) => commands::init(debug, &config, cli.global, cli.store.as_deref())?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
-        Some(Commands::Morning {}) => unreachable!("handled before the lock"),
+        Some(Commands::Morning {}) | Some(Commands::Form { .. }) => unreachable!("handled before the lock"),
         Some(Commands::Migrate { apply }) => crate::migrate::run(&mut store, &config.user(&root), *apply)?,
         Some(Commands::Usage { action: UsageAction::Add { id, model, input, out, cache_read, cache_write } }) => {
             let u = item::Usage { input: *input, output: *out, cache_read: *cache_read, cache_write: *cache_write };

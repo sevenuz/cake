@@ -23,6 +23,8 @@ pub struct Config {
     pub style: String,
     pub scrollview_threshold: i8,
     pub animations: bool,
+    pub form: Vec<String>,
+    pub form_width: u16,
     pub usage_tracking: bool,
     pub score: crate::store::ScoreWeights,
     pub footprint: crate::footprint::Footprint,
@@ -43,6 +45,8 @@ impl Default for Config {
             style: default_style(),
             scrollview_threshold: 30,
             animations: true,
+            form: crate::form::MODULES.iter().map(|m| m.to_string()).collect(),
+            form_width: 100,
             usage_tracking: true,
             score: Default::default(),
             footprint: Default::default(),
@@ -87,8 +91,15 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   style: auto
   // lines from which cake show opens a pager, -1 never
   scrollview_threshold: 30
-  // the cake at the end of the morning form; false: shown without animation
+  // the cake at the end of the form; false: shown without animation
   animations: true
+  // modules of `cake` in order: news (what agents did), sort (inbox and
+  // tasks without assignee), answer (questions for you), review (your
+  // finished work), mine (your tasks), triage (runs the triage alias),
+  // dump (type ideas into the inbox); `cake form review` runs one
+  form: ["news", "sort", "answer", "review", "mine", "triage"]
+  // widest column of the form, 0 the whole terminal
+  form_width: 100
 
   // tokens per item from agents (cake usage); false: the Claude hook does nothing
   usage_tracking: true
