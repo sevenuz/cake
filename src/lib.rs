@@ -585,7 +585,7 @@ pub fn print_error(e: &Box<dyn Error>) {
 /// fields of ls/ready --json without -l
 const BRIEF: &[&str] = &[
     "id", "title", "status", "tags", "parent", "children", "blocked_by", "blocks", "ready", "score", "due",
-    "deadline", "priority", "running", "by",
+    "deadline", "priority", "running", "by", "assignee", "owner",
 ];
 
 fn print_report(store: &Store, report: commands::Report) {
