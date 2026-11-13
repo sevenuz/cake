@@ -6,6 +6,7 @@ parent: "[[cake-morning-terminal-form]]"
 created: 2026-11-13T19:51:15+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+usage: {claude-opus-5-5: {in: 52, out: 31887, cache_read: 7831727, cache_write: 42388}}
 closed: 2026-11-13T20:13:32+01:00
 time:
   - 2026-11-13T19:51:15+01:00/2026-11-13T19:58:30+01:00
