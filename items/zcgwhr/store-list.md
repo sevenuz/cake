@@ -1,7 +1,7 @@
 ---
 id: store-list
 status: doing
-tags: [cli]
+tags: [cli, review]
 parent: "[[zcgwhr]]"
 created: 2026-11-13T18:28:48+01:00
 by: claude-code
