@@ -1,7 +1,7 @@
 ---
 id: tokens-per-item
 status: todo
-tags: [stats, review]
+tags: [stats]
 parent: "[[zcgwhr]]"
 created: 2026-11-13T20:43:48+01:00
 by: claude-code
