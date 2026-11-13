@@ -18,3 +18,5 @@ time:
   termimad removed
 - done when: cake builds without termimad, form runs as TUI, show and
   ls keep their look (theme colors)
+- commits: eef986f theme, a038543 markdown+pager (termimad gone), 3cc0626 TUI form
+- release binary 2.84 MB -> 1.77 MB
