@@ -30,7 +30,7 @@ fn done_drop_reopen_set_status_and_closed() {
     env.cake_ok(&d, &["reopen", "a,b"]); // alias of todo
     for id in ["a", "b"] {
         let item = read_item(&d, id);
-        assert!(item.contains("status: todo\n") && !item.contains("closed:"), "{}", item);
+        assert!(item.contains("status: task\n") && !item.contains("closed:"), "{}", item);
     }
 }
 
@@ -62,7 +62,7 @@ fn changing_commands_refuse_empty_selector_and_unknown_ids() {
         assert!(env.cake_err(&d, &[cmd]).contains("No items selected"), "{}", cmd);
         assert!(env.cake_err(&d, &[cmd, "nope"]).contains("nope not found"), "{}", cmd);
     }
-    assert!(!read_item(&d, "a").contains("status:"));
+    assert!(read_item(&d, "a").contains("status: inbox\n"), "unchanged");
 }
 
 #[test]
@@ -88,16 +88,18 @@ fn add_with_all_fields_and_body_from_stdin() {
     );
     let a = read_item(&d, "a");
     assert!(a.contains("blocked_by: [\"[[b]]\"]\n"), "{}", a);
-    assert!(a.contains("due: 2026-10-30\npriority: 1\n"), "{}", a);
+    assert!(a.contains("due: 2026-10-30\n") && a.contains("priority: 1\n") && a.contains("owner: "), "{}", a);
     assert!(a.ends_with("---\n# from stdin\n\nbody\n"), "{}", a);
 
-    assert!(a.contains("status: todo\n"), "{}", a);
+    assert!(a.contains("status: task\n"), "{}", a);
 
     env.cake_ok(&d, &["add", "n", "-m", "# a note"]);
-    assert!(!read_item(&d, "n").contains("status:"), "default is a note");
+    assert!(read_item(&d, "n").contains("status: inbox\n"), "default is the inbox");
 
     env.cake_ok(&d, &["todo", "n"]);
-    assert!(read_item(&d, "n").contains("status: todo\n"), "note promoted");
+    assert!(read_item(&d, "n").contains("status: task\n"), "sorted as a task");
+    env.cake_ok(&d, &["note", "n"]);
+    assert!(!read_item(&d, "n").contains("status:"), "a note has no status");
 }
 
 #[test]
@@ -214,8 +216,8 @@ fn ascii_style_replaces_every_special_character() {
     env.cake_ok(&d, &["add", "end", "-p", "par", "--todo", "-m", "# end"]);
     env.cake_ok(&d, &["done", "end"]);
     let out = |style: &str| String::from_utf8(env.cake_env(&d, &["ls", "-A"], &[("CAKE_STYLE", style)]).stdout).unwrap();
-    assert_eq!(out("ascii"), "o pa parent\n|- x en end\n\\- - ki kid\n");
-    assert_eq!(out("unicode"), "○ pa parent\n├─ ✓ en end\n└─ · ki kid\n");
+    assert_eq!(out("ascii"), "o pa parent\n|- x en end\n\\- ? ki kid\n");
+    assert_eq!(out("unicode"), "○ pa parent\n├─ ✓ en end\n└─ ◇ ki kid\n");
     let show = String::from_utf8(env.cake_env(&d, &["show", "par"], &[("CAKE_STYLE", "ascii")]).stdout).unwrap();
     assert!(show.is_ascii(), "{}", show);
 }
@@ -267,6 +269,111 @@ fn claude_hook_gives_tokens_to_the_item_whose_timer_ran() {
 }
 
 #[test]
+fn workflow_v2_inbox_task_question_review_and_parent() {
+    let env = Env::new();
+    let d = env.plain_store();
+    let ai = [("AI_AGENT", "claude-code")];
+    let ids = |args: &[&str]| json_ids(&env, &d, args);
+    env.cake_ok(&d, &["add", "sync", "-m", "# Sync errors unclear"]);
+    assert_eq!(ids(&["ls", "--status", "inbox"]), vec!["sync"]);
+    env.cake_ok(&d, &["do", "sync"]);
+    env.cake_ok(&d, &["assign", "sync", "ai"]);
+    let item = read_item(&d, "sync");
+    assert!(item.contains("status: task\n") && item.contains("assignee: ai\n") && item.contains("owner: "), "{}", item);
+
+    // the agent splits: subtasks inherit the owner, a question blocks one
+    env.cake_env(&d, &["add", "step", "--task", "-p", "sync", "--assignee", "claude-code", "-m", "# Name the step"], &ai);
+    env.cake_env(&d, &["add", "hint", "--task", "-p", "sync", "--assignee", "claude-code", "-m", "# Hint per error"], &ai);
+    env.cake_env(&d, &["add", "raw", "--task", "-p", "hint", "--assignee", "me", "-m", "# Raw message too?\n\n- a) yes\n- b) with -d"], &ai);
+    env.cake_env(&d, &["block", "hint", "--by", "raw"], &ai);
+    assert!(read_item(&d, "step").contains("owner: "), "owner inherited");
+    assert_eq!(ids(&["ready", "--assignee", "claude-code"]), vec!["step"], "parent waits, hint blocked");
+    assert!(env.cake_err(&d, &["block", "step", "--by", "sync"]).contains("deadlock") || env.cake_err(&d, &["block", "step", "--by", "sync"]).contains("waits for it"));
+
+    // step goes to review, its sibling continues once the question is answered
+    env.cake_env(&d, &["review", "step", "-m", "named"], &ai);
+    env.cake_ok(&d, &["done", "raw", "-m", "b) with -d"]);
+    assert_eq!(ids(&["ready", "--assignee", "claude-code"]), vec!["hint"], "the answered question is no part of hint's work");
+    env.cake_ok(&d, &["comment", "step", "-m", "shorter please"]);
+    let step = read_item(&d, "step");
+    assert!(step.contains("status: task\n") && step.contains("comment (") && step.contains("): shorter please\n"), "{}", step);
+
+    // all parts done: the parent goes to review by itself
+    env.cake_ok(&d, &["done", "step", "hint"]);
+    assert!(read_item(&d, "sync").contains("status: review\n"), "{}", read_item(&d, "sync"));
+    env.cake_ok(&d, &["note", "sync"]);
+    assert!(!read_item(&d, "sync").contains("status:"));
+}
+
+#[test]
+fn agents_see_their_tasks_and_stop_when_reviews_are_full() {
+    let env = Env::new();
+    let d = env.plain_store();
+    let ai = [("AI_AGENT", "claude-code")];
+    let agent_ready = || {
+        let out = env.cake_env(&d, &["ready", "--json"], &ai);
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        v["items"].as_array().unwrap().iter().map(|i| i["id"].as_str().unwrap().to_string()).collect::<Vec<_>>()
+    };
+    env.cake_ok(&d, &["add", "a", "--task", "--assignee", "ai", "-m", "# a"]);
+    env.cake_ok(&d, &["add", "b", "--task", "--assignee", "claude-code", "-m", "# b"]);
+    env.cake_ok(&d, &["add", "c", "--task", "--assignee", "me", "-m", "# c"]);
+    env.cake_ok(&d, &["add", "r", "--task", "-m", "# r"]);
+    env.cake_ok(&d, &["review", "r"]);
+    assert_eq!(agent_ready(), vec!["a", "b"], "not the user's task");
+
+    std::fs::write(d.join(".cake/config.hjson"), "{ max_review: 1 }").unwrap();
+    assert!(agent_ready().is_empty());
+    let out = env.cake_env(&d, &["start", "a", "--json"], &ai);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("waiting_for_review"));
+    assert_eq!(json_ids(&env, &d, &["ready"]), vec!["a", "b", "c"], "the user still sees all ready work");
+
+    std::fs::write(d.join(".cake/config.hjson"), "{ max_review: -1 }").unwrap();
+    assert_eq!(agent_ready(), vec!["a", "b"]);
+}
+
+#[test]
+fn migrate_moves_the_tag_workflow_and_is_idempotent() {
+    let env = Env::new();
+    let d = env.plain_store();
+    let ai = [("AI_AGENT", "claude-code")];
+    let items = d.join(".cake/items");
+    std::fs::write(items.join("w.md"), "---\nid: w\nstatus: todo\nby: claude-code\n---\n# Work\n").unwrap();
+    std::fs::create_dir_all(items.join("w")).unwrap();
+    std::fs::write(items.join("w/q.md"), "---\nid: q\nstatus: todo\ntags: [ask]\nby: claude-code\n---\n# Which?\n").unwrap();
+    std::fs::write(items.join("w/r.md"), "---\nid: r\nstatus: todo\ntags: [reply]\n---\n# shorter please\n").unwrap();
+    std::fs::write(items.join("p.md"), "---\nid: p\nby: claude-code\n---\n# Plan\n\n- done when: x\n").unwrap();
+    std::fs::write(items.join("idea.md"), "---\nid: idea\n---\n# raw idea\n").unwrap();
+    let dry = env.cake_ok(&d, &["migrate"]);
+    assert!(dry.contains("would change"), "{}", dry);
+    assert!(std::fs::read_to_string(items.join("w.md")).unwrap().contains("status: todo"), "dry run writes nothing");
+    env.cake_ok(&d, &["migrate", "--apply"]);
+    let w = read_item(&d, "w");
+    assert!(w.contains("status: task\n") && w.contains("assignee: claude-code\n") && w.contains("): shorter please"), "{}", w);
+    let q = read_item(&d, "q");
+    assert!(q.contains("assignee: ") && !q.contains("tags:"), "{}", q);
+    assert!(!items.join("w/r.md").exists(), "comment item removed");
+    assert!(read_item(&d, "p").contains("status: inbox\n"));
+    assert!(read_item(&d, "idea").contains("status: inbox\n"));
+    assert!(env.cake_env(&d, &["migrate"], &ai).status.success());
+    let again = env.cake_ok(&d, &["migrate"]);
+    assert!(again.contains("Nothing to migrate"), "{}", again);
+}
+
+#[test]
+fn assignees_are_checked_against_the_store_config() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "t", "--task", "-m", "# t"]);
+    env.cake_ok(&d, &["assign", "t", "anyone"]);
+    std::fs::write(d.join(".cake/config.hjson"), "{ people: [\"bob\"], agents: [\"local\"] }").unwrap();
+    assert!(env.cake_err(&d, &["assign", "t", "anyone"]).contains("unknown assignee 'anyone'"));
+    env.cake_ok(&d, &["assign", "t", "local"]);
+    env.cake_ok(&d, &["assign", "t", "-"]);
+    assert!(!read_item(&d, "t").contains("assignee:"));
+}
+
+#[test]
 fn ls_filters_by_text_status_and_blockers() {
     let env = Env::new();
     let d = env.plain_store();
@@ -278,7 +385,7 @@ fn ls_filters_by_text_status_and_blockers() {
 
     let ids = |args: &[&str]| json_ids(&env, &d, args);
     assert_eq!(ids(&["ls", "-s", "WORKTREE"]), vec!["aaa"]);
-    assert_eq!(ids(&["ls", "--status", "none"]), vec!["bbb"]);
+    assert_eq!(ids(&["ls", "--status", "inbox"]), vec!["bbb"]);
     assert_eq!(ids(&["ls", "--status", "done"]), vec!["ddd"]);
     assert_eq!(ids(&["ls", "--ready"]), vec!["aaa"]);
     assert_eq!(ids(&["ls", "--blocked"]), vec!["ccc"]);
@@ -357,7 +464,7 @@ fn edit_with_message_replaces_only_the_body() {
     env.cake_ok(&d, &["add", "a", "--todo", "-t", "x", "-m", "# old"]);
     env.cake_stdin(&d, &["edit", "a", "-m", "-"], "# new\n\nbody\n");
     let a = read_item(&d, "a");
-    assert!(a.contains("status: todo\ntags: [x]\n"), "{}", a);
+    assert!(a.contains("status: task\ntags: [x]\n"), "{}", a);
     assert!(a.ends_with("---\n# new\n\nbody\n"), "{}", a);
     assert!(env.cake_err(&d, &["edit", "nope", "-m", "x"]).contains("not found"));
 }
@@ -368,7 +475,8 @@ fn edit_sets_and_clears_priority_and_due() {
     let d = env.plain_store();
     env.cake_ok(&d, &["add", "a", "--todo", "-m", "# a"]);
     env.cake_ok(&d, &["edit", "a", "--prio", "1", "--due", "2026-10-30"]);
-    assert!(read_item(&d, "a").contains("due: 2026-10-30\npriority: 1\n"));
+    let a = read_item(&d, "a");
+    assert!(a.contains("due: 2026-10-30\n") && a.contains("priority: 1\n"), "{}", a);
     assert!(env.cake_err(&d, &["edit", "a", "--prio", "1", "--due", "soon"]).contains("due"));
     assert!(read_item(&d, "a").contains("priority: 1\n"), "nothing written on error");
     env.cake_ok(&d, &["edit", "a", "--prio", "0", "--due", "-"]);
@@ -420,8 +528,9 @@ fn agent_sessions_are_recorded_on_changed_items() {
 fn aliases_from_defaults_user_and_store_config() {
     let env = Env::new();
     let d = env.plain_store();
-    env.cake_ok(&d, &["add", "r", "--todo", "-t", "review", "-m", "# to review"]);
-    env.cake_ok(&d, &["add", "i", "-m", "# idea"]);
+    env.cake_ok(&d, &["add", "r", "--task", "-m", "# to review"]);
+    env.cake_ok(&d, &["review", "r"]);
+    env.cake_ok(&d, &["add", "i", "--note", "-m", "# idea"]);
     env.cake_ok(&d, &["add", "c", "-p", "i", "-m", "# child"]);
 
     let ids = |args: &[&str]| {
@@ -431,8 +540,8 @@ fn aliases_from_defaults_user_and_store_config() {
             .filter(|id| out.lines().any(|l| l.split_whitespace().any(|w| w == *id)))
             .collect::<Vec<_>>()
     };
-    assert_eq!(ids(&["review"]), vec!["r"]);
-    assert_eq!(ids(&["ideas"]), vec!["c"], "i has a child");
+    assert_eq!(ids(&["check"]), vec!["r"]);
+    assert_eq!(ids(&["inbox"]), vec!["c"], "i is a note");
 
     let user = env.path("config/cake/config.hjson");
     let cfg = std::fs::read_to_string(&user).unwrap().replace("aliases: {}", "aliases: {mine: \"ls -s idea\"}");
@@ -461,16 +570,18 @@ fn status_shows_your_timers_others_ready_and_configured_tags() {
     };
     assert_eq!(run(&["status"], &jul), "", "nothing to show");
     run(&["add", "ab", "--todo", "-m", "# a task with a rather long title"], &jul);
-    run(&["add", "cd", "--todo", "-t", "review", "-m", "# c"], &other);
+    run(&["add", "cd", "--todo", "-m", "# c"], &other);
     run(&["start", "ab"], &jul);
     run(&["start", "cd"], &other);
     run(&["add", "ef", "--todo", "-m", "# e"], &jul);
+    run(&["add", "rv", "--task", "-m", "# r"], &other);
+    run(&["review", "rv"], &other);
     assert_eq!(run(&["status"], &agent), "▶ ab a task with a rather lon… 0h00 · ▶ 1 others · ready 3 · review 1\n");
 
     let user = env.path("config/cake/config.hjson");
     let cfg = std::fs::read_to_string(&user).unwrap().replace(
-        "status: [\"mine\", \"others\", \"ready\", \"today\", \"tag:review\"]",
-        "status: [\"ready\", \"tag:review\"]",
+        "status: [\"mine\", \"others\", \"ready\", \"today\", \"review\"]",
+        "status: [\"ready\", \"review\"]",
     );
     std::fs::write(&user, cfg).unwrap();
     assert_eq!(run(&["status"], &jul), "ready 3 · review 1\n");
@@ -485,7 +596,7 @@ fn ls_is_a_tree_and_hides_closed_items() {
     let d = env.plain_store();
     env.cake_ok(&d, &["add", "p", "--todo", "-t", "x", "-m", "# parent"]);
     env.cake_ok(&d, &["add", "a", "--todo", "-p", "p", "--prio", "1", "-m", "# first"]);
-    env.cake_ok(&d, &["add", "b", "-p", "p", "-m", "# note"]);
+    env.cake_ok(&d, &["add", "b", "-p", "p", "--note", "-m", "# note"]);
     env.cake_ok(&d, &["add", "c", "--todo", "-p", "a", "-m", "# deep"]);
     env.cake_ok(&d, &["add", "z", "--todo", "-m", "# closed"]);
     env.cake_ok(&d, &["done", "z"]);
@@ -507,8 +618,8 @@ fn show_has_a_meta_line_and_lists_children() {
     env.cake_ok(&d, &["add", "n", "-p", "t", "-m", "# review note"]);
     let out = env.cake_ok(&d, &["show", "t"]);
     let first = out.lines().next().unwrap();
-    assert!(first.starts_with("*t* · todo · #x · by ") && first.ends_with(" · prio 1"), "{}", first);
-    assert!(out.ends_with("- bullet\n\n· n review note\n"), "{}", out);
+    assert!(first.starts_with("*t* · task · #x · by ") && first.contains(" · prio 1"), "{}", first);
+    assert!(out.ends_with("- bullet\n\n◇ n review note\n"), "{}", out);
 }
 
 #[test]
@@ -585,5 +696,5 @@ fn mine_selects_your_items_with_what_grew_under_them() {
     run(&["add", "pl", "-p", "id", "-m", "# plan"], &agent);
     run(&["add", "dc", "-t", "doc", "-m", "# doc"], &agent);
     // the agent runs cake for jul: --mine still means jul's items
-    assert_eq!(run(&["ls", "--mine"], &agent), "· id idea\n└─ · pl plan\n");
+    assert_eq!(run(&["ls", "--mine"], &agent), "◇ id idea\n└─ ◇ pl plan\n");
 }

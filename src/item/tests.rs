@@ -71,9 +71,9 @@ fn done_stops_timer_and_sets_closed_reopen_clears_it() {
     assert!(item.to_markdown().contains("status: done\n"));
     assert!(item.to_markdown().contains("\nclosed: "));
 
-    item.set_status(Status::Todo).unwrap();
+    item.set_status(Status::Task).unwrap();
     assert!(!item.to_markdown().contains("closed:"));
-    assert_eq!(item.status(), Some(Status::Todo));
+    assert_eq!(item.status(), Some(Status::Task));
 }
 
 #[test]
@@ -81,13 +81,15 @@ fn note_from_old_kind_field_becomes_a_task_with_a_status() {
     let mut item = Item::from_markdown("---\nkind: note\n---\nx\n", "n", 0).unwrap();
     assert_eq!(item.status(), None);
     assert!(!item.to_markdown().contains("kind"), "old key dropped");
-    item.set_status(Status::Todo).unwrap();
-    assert!(item.to_markdown().contains("status: todo\n"));
+    item.set_status(Status::Task).unwrap();
+    assert!(item.to_markdown().contains("status: task\n"));
 }
 
 #[test]
 fn status_parse_rejects_unknown() {
-    assert_eq!(Status::parse("dropped"), Ok(Status::Dropped));
+    assert_eq!(Status::parse("dropped"), Ok(Some(Status::Dropped)));
+    assert_eq!(Status::parse("todo"), Ok(Some(Status::Task)), "old name");
+    assert_eq!(Status::parse("note"), Ok(None));
     assert!(Status::parse("closed").is_err());
 }
 

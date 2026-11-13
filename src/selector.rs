@@ -24,6 +24,8 @@ pub struct Selector {
     pub ready: bool,
     pub blocked: bool,
     pub by: Option<String>,
+    /// any of these assignees
+    pub assignee: Vec<String>,
     pub childless: bool,
 }
 
@@ -58,6 +60,7 @@ impl Selector {
             ready: false,
             blocked: false,
             by: None,
+            assignee: vec![],
             childless: false,
         })
     }
@@ -74,12 +77,9 @@ impl Selector {
         self.search = search.as_ref().map(|s| s.to_lowercase());
         self.status = util::split_comma_cleanup(status.to_owned().unwrap_or_default())
             .iter()
-            .map(|s| match s.as_str() {
-                "none" => Ok(None),
-                s => Status::parse(s).map(Some),
-            })
+            .map(|s| Status::parse(s))
             .collect::<Result<_, _>>()
-            .map_err(|e| error::invalid(e + ", none for notes"))?;
+            .map_err(error::invalid)?;
         self.ready = ready;
         self.blocked = blocked;
         self.by = by.to_owned();
@@ -101,6 +101,7 @@ impl Selector {
             && !self.ready
             && !self.blocked
             && self.by.is_none()
+            && self.assignee.is_empty()
             && !self.childless;
     }
 
@@ -173,6 +174,7 @@ impl Selector {
                     || self.ready && store.is_ready(key)
                     || self.blocked && store.is_blocked(key)
                     || self.by.is_some() && item.by() == self.by.as_ref()
+                    || item.assignee().is_some_and(|a| self.assignee.contains(a))
                     || self.childless && item.children().is_empty()
             })
             .map(|s| s.to_owned())
@@ -200,6 +202,7 @@ impl Selector {
                     && (!self.ready || store.is_ready(key))
                     && (!self.blocked || store.is_blocked(key))
                     && (self.by.is_none() || item.by() == self.by.as_ref())
+                    && (self.assignee.is_empty() || item.assignee().is_some_and(|a| self.assignee.contains(a)))
                     && (!self.childless || item.children().is_empty())
             })
             .map(|s| s.to_owned())
@@ -306,7 +309,7 @@ mod tests {
     fn search_and_status_filters() {
         let mut note = Item::new("n".into(), vec![], None, vec![]);
         note.set_content("# Meeting NOTES".into());
-        let store = store_with(vec![note, task("d", Status::Done), task("t", Status::Todo)]);
+        let store = store_with(vec![note, task("d", Status::Done), task("t", Status::Task)]);
 
         assert_eq!(filtered(Some("meeting notes"), None, false, false).get(&store, false), vec!["n"]);
         assert_eq!(filtered(None, Some("none"), false, false).get(&store, false), vec!["n"]);
@@ -319,9 +322,9 @@ mod tests {
 
     #[test]
     fn ready_and_blocked_follow_open_blockers() {
-        let mut blocked = task("a", Status::Todo);
+        let mut blocked = task("a", Status::Task);
         blocked.set_blocked_by(vec!["b".into()]);
-        let mut unblocked = task("c", Status::Todo);
+        let mut unblocked = task("c", Status::Task);
         unblocked.set_blocked_by(vec!["d".into()]);
         let store = store_with(vec![
             blocked,

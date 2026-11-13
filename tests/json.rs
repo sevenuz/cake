@@ -42,13 +42,13 @@ fn item_commands_report_items_after_the_change() {
     let item = &a["items"][0];
     assert_eq!(item["id"], "aaa");
     assert_eq!(item["title"], "Alpha");
-    assert_eq!(item["status"], "todo");
+    assert_eq!(item["status"], "task");
     assert_eq!(item["priority"], 1);
     assert_eq!(item["ready"], true);
     assert!(item["path"].as_str().unwrap().ends_with(".cake/items/aaa.md"));
 
-    ok(&env, &d, &["add", "bbb", "--todo", "--blocked-by", "aaa", "-p", "aaa", "-m", "# B"]);
-    ok(&env, &d, &["add", "nnn", "-m", "# a note"]);
+    ok(&env, &d, &["add", "nnn", "--note", "-m", "# a note"]);
+    ok(&env, &d, &["add", "bbb", "--todo", "--blocked-by", "aaa", "-p", "nnn", "-m", "# B"]);
 
     let ls = ok(&env, &d, &["ls"]);
     let all = ls["items"].as_array().unwrap();
@@ -59,7 +59,8 @@ fn item_commands_report_items_after_the_change() {
     assert_eq!(long["items"][0]["body"], "# Alpha\n\nbody");
     let aaa = all.iter().find(|i| i["id"] == "aaa").unwrap();
     assert_eq!(aaa["blocks"], serde_json::json!(["bbb"]));
-    assert_eq!(aaa["children"], serde_json::json!(["bbb"]));
+    let nnn = all.iter().find(|i| i["id"] == "nnn").unwrap();
+    assert_eq!(nnn["children"], serde_json::json!(["bbb"]));
     assert!(all.iter().find(|i| i["id"] == "nnn").unwrap()["status"].is_null());
 
     assert_eq!(ids(&ok(&env, &d, &["ready"])), vec!["aaa"]);

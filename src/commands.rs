@@ -15,7 +15,12 @@ use ratatui::style::{Modifier, Style};
 
 /// fields of a new item besides selector and content
 pub struct AddOptions {
-    pub todo: bool,
+    /// None: a note
+    pub status: Option<Status>,
+    pub assignee: Option<String>,
+    pub owner: Option<String>,
+    /// the human, default owner of tasks
+    pub user: String,
     pub due: Option<String>,
     pub deadline: Option<String>,
     pub priority: Option<u64>,
@@ -68,9 +73,14 @@ where
     {
         return Err(error::not_found(missing));
     }
-    if options.todo {
-        item.set_status(Status::Todo)?;
+    if let Some(st) = options.status {
+        item.set_status(st)?;
     }
+    item.set_assignee(options.assignee);
+    // subtasks are reviewed by whoever owns the parent
+    let parent_owner = item.parents().first().and_then(|p| store.get_item(p)).and_then(|p| p.owner().cloned());
+    let owner = options.owner.or(parent_owner).or_else(|| (options.status == Some(Status::Task)).then(|| options.user.clone()));
+    item.set_owner(owner);
     item.set_due(options.due).map_err(error::invalid)?;
     item.set_deadline(options.deadline).map_err(error::invalid)?;
     item.set_priority(options.priority).map_err(error::invalid)?;
@@ -91,6 +101,9 @@ pub struct EditOptions {
     pub priority: Option<u64>,
     pub due: Option<String>,
     pub deadline: Option<String>,
+    /// Some(None) clears
+    pub assignee: Option<Option<String>>,
+    pub owner: Option<Option<String>>,
 }
 
 /// opens the item file (frontmatter and body) in the editor, without the
@@ -119,7 +132,13 @@ where
 {
     debug(&format!("edit {:?}", id));
     let old = store.get_item(id).ok_or_else(|| error::not_found(id))?;
-    if options.body.is_some() || options.priority.is_some() || options.due.is_some() || options.deadline.is_some() {
+    if options.body.is_some()
+        || options.priority.is_some()
+        || options.due.is_some()
+        || options.deadline.is_some()
+        || options.assignee.is_some()
+        || options.owner.is_some()
+    {
         let mut item = old.clone();
         if let Some(body) = options.body {
             item.set_content(body);
@@ -132,6 +151,12 @@ where
         }
         if let Some(d) = options.deadline {
             item.set_deadline(Some(d).filter(|d| d != "-")).map_err(error::invalid)?;
+        }
+        if let Some(a) = options.assignee {
+            item.set_assignee(a);
+        }
+        if let Some(o) = options.owner {
+            item.set_owner(o);
         }
         store.get_item_mut(id).unwrap().set(item);
         view::print(&config, store.get_item(id).unwrap().print_long())?;
@@ -380,6 +405,58 @@ where
     Ok(Report::Items(ids))
 }
 
+/// Some(message) while `max_review` (store config, -1 off) items wait in review
+pub fn reviews_full(store: &Store, sc: &crate::config::StoreConfig) -> Option<String> {
+    let waiting = store.get().values().filter(|i| i.status() == Some(Status::Review)).count() as i64;
+    (sc.max_review >= 0 && waiting >= sc.max_review)
+        .then(|| format!("waiting for review: {} items, max_review is {}; no new work for agents", waiting, sc.max_review))
+}
+
+/// tasks without owner get `user` (whoever made them tasks)
+pub fn default_owner(store: &mut Store, report: &Report, user: &str) {
+    if let Report::Items(ids) = report {
+        for id in ids {
+            let item = store.get_item_mut(id).unwrap();
+            if item.owner().is_none() {
+                item.set_owner(Some(user.to_string()));
+            }
+        }
+    }
+}
+
+/// selected items become plain notes
+pub fn to_note(store: &mut Store, selector: Selector) -> Result<Report, Box<dyn Error>> {
+    let ids = select(store, &selector)?;
+    for id in &ids {
+        store.get_item_mut(id).unwrap().set_note()?;
+    }
+    say!("{} note.", ids.len());
+    Ok(Report::Items(ids))
+}
+
+/// sets the assignee of the selected items
+pub fn assign(store: &mut Store, selector: Selector, who: Option<String>) -> Result<Report, Box<dyn Error>> {
+    let ids = select(store, &selector)?;
+    for id in &ids {
+        store.get_item_mut(id).unwrap().set_assignee(who.clone());
+    }
+    say!("{} assigned to {}.", ids.len(), who.as_deref().unwrap_or("nobody"));
+    Ok(Report::Items(ids))
+}
+
+/// appends "comment (user, date): text"; work in review or doing goes back
+/// to its assignee as a task
+pub fn comment(store: &mut Store, id: &str, user: &str, text: &str) -> Result<Report, Box<dyn Error>> {
+    let item = store.get_item_mut(id).ok_or_else(|| error::not_found(id))?;
+    let date = chrono::Local::now().format("%Y-%m-%d");
+    item.append_content(&format!("comment ({}, {}): {}", user, date, text.trim()));
+    if matches!(item.status(), Some(Status::Review) | Some(Status::Doing)) {
+        item.set_status(Status::Task)?;
+    }
+    say!("{} commented.", id);
+    Ok(Report::Items(vec![id.to_owned()]))
+}
+
 /// one line for prompts, tmux and status lines, segments from config `status`
 pub fn status(config: &Config, store: &Store) -> Result<Report, Box<dyn Error>> {
     let me = config.user(store.root());
@@ -421,7 +498,14 @@ pub fn status(config: &Config, store: &Store) -> Result<Report, Box<dyn Error>> 
             })),
             "others" if others > 0 => parts.push(format!("{} {} others", style::g().running, others)),
             "ready" if ready > 0 => parts.push(format!("ready {}", ready)),
-            "today" if today > 0 => parts.push(format!("today {}", hm(today))),
+            "review" => {
+                let n = items.iter().filter(|i| i.status() == Some(Status::Review)).count();
+                tags.insert("review".into(), n.into());
+                if n > 0 {
+                    parts.push(format!("review {}", n));
+                }
+            }
+            "today" if today >= 60 => parts.push(format!("today {}", hm(today))),
             s if s.starts_with("tag:") => {
                 let tag = &s[4..];
                 let n = items.iter().filter(|i| i.is_open() && i.tags().iter().any(|t| t == tag)).count();
@@ -564,7 +648,9 @@ fn line(item: &Item, short: &str, color: bool) -> String {
     let g = style::g();
     let marker = match item.status() {
         None => g.note,
-        Some(Status::Todo) => g.todo,
+        Some(Status::Inbox) => g.inbox,
+        Some(Status::Task) => g.todo,
+        Some(Status::Review) => g.review,
         Some(Status::Doing) if item.is_started() => g.running,
         Some(Status::Doing) => g.doing,
         Some(Status::Done) => g.done,

@@ -10,6 +10,8 @@ use std::fs;
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    /// your name in assignee/owner, else git user.name, else $USER
+    pub user: Option<String>,
     pub editor: String,
     pub disable_git: bool,
     pub git_branch: String,
@@ -29,6 +31,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            user: None,
             editor: std::env::var("EDITOR").unwrap_or("vim".to_string()),
             disable_git: false,
             git_branch: default_git_branch(),
@@ -52,6 +55,8 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
 // Remove a line to get its default back. config.default.hjson next to this
 // file always holds the current defaults with these comments.
 {
+  // your name for assignee and owner; default: git user.name, else $USER
+  // user: jul
   // editor for cake add / cake edit without -m
   editor: vim
   // no git commits and syncs at all
@@ -63,8 +68,8 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   // holding its session id; first set one wins
   agent_env: ["AI_AGENT"]
   session_env: ["CAKE_SESSION", "CLAUDE_CODE_SESSION_ID"]
-  // cake status: mine, others, ready, today, tag:<name>
-  status: ["mine", "others", "ready", "today", "tag:review"]
+  // cake status: mine, others, ready, today, review, tag:<name>
+  status: ["mine", "others", "ready", "today", "review"]
   // own commands, may override built-ins for you (not for agents):
   // review: "ls -t review", ls: "ls --mine"
   aliases: {}
@@ -167,7 +172,7 @@ fn default_style() -> String {
 }
 
 fn default_status() -> Vec<String> {
-    ["mine", "others", "ready", "today", "tag:review"].iter().map(|s| s.to_string()).collect()
+    ["mine", "others", "ready", "today", "review"].iter().map(|s| s.to_string()).collect()
 }
 
 fn first_env(vars: &[String]) -> Option<String> {
@@ -175,31 +180,69 @@ fn first_env(vars: &[String]) -> Option<String> {
 }
 
 /// committed per store in .cake/config.hjson, shared by everyone using the store
-#[derive(Deserialize, Default)]
-struct StoreConfig {
-    #[serde(default)]
-    aliases: BTreeMap<String, String>,
+#[derive(Deserialize)]
+#[serde(default)]
+pub struct StoreConfig {
+    pub aliases: BTreeMap<String, String>,
+    /// humans who may be assigned; empty: anyone
+    pub people: Vec<String>,
+    /// agents who may be assigned besides `ai`; empty: anyone
+    pub agents: Vec<String>,
+    /// while this many items wait in review, agents get no new work; -1 off
+    pub max_review: i64,
+}
+
+impl Default for StoreConfig {
+    fn default() -> Self {
+        StoreConfig { aliases: BTreeMap::new(), people: vec![], agents: vec![], max_review: 8 }
+    }
 }
 
 impl Config {
     /// default aliases, then the user's, then the store's
     pub fn aliases(&self, store: &std::path::Path) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
         let mut aliases: BTreeMap<String, String> = [
-            ("review", "ls -t review --status todo,doing"),
-            ("ask", "ls -t ask"),
-            ("ideas", "ls --status none --childless"),
+            ("inbox", "ls --status inbox"),
+            ("check", "ls --status review"),
         ]
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
         aliases.extend(self.aliases.clone());
-        let file = store.join("config.hjson");
-        if file.is_file() {
-            let store_config: StoreConfig = deser_hjson::from_str(&fs::read_to_string(&file)?)
-                .map_err(|e| format!("{}: {}", file.display(), e))?;
-            aliases.extend(store_config.aliases);
-        }
+        aliases.extend(Self::store(store)?.aliases);
         Ok(aliases)
+    }
+
+    /// the store's own config, defaults without a file
+    pub fn store(store: &std::path::Path) -> Result<StoreConfig, Box<dyn Error>> {
+        let file = store.join("config.hjson");
+        if !file.is_file() {
+            return Ok(StoreConfig::default());
+        }
+        Ok(deser_hjson::from_str(&fs::read_to_string(&file)?).map_err(|e| format!("{}: {}", file.display(), e))?)
+    }
+
+    /// `me` is you, `ai` any agent, `-` nobody; other names must be in the
+    /// store's people or agents when those are set
+    pub fn who(&self, store: &std::path::Path, input: &str) -> Result<Option<String>, Box<dyn Error>> {
+        let me = self.user(store);
+        match input {
+            "-" => return Ok(None),
+            "me" => return Ok(Some(me)),
+            "ai" => return Ok(Some("ai".into())),
+            _ => (),
+        }
+        let sc = Self::store(store)?;
+        let known: Vec<&String> = sc.people.iter().chain(&sc.agents).collect();
+        if !known.is_empty() && input != me && !known.iter().any(|k| *k == input) {
+            let names: Vec<&str> = known.iter().map(|k| k.as_str()).collect();
+            return Err(crate::error::invalid(format!(
+                "unknown assignee '{}': use me, ai, {} (store config people/agents)",
+                input,
+                names.join(", ")
+            )));
+        }
+        Ok(Some(input.to_string()))
     }
 
     /// AI agent running cake, from `agent_env`
@@ -216,6 +259,7 @@ impl Config {
     /// user.name, else $USER
     pub fn user(&self, store: &std::path::Path) -> String {
         first_env(&["CAKE_AUTHOR".to_string()])
+            .or_else(|| self.user.clone())
             .or_else(|| crate::git::user_name(store))
             .or_else(|| std::env::var("USER").ok())
             .unwrap_or("unknown".to_string())
@@ -225,6 +269,7 @@ impl Config {
     pub fn author(&self, store: &std::path::Path) -> String {
         first_env(&["CAKE_AUTHOR".to_string()])
             .or_else(|| self.agent())
+            .or_else(|| self.user.clone())
             .or_else(|| crate::git::user_name(store))
             .or_else(|| std::env::var("USER").ok())
             .unwrap_or("unknown".to_string())

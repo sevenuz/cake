@@ -5,6 +5,7 @@ mod footprint;
 mod git;
 mod item;
 mod markdown;
+mod migrate;
 mod morning;
 mod out;
 mod selector;
@@ -130,6 +131,10 @@ pub struct SelectorArgs {
     /// items you created (git user.name or CAKE_AUTHOR)
     #[arg(long, conflicts_with = "by")]
     mine: bool,
+
+    /// assigned to any of these (comma separated; me = you)
+    #[arg(long, value_name = "WHO")]
+    assignee: Option<String>,
 }
 
 /// replaces id prefixes in `opt` (comma separated) by full ids
@@ -145,6 +150,10 @@ impl SelectorArgs {
     fn resolve(&mut self, store: &Store, user: &str) -> Result<(), Box<dyn Error>> {
         if self.mine {
             self.by = Some(user.to_string());
+        }
+        if let Some(a) = &self.assignee {
+            let list: Vec<String> = a.split(',').map(|w| if w.trim() == "me" { user.to_string() } else { w.trim().to_string() }).collect();
+            self.assignee = Some(list.join(","));
         }
         resolve_opt(store, &mut self.ids)?;
         resolve_opt(store, &mut self.children)?;
@@ -167,6 +176,7 @@ impl SelectorArgs {
         .with_filters(&self.search, &self.status, self.ready, self.blocked, &self.by)
         .map(|mut s| {
             s.childless = self.childless;
+            s.assignee = self.assignee.iter().flat_map(|a| a.split(',')).map(String::from).filter(|a| !a.is_empty()).collect();
             s
         })
     }
@@ -195,7 +205,8 @@ pub enum UsageAction {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// add a note, with --todo a task; the editor opens without -m
+    /// capture: a new item in the inbox (--task, --note to skip sorting);
+    /// the editor opens without -m
     Add {
         /// custom id, default: slug of the title (e.g. fix-merge-driver)
         ids: Option<String>,
@@ -216,9 +227,21 @@ pub enum Commands {
         #[arg(short, long)]
         message: Option<String>,
 
-        /// a task (status todo) instead of a note
-        #[arg(long)]
-        todo: bool,
+        /// a task right away instead of the inbox (agents: subtasks)
+        #[arg(long, visible_alias = "todo")]
+        task: bool,
+
+        /// a note right away (knowledge, docs, rules) instead of the inbox
+        #[arg(long, conflicts_with = "task")]
+        note: bool,
+
+        /// who does it: me, ai, an agent or a person
+        #[arg(long, value_name = "WHO")]
+        assignee: Option<String>,
+
+        /// who reviews it, default: the parent's owner, else you
+        #[arg(long, value_name = "WHO")]
+        owner: Option<String>,
 
         /// soft target date: 2026-11-30, 30.11., today, tomorrow, fri, +3d, 2w
         #[arg(long, value_name = "DATE")]
@@ -255,6 +278,14 @@ pub enum Commands {
         /// hard limit date, - clears
         #[arg(long, value_name = "DATE")]
         deadline: Option<String>,
+
+        /// who does it (me, ai, a name), - clears
+        #[arg(long, value_name = "WHO")]
+        assignee: Option<String>,
+
+        /// who reviews it, - clears
+        #[arg(long, value_name = "WHO")]
+        owner: Option<String>,
     },
     /// show an item, or any markdown file
     Show {
@@ -314,11 +345,42 @@ pub enum Commands {
         #[arg(short, long)]
         message: Option<String>,
     },
-    /// approve: status todo, worked on once unblocked; also reopens
-    #[command(name = "do", visible_aliases(["todo", "reopen"]))]
+    /// make it a task (you become its owner); also reopens
+    #[command(name = "do", visible_aliases(["task", "todo", "reopen"]))]
     Todo {
         #[command(flatten)]
         selector: SelectorArgs,
+    },
+    /// keep it as a note: knowledge, idea, rule, nothing to do
+    Note {
+        #[command(flatten)]
+        selector: SelectorArgs,
+    },
+    /// finished: the owner checks it; -m appends what changed and how to try it
+    Review {
+        #[command(flatten)]
+        selector: SelectorArgs,
+
+        /// appended to the body, - reads stdin
+        #[arg(short, long)]
+        message: Option<String>,
+    },
+    /// who does it: cake assign [IDS] WHO (me, ai, an agent, a person, -)
+    Assign {
+        #[command(flatten)]
+        selector: SelectorArgs,
+
+        /// the last positional word
+        #[arg(skip)]
+        who: Option<String>,
+    },
+    /// append a comment and give the item back to its assignee
+    Comment {
+        id: String,
+
+        /// the comment, - reads stdin
+        #[arg(short, long)]
+        message: Option<String>,
     },
     /// add tags, ~tag removes: cake tag [IDS] TAGS (the last word are the tags)
     Tag {
@@ -331,6 +393,12 @@ pub enum Commands {
     },
     /// guided pass: new tasks, questions by score, plans to approve; -g: all stores
     Morning {},
+    /// move a store from the tag based workflow to inbox/task/review with
+    /// assignees; shows the changes, --apply makes them
+    Migrate {
+        #[arg(long)]
+        apply: bool,
+    },
     /// tokens per item, with an energy, CO2e and water estimate in show
     Usage {
         #[command(subcommand)]
@@ -425,8 +493,12 @@ impl Commands {
             | Commands::Done { selector, .. }
             | Commands::Drop { selector, .. }
             | Commands::Todo { selector }
+            | Commands::Note { selector }
+            | Commands::Review { selector, .. }
+            | Commands::Assign { selector, .. }
             | Commands::List { selector, .. }
             | Commands::Ready { selector, .. } => selector.resolve(store, user)?,
+            Commands::Comment { id, .. } => one(id)?,
             _ => (),
         }
         Ok(())
@@ -445,12 +517,19 @@ impl Commands {
                     selector.ids = join(&w);
                 }
             }
+            Commands::Assign { selector, who } => {
+                let mut w = std::mem::take(&mut selector.words);
+                *who = w.pop();
+                selector.ids = join(&w);
+            }
             Commands::Remove { selector }
             | Commands::Start { selector }
             | Commands::Stop { selector }
             | Commands::Done { selector, .. }
             | Commands::Drop { selector, .. }
             | Commands::Todo { selector }
+            | Commands::Note { selector }
+            | Commands::Review { selector, .. }
             | Commands::List { selector, .. }
             | Commands::Ready { selector, .. } => {
                 let w = std::mem::take(&mut selector.words);
@@ -477,6 +556,11 @@ impl Commands {
                 | Commands::Done { .. }
                 | Commands::Drop { .. }
                 | Commands::Todo { .. }
+                | Commands::Note { .. }
+                | Commands::Review { .. }
+                | Commands::Assign { .. }
+                | Commands::Comment { .. }
+                | Commands::Migrate { apply: true }
         )
     }
 }
@@ -677,11 +761,15 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             prio: None,
             due: None,
             deadline: None,
+            assignee: None,
+            owner: None,
         }) => edited = Some(commands::edit_in_editor(&config, &root, id)?),
         // stdin may come from another cake command that needs the lock
         Some(Commands::Edit { message: m, .. })
         | Some(Commands::Done { message: m, .. })
-        | Some(Commands::Drop { message: m, .. }) => message = read_message(m)?,
+        | Some(Commands::Drop { message: m, .. })
+        | Some(Commands::Review { message: m, .. })
+        | Some(Commands::Comment { message: m, .. }) => message = read_message(m)?,
         _ => (),
     }
 
@@ -732,7 +820,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             children,
             parents,
             tags,
-            todo,
+            task,
+            note,
+            assignee,
+            owner,
             due,
             deadline,
             prio,
@@ -747,14 +838,23 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             )?,
             message,
             commands::AddOptions {
-                todo: *todo,
+                status: if *task {
+                    Some(Status::Task)
+                } else if *note {
+                    None
+                } else {
+                    Some(Status::Inbox)
+                },
+                assignee: assignee.as_deref().map(|w| config.who(&root, w)).transpose()?.flatten(),
+                owner: owner.as_deref().map(|w| config.who(&root, w)).transpose()?.flatten(),
+                user: config.user(&root),
                 due: due.to_owned(),
                 deadline: deadline.to_owned(),
                 priority: *prio,
                 blocked_by: util::split_comma_cleanup(blocked_by.to_owned().unwrap_or_default()),
             },
         )?,
-        Some(Commands::Edit { id, prio, due, deadline, .. }) => commands::edit(
+        Some(Commands::Edit { id, prio, due, deadline, assignee, owner, .. }) => commands::edit(
             &debug,
             &config,
             &mut store,
@@ -765,6 +865,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 priority: *prio,
                 due: due.to_owned(),
                 deadline: deadline.to_owned(),
+                assignee: assignee.as_deref().map(|w| config.who(&root, w)).transpose()?,
+                owner: owner.as_deref().map(|w| config.who(&root, w)).transpose()?,
             },
         )?,
         Some(Commands::Remove { selector }) => {
@@ -783,6 +885,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             commands::tag(debug, &mut &mut store, selector.selector(i)?, nt)?
         }
         Some(Commands::Start { selector }) => {
+            if config.agent().is_some() {
+                if let Some(msg) = commands::reviews_full(&store, &Config::store(&root)?) {
+                    return Err(error::coded("waiting_for_review", msg));
+                }
+            }
             commands::start(debug, &mut &mut store, selector.selector(&selector.ids)?)?
         }
         Some(Commands::Stop { selector }) => {
@@ -803,7 +910,20 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Ready { selector, long }) => {
             let mut selector = selector.selector(&selector.ids)?;
             selector.ready = true;
-            commands::list(debug, &config, &mut store, selector, *long, false)?
+            // an agent sees its own tasks and those for any agent, and none
+            // while the reviews are full
+            if let Some(agent) = config.agent() {
+                if selector.assignee.is_empty() {
+                    selector.assignee = vec![agent, "ai".into()];
+                }
+            }
+            match config.agent().and(commands::reviews_full(&store, &Config::store(&root)?)) {
+                Some(msg) => {
+                    say!("{}", msg);
+                    commands::Report::Brief(vec![])
+                }
+                None => commands::list(debug, &config, &mut store, selector, *long, false)?,
+            }
         }
         Some(Commands::Done { selector, .. }) => {
             commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Done, message)?
@@ -812,7 +932,21 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Dropped, message)?
         }
         Some(Commands::Todo { selector }) => {
-            commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Todo, None)?
+            let report = commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Task, None)?;
+            commands::default_owner(&mut store, &report, &config.user(&root));
+            report
+        }
+        Some(Commands::Note { selector }) => commands::to_note(&mut store, selector.selector(&selector.ids)?)?,
+        Some(Commands::Review { selector, .. }) => {
+            commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Review, message)?
+        }
+        Some(Commands::Assign { selector, who }) => {
+            let who = who.as_deref().ok_or_else(|| error::invalid("Who? cake assign [IDS] WHO"))?;
+            commands::assign(&mut store, selector.selector(&selector.ids)?, config.who(&root, who)?)?
+        }
+        Some(Commands::Comment { id, .. }) => {
+            let text = message.ok_or_else(|| error::invalid("No comment, use -m TEXT (- for stdin)."))?;
+            commands::comment(&mut store, id, &config.user(&root), &text)?
         }
         Some(Commands::List { selector, long, all }) => {
             let mut selector = selector.selector(&selector.ids)?;
@@ -825,6 +959,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
         Some(Commands::Morning {}) => unreachable!("handled before the lock"),
+        Some(Commands::Migrate { apply }) => crate::migrate::run(&mut store, &config.user(&root), *apply)?,
         Some(Commands::Usage { action: UsageAction::Add { id, model, input, out, cache_read, cache_write } }) => {
             let u = item::Usage { input: *input, output: *out, cache_read: *cache_read, cache_write: *cache_write };
             store.get_item_mut(id).ok_or_else(|| error::not_found(id))?.add_usage(model, u);
@@ -846,6 +981,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
     if cli.command.as_ref().is_some_and(Commands::writes) {
         usage::fold(&mut store)?;
+        store.settle();
     }
     if let Some(session) = config.session() {
         store.add_session(&session);

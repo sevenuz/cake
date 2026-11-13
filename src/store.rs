@@ -9,7 +9,7 @@ pub mod inner {
     use std::path::{Path, PathBuf};
 
     use crate::error;
-    use crate::item::Item;
+    use crate::item::{Item, Status};
     use crate::util;
     use serde::{Deserialize, Serialize};
     use std::sync::OnceLock;
@@ -395,6 +395,10 @@ pub mod inner {
                 if self.waits_on(b, id) {
                     return Err(error::invalid(format!("{} waits on {}, that would be a cycle.", b, id)));
                 }
+                // a parent waits for its work children: blocking a child by it would deadlock
+                if b != id && self.is_ancestor(b, id) {
+                    return Err(error::invalid(format!("{} is above {} and waits for it; block by a sibling instead.", b, id)));
+                }
             }
             let item = self.get_item_mut(id).unwrap();
             let mut ids = item.blocked_by().clone();
@@ -458,9 +462,47 @@ pub mod inner {
             })
         }
 
-        /// open item without open blockers
+        /// the parts of `id`'s work: children with a status that do not block it
+        /// (a question under a task blocks it, it is no part of its work)
+        fn work_children(&self, id: &str) -> Vec<&Item> {
+            self.items.get(id).map_or(vec![], |i| {
+                i.children()
+                    .iter()
+                    .filter(|c| !i.blocked_by().contains(c))
+                    .filter_map(|c| self.items.get(c))
+                    .filter(|c| c.status().is_some())
+                    .collect()
+            })
+        }
+
+        /// open work below `id`
+        pub fn open_children(&self, id: &str) -> usize {
+            self.work_children(id).iter().filter(|c| c.is_open()).count()
+        }
+
+        /// a task (or started one) without open blockers and open children
         pub fn is_ready(&self, id: &str) -> bool {
-            self.items.get(id).is_some_and(|i| i.is_open()) && !self.is_blocked(id)
+            self.items.get(id).is_some_and(|i| matches!(i.status(), Some(Status::Task) | Some(Status::Doing)))
+                && !self.is_blocked(id)
+                && self.open_children(id) == 0
+        }
+
+        /// tasks whose work children are all closed go to review by themselves
+        pub fn settle(&mut self) -> Vec<String> {
+            let ids: Vec<String> = self
+                .items
+                .values()
+                .filter(|i| matches!(i.status(), Some(Status::Task) | Some(Status::Doing)))
+                .filter(|i| {
+                    let work = self.work_children(i.id());
+                    !work.is_empty() && work.iter().all(|c| !c.is_open())
+                })
+                .map(|i| i.id().to_owned())
+                .collect();
+            for id in &ids {
+                let _ = self.get_item_mut(id).unwrap().set_status(Status::Review);
+            }
+            ids
         }
 
         /// item json with derived blocks, ready and path

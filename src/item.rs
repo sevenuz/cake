@@ -9,30 +9,42 @@ mod tests;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Status {
-    Todo,
+    /// new, not sorted yet
+    Inbox,
+    /// to do, has an assignee
+    Task,
     Doing,
+    /// finished, the owner checks it
+    Review,
     Done,
     Dropped,
 }
 
 impl Status {
-    pub fn parse(s: &str) -> Result<Status, String> {
+    /// a status name; `note` (or none) is no status, todo is the old task
+    pub fn parse(s: &str) -> Result<Option<Status>, String> {
         match s {
-            "todo" => Ok(Status::Todo),
-            "doing" => Ok(Status::Doing),
-            "done" => Ok(Status::Done),
-            "dropped" => Ok(Status::Dropped),
-            _ => Err(format!("unknown status '{}', use todo|doing|done|dropped", s)),
+            "note" | "none" => Ok(None),
+            "inbox" => Ok(Some(Status::Inbox)),
+            "task" | "todo" => Ok(Some(Status::Task)),
+            "doing" => Ok(Some(Status::Doing)),
+            "review" => Ok(Some(Status::Review)),
+            "done" => Ok(Some(Status::Done)),
+            "dropped" => Ok(Some(Status::Dropped)),
+            _ => Err(format!("unknown status '{}', use inbox|note|task|doing|review|done|dropped", s)),
         }
     }
 
+    /// not closed: still needs someone (blocks, counts in the score)
     pub fn is_open(&self) -> bool {
-        matches!(self, Status::Todo | Status::Doing)
+        matches!(self, Status::Inbox | Status::Task | Status::Doing | Status::Review)
     }
 
     pub fn as_str(&self) -> &'static str {
         match self {
-            Status::Todo => "todo",
+            Status::Inbox => "inbox",
+            Status::Task => "task",
+            Status::Review => "review",
             Status::Doing => "doing",
             Status::Done => "done",
             Status::Dropped => "dropped",
@@ -54,6 +66,8 @@ pub struct Item {
     closed: Option<i64>,
     due: Option<String>,
     deadline: Option<String>,
+    assignee: Option<String>,
+    owner: Option<String>,
     priority: Option<u64>,
     timetrack: Vec<i64>,
     extra: Mapping,
@@ -144,6 +158,8 @@ impl Item {
             closed: None,
             due: None,
             deadline: None,
+            assignee: None,
+            owner: None,
             priority: None,
             timetrack: vec![],
             extra: Mapping::new(),
@@ -172,7 +188,10 @@ impl Item {
         m.shift_remove("kind"); // written by older versions, a status replaces it
         let status = take_str(&mut m, "status")?
             .map(|s| Status::parse(&s).map_err(err))
-            .transpose()?;
+            .transpose()?
+            .flatten();
+        let assignee = take_str(&mut m, "assignee")?;
+        let owner = take_str(&mut m, "owner")?;
         let tags = take_list(&mut m, "tags")?;
         let parent = take_str(&mut m, "parent")?.map(|p| unlink(&p));
         let blocked_by = take_list(&mut m, "blocked_by")?.iter().map(|s| unlink(s)).collect();
@@ -216,6 +235,8 @@ impl Item {
             closed,
             due,
             deadline,
+            assignee,
+            owner,
             priority,
             timetrack,
             extra: m,
@@ -271,6 +292,12 @@ impl Item {
         if let Some(d) = &self.deadline {
             s += &format!("deadline: {}\n", yaml_str(d));
         }
+        if let Some(a) = &self.assignee {
+            s += &format!("assignee: {}\n", yaml_str(a));
+        }
+        if let Some(o) = &self.owner {
+            s += &format!("owner: {}\n", yaml_str(o));
+        }
         if let Some(p) = self.priority {
             s += &format!("priority: {}\n", p);
         }
@@ -322,6 +349,12 @@ impl Item {
         }
         if let Some(d) = &self.deadline {
             meta.push(format!("deadline {}", d));
+        }
+        if let Some(a) = &self.assignee {
+            meta.push(format!("for {}", a));
+        }
+        if let Some(o) = &self.owner {
+            meta.push(format!("owner {}", o));
         }
         if let Some(p) = &self.parent {
             meta.push(format!("parent {}", p));
@@ -470,6 +503,32 @@ impl Item {
         self.deadline.as_ref()
     }
 
+    pub fn assignee(&self) -> Option<&String> {
+        self.assignee.as_ref()
+    }
+
+    pub fn set_assignee(&mut self, a: Option<String>) {
+        self.assignee = a;
+    }
+
+    pub fn owner(&self) -> Option<&String> {
+        self.owner.as_ref()
+    }
+
+    pub fn set_owner(&mut self, o: Option<String>) {
+        self.owner = o;
+    }
+
+    /// back to a plain note: no status
+    pub fn set_note(&mut self) -> Result<(), String> {
+        if self.is_started() {
+            self.stop()?;
+        }
+        self.status = None;
+        self.closed = None;
+        Ok(())
+    }
+
     /// todo or doing
     pub fn is_open(&self) -> bool {
         self.status.is_some_and(|s| s.is_open())
@@ -479,17 +538,14 @@ impl Item {
         self.status
     }
 
-    /// sets the status, also turns a note into a task: done/dropped stop a
-    /// running timer and set `closed`, todo/doing remove it
+    /// sets the status: review, done and dropped stop a running timer,
+    /// done and dropped set `closed`
     pub fn set_status(&mut self, status: Status) -> Result<(), String> {
-        if status.is_open() {
-            self.closed = None;
-        } else {
-            if self.is_started() {
-                self.stop()?;
-            }
-            self.closed = Some(util::timestamp());
+        // the timer only runs while someone works on it
+        if self.is_started() && !matches!(status, Status::Task | Status::Doing) {
+            self.stop()?;
         }
+        self.closed = (!status.is_open()).then(util::timestamp);
         self.status = Some(status);
         Ok(())
     }
@@ -564,6 +620,8 @@ impl Item {
             "closed": self.closed.map(util::format_timestamp),
             "due": self.due,
             "deadline": self.deadline,
+            "assignee": self.assignee,
+            "owner": self.owner,
             "priority": self.priority,
             "time": time,
             "tracked_seconds": self.tracked_seconds(),

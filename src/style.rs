@@ -6,7 +6,9 @@ use std::sync::OnceLock;
 
 pub struct Glyphs {
     pub note: &'static str,
+    pub inbox: &'static str,
     pub todo: &'static str,
+    pub review: &'static str,
     pub doing: &'static str,
     pub running: &'static str,
     pub done: &'static str,
@@ -38,7 +40,9 @@ pub struct Glyphs {
 
 const UNICODE: Glyphs = Glyphs {
     note: "·",
+    inbox: "◇",
     todo: "○",
+    review: "◈",
     doing: "◐",
     running: "▶",
     done: "✓",
@@ -62,7 +66,9 @@ const UNICODE: Glyphs = Glyphs {
 
 const ASCII: Glyphs = Glyphs {
     note: "-",
+    inbox: "?",
     todo: "o",
+    review: "!",
     doing: "*",
     running: ">",
     done: "x",
