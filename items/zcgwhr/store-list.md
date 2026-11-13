@@ -21,3 +21,4 @@ time:
 - done when: tests for lookup, registration, morning over 2 stores
 - stores.json separate from config.hjson (cake writes it, keeps your hjson comments)
 - commit: 45cf693
+- try: cat ~/.config/cake/stores.json; for the paper: `cake --store ~/stores/paper init` inside the paper dir
