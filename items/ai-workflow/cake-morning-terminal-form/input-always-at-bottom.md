@@ -1,6 +1,7 @@
 ---
 id: input-always-at-bottom
 status: todo
+tags: [triaged]
 parent: "[[cake-morning-terminal-form]]"
 created: 2026-11-13T19:35:29+01:00
 by: sevenuz
