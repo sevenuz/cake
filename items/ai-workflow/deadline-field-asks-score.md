@@ -15,3 +15,4 @@ sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
   it, transitively) + prio + inbox age; `ls/ready --sort score`
 - score in `--json`
 - done when: tests for deadline, answer, score order
+
