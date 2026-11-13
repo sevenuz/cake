@@ -31,6 +31,8 @@ pub mod inner {
         root: PathBuf,
         items: HashMap<String, Item>,
         dirty: HashSet<String>,
+        /// where each item currently is on disk
+        paths: HashMap<String, PathBuf>,
     }
 
     impl Store {
@@ -90,7 +92,7 @@ pub mod inner {
             root.join("items")
         }
 
-        /// loads all items/*.md, an empty store if the directory does not exist
+        /// loads all items/**/*.md, an empty store if the directory does not exist
         #[cfg(test)]
         pub fn new(root: &Path) -> Result<Store, Box<dyn Error>> {
             Self::new_except(root, &[])
@@ -99,28 +101,27 @@ pub mod inner {
         /// like `new`, but skips the files in `skip` (e.g. conflicted items)
         pub fn new_except(root: &Path, skip: &[PathBuf]) -> Result<Store, Box<dyn Error>> {
             let mut items = HashMap::new();
+            let mut paths = HashMap::new();
             let dir = Self::items_dir(root);
             if dir.is_dir() {
-                for entry in std::fs::read_dir(&dir)? {
-                    let path = entry?.path();
-                    if path.extension().map_or(true, |e| e != "md") || skip.contains(&path) {
-                        continue;
-                    }
-                    let stem = path.file_stem().unwrap().to_string_lossy().to_string();
-                    let created = std::fs::metadata(&path)?
-                        .modified()?
-                        .duration_since(std::time::UNIX_EPOCH)?
-                        .as_secs() as i64;
-                    let item = Item::from_markdown(&std::fs::read_to_string(&path)?, &stem, created)
-                        .map_err(|e| format!("{}: {}", path.display(), e))?;
-                    items.insert(item.id().to_owned(), item);
-                }
+                Self::load_dir(&dir, None, skip, &mut items, &mut paths)?;
             }
             let mut store = Store {
                 root: root.to_path_buf(),
                 items,
                 dirty: HashSet::new(),
+                paths,
             };
+            // a parent that does not exist (e.g. a directory left by a merge) detaches
+            let dangling: Vec<String> = store
+                .items
+                .values()
+                .filter(|i| i.parents().first().is_some_and(|p| !store.items.contains_key(p)))
+                .map(|i| i.id().to_owned())
+                .collect();
+            for id in dangling {
+                store.items.get_mut(&id).unwrap().set_parent(None);
+            }
             let pairs: Vec<(String, String)> = store
                 .items
                 .values()
@@ -134,6 +135,73 @@ pub mod inner {
             Ok(store)
         }
 
+        /// loads `dir` recursively; inside `<parent>/` the directory decides the parent
+        fn load_dir(
+            dir: &Path,
+            parent: Option<&str>,
+            skip: &[PathBuf],
+            items: &mut HashMap<String, Item>,
+            paths: &mut HashMap<String, PathBuf>,
+        ) -> Result<(), Box<dyn Error>> {
+            for entry in std::fs::read_dir(dir)? {
+                let path = entry?.path();
+                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                if name.starts_with('.') || skip.contains(&path) {
+                    continue;
+                }
+                if path.is_dir() {
+                    Self::load_dir(&path, Some(&name), skip, items, paths)?;
+                    continue;
+                }
+                if path.extension().map_or(true, |e| e != "md") {
+                    continue;
+                }
+                let stem = path.file_stem().unwrap().to_string_lossy().to_string();
+                let created = std::fs::metadata(&path)?
+                    .modified()?
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_secs() as i64;
+                let mut item = Item::from_markdown(&std::fs::read_to_string(&path)?, &stem, created)
+                    .map_err(|e| format!("{}: {}", path.display(), e))?;
+                if let Some(p) = parent {
+                    item.set_parent(Some(p.to_owned()));
+                }
+                paths.insert(item.id().to_owned(), path);
+                items.insert(item.id().to_owned(), item);
+            }
+            Ok(())
+        }
+
+        /// items/<ancestors>/<id>.md, unknown ancestors and cycles end the chain
+        fn item_path(&self, id: &str) -> PathBuf {
+            let mut chain = vec![];
+            let mut cur = self.items.get(id).and_then(|i| i.parents().first());
+            while let Some(p) = cur {
+                if p == id || chain.contains(&p) || !self.items.contains_key(p) {
+                    break;
+                }
+                chain.push(p);
+                cur = self.items.get(p).and_then(|i| i.parents().first());
+            }
+            let mut path = Self::items_dir(&self.root);
+            for p in chain.iter().rev() {
+                path.push(p);
+            }
+            path.join(format!("{}.md", id))
+        }
+
+        /// removes empty directories from `dir` up to the items directory
+        fn prune(&self, dir: Option<&Path>) {
+            let top = Self::items_dir(&self.root);
+            let mut dir = dir;
+            while let Some(d) = dir {
+                if d == top || !d.starts_with(&top) || std::fs::remove_dir(d).is_err() {
+                    break;
+                }
+                dir = d.parent();
+            }
+        }
+
         /// records `session` on every changed item
         pub fn add_session(&mut self, session: &str) {
             for id in &self.dirty {
@@ -143,27 +211,53 @@ pub mod inner {
             }
         }
 
-        /// writes changed items, removes deleted ones, returns touched paths
+        /// writes changed items, removes deleted ones and moves files whose
+        /// parent changed (with their subtree); returns touched paths
         pub fn save(&mut self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-            let dir = Self::items_dir(&self.root);
-            if !self.dirty.is_empty() {
-                std::fs::create_dir_all(&dir)?;
+            if self.dirty.is_empty() {
+                return Ok(vec![]);
             }
-            let mut paths = vec![];
-            for id in self.dirty.drain() {
-                let path = dir.join(format!("{}.md", id));
-                match self.items.get(&id) {
-                    Some(item) => {
-                        let tmp = dir.join(format!(".{}.md.tmp", id));
-                        std::fs::write(&tmp, item.to_markdown())?;
-                        std::fs::rename(&tmp, &path)?;
+            let mut touched = vec![];
+            let dirty = std::mem::take(&mut self.dirty);
+            for id in dirty.iter().filter(|id| !self.items.contains_key(*id)) {
+                if let Some(old) = self.paths.remove(id) {
+                    if old.exists() {
+                        std::fs::remove_file(&old)?;
+                        self.prune(old.parent());
                     }
-                    None if path.exists() => std::fs::remove_file(&path)?,
-                    None => continue,
+                    touched.push(old);
                 }
-                paths.push(path);
             }
-            Ok(paths)
+            let mut ids: Vec<String> = self.items.keys().cloned().collect();
+            ids.sort();
+            for id in ids {
+                let want = self.item_path(&id);
+                let old = self.paths.get(&id).cloned();
+                let changed = dirty.contains(&id);
+                if !changed && old.as_ref() == Some(&want) {
+                    continue;
+                }
+                let dir = want.parent().unwrap();
+                std::fs::create_dir_all(dir)?;
+                match &old {
+                    Some(o) if !changed && o.exists() => std::fs::rename(o, &want)?,
+                    _ => {
+                        let tmp = dir.join(format!(".{}.md.tmp", id));
+                        std::fs::write(&tmp, self.items[&id].to_markdown())?;
+                        std::fs::rename(&tmp, &want)?;
+                    }
+                }
+                if let Some(o) = old.filter(|o| *o != want) {
+                    if o.exists() {
+                        std::fs::remove_file(&o)?;
+                    }
+                    self.prune(o.parent());
+                    touched.push(o);
+                }
+                self.paths.insert(id, want.clone());
+                touched.push(want);
+            }
+            Ok(touched)
         }
 
         /// replaces an existing item, keeps derived children; existence is checked in command
@@ -304,7 +398,7 @@ pub mod inner {
             blocks.sort();
             m.insert("blocks".into(), serde_json::json!(blocks));
             m.insert("ready".into(), self.is_ready(id).into());
-            let path = Self::items_dir(&self.root).join(format!("{}.md", id));
+            let path = self.item_path(id);
             m.insert("path".into(), path.to_string_lossy().into());
             Some(serde_json::Value::Object(m))
         }
@@ -636,6 +730,57 @@ pub mod inner {
             assert_eq!(reloaded.get().len(), 2);
             assert_eq!(reloaded.get_item("p").unwrap().children(), &vec!["c".to_string()]);
             assert_eq!(reloaded.get_item("c").unwrap().to_markdown(), store.get_item("c").unwrap().to_markdown());
+        }
+
+        #[test]
+        fn children_live_in_a_directory_next_to_the_parent_and_move_with_it() {
+            let dir = tempfile::tempdir().unwrap();
+            let items = dir.path().join("items");
+            let mut store = Store::new(dir.path()).unwrap();
+            store.add(item("p", None, vec![])).unwrap();
+            store.add(item("c", Some("p"), vec![])).unwrap();
+            store.add(item("g", Some("c"), vec![])).unwrap();
+            store.add(item("q", None, vec![])).unwrap();
+            store.save().unwrap();
+            assert!(items.join("p.md").is_file());
+            assert!(items.join("p/c/g.md").is_file());
+
+            store.move_item("c", Some("q")).unwrap();
+            let mut touched = store.save().unwrap();
+            touched.sort();
+            assert_eq!(
+                touched,
+                vec![items.join("p/c/g.md"), items.join("p/c.md"), items.join("q/c/g.md"), items.join("q/c.md")]
+            );
+            assert!(!items.join("p").exists(), "empty directory is pruned");
+            assert!(items.join("q/c/g.md").is_file());
+
+            let reloaded = Store::new(dir.path()).unwrap();
+            assert_eq!(reloaded.get_item("g").unwrap().parents(), &["c".to_string()]);
+            assert_eq!(reloaded.get_item("q").unwrap().children(), &vec!["c".to_string()]);
+        }
+
+        #[test]
+        fn directory_decides_the_parent_and_flat_stores_migrate_on_write() {
+            let dir = tempfile::tempdir().unwrap();
+            let items = dir.path().join("items");
+            std::fs::create_dir_all(items.join("p")).unwrap();
+            std::fs::write(items.join("p.md"), "---\nid: p\n---\np\n").unwrap();
+            std::fs::write(items.join("old.md"), "---\nid: old\nparent: '[[p]]'\n---\nold\n").unwrap();
+            std::fs::write(items.join("p/moved.md"), "---\nid: moved\n---\nmoved\n").unwrap();
+            std::fs::create_dir_all(items.join("orphan")).unwrap();
+            std::fs::write(items.join("orphan/lost.md"), "---\nid: lost\n---\nlost\n").unwrap();
+
+            let mut store = Store::new(dir.path()).unwrap();
+            assert_eq!(store.get_item("moved").unwrap().parents(), &["p".to_string()]);
+            assert!(store.get_item("lost").unwrap().parents().is_empty());
+            assert!(store.save().unwrap().is_empty(), "reads write nothing");
+
+            store.get_item_mut("p").unwrap();
+            store.save().unwrap();
+            assert!(items.join("p/old.md").is_file());
+            assert!(items.join("lost.md").is_file());
+            assert!(!items.join("orphan").exists());
         }
 
         #[test]

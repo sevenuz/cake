@@ -49,11 +49,12 @@ where
     F: Fn(&str),
 {
     debug(&format!("add {:?}, content: {:?}", selector, content));
-    let id = if selector.ids.is_empty() {
-        util::generate_id()
-    } else {
-        selector.ids.first().unwrap().to_string()
+    let content = content.ok_or_else(|| error::invalid("No content, use -m TEXT (- for stdin)."))?;
+    let id = match selector.ids.first() {
+        Some(id) => id.to_string(),
+        None => util::slug_id(&crate::item::title_of(&content), |id| store.get_item(id).is_some()),
     };
+    util::check_id(&id)?;
     let mut item = Item::new(
         id.clone(),
         selector.children,
@@ -72,10 +73,7 @@ where
     item.set_priority(options.priority).map_err(error::invalid)?;
     item.set_blocked_by(options.blocked_by);
     item.set_by(config.author(store.root()));
-    item.set_content(match content {
-        Some(c) => c,
-        None => return Err(error::invalid("No content, use -m TEXT (- for stdin).")),
-    });
+    item.set_content(content);
     debug(&item.content());
     store.add(item)?;
     view::print(&config, store.get_item(&id).unwrap().print_long())?;

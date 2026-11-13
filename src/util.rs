@@ -108,6 +108,27 @@ mod tests {
     }
 
     #[test]
+    fn slug_id_takes_the_first_words_without_stop_words() {
+        assert_eq!(slug_id("Fix the merge driver for sync conflicts", |_| false), "fix-merge-driver-sync");
+        assert_eq!(slug_id("Größe prüfen!", |_| false), "größe-prüfen");
+        assert_eq!(slug_id("the a", |_| false), "the-a");
+        assert_eq!(slug_id("supercalifragilisticexpialidocious-and-more words", |_| false).chars().count(), 30);
+    }
+
+    #[test]
+    fn slug_id_counts_up_on_collisions_and_falls_back_to_random() {
+        assert_eq!(slug_id("edit lock", |id| id == "edit-lock" || id == "edit-lock-2"), "edit-lock-3");
+        assert_eq!(slug_id("!!", |_| false).len(), 6);
+    }
+
+    #[test]
+    fn check_id_refuses_path_characters() {
+        assert!(check_id("merge-driver").is_ok());
+        assert!(check_id("a/b").is_err());
+        assert!(check_id(".hidden").is_err());
+    }
+
+    #[test]
     #[serial]
     fn find_store_locates_store_in_an_ancestor_directory() {
         let sandbox = Sandbox::new();
@@ -125,6 +146,47 @@ mod tests {
         let sandbox = Sandbox::new();
         assert_eq!(find_store(sandbox.path()).unwrap(), global_store().unwrap());
     }
+}
+
+const SLUG_WORDS: usize = 4;
+const SLUG_MAX: usize = 30;
+const STOP_WORDS: &[&str] = &[
+    "a", "an", "the", "to", "of", "in", "on", "for", "and", "or", "with", "is", "der", "die", "das", "und",
+    "oder", "mit", "zu", "von", "ein", "eine", "im", "am",
+];
+
+/// kebab-case id from the first words of `title`, `-2`, `-3` .. if `taken`;
+/// a random id if the title has no usable word
+pub fn slug_id(title: &str, taken: impl Fn(&str) -> bool) -> String {
+    let lower = title.to_lowercase();
+    let words: Vec<&str> = lower.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let kept: Vec<&str> = words.iter().copied().filter(|w| !STOP_WORDS.contains(w)).collect();
+    let mut slug = String::new();
+    for w in (if kept.is_empty() { &words } else { &kept }).iter().take(SLUG_WORDS) {
+        if !slug.is_empty() && slug.chars().count() + 1 + w.chars().count() > SLUG_MAX {
+            break;
+        }
+        if !slug.is_empty() {
+            slug.push('-');
+        }
+        slug.push_str(w);
+    }
+    let slug: String = slug.chars().take(SLUG_MAX).collect();
+    if slug.chars().count() < 2 {
+        return generate_id();
+    }
+    (1..)
+        .map(|n| if n == 1 { slug.clone() } else { format!("{}-{}", slug, n) })
+        .find(|id| !taken(id))
+        .unwrap()
+}
+
+/// ids are file and directory names in the store
+pub fn check_id(id: &str) -> Result<(), Box<dyn Error>> {
+    if id.trim().is_empty() || id.starts_with('.') || id.contains(['/', '\\']) {
+        return Err(error::invalid(format!("'{}' is not a valid id (no '/', '\\', leading '.').", id)));
+    }
+    Ok(())
 }
 
 pub fn generate_id() -> String {

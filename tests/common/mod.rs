@@ -135,6 +135,21 @@ impl Env {
     }
 }
 
+/// the item file, wherever it is in the tree
 pub fn read_item(dir: &Path, id: &str) -> String {
-    fs::read_to_string(dir.join(".cake/items").join(format!("{}.md", id))).unwrap()
+    fs::read_to_string(find_item(&dir.join(".cake/items"), id).expect("item file")).unwrap()
+}
+
+fn find_item(dir: &Path, id: &str) -> Option<PathBuf> {
+    for entry in fs::read_dir(dir).ok()? {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            if let Some(p) = find_item(&path, id) {
+                return Some(p);
+            }
+        } else if path.file_name().unwrap() == format!("{}.md", id).as_str() {
+            return Some(path);
+        }
+    }
+    None
 }

@@ -119,11 +119,26 @@ fn mv_reparents_refuses_cycles_and_detaches() {
     env.cake_ok(&d, &["add", "b", "-m", "# b"]);
     env.cake_ok(&d, &["add", "c", "-p", "a", "-m", "# c"]);
 
+    assert!(d.join(".cake/items/a/c.md").is_file());
     env.cake_ok(&d, &["mv", "c", "b"]);
     assert!(read_item(&d, "c").contains("parent: \"[[b]]\"\n"));
+    assert!(d.join(".cake/items/b/c.md").is_file());
+    assert!(!d.join(".cake/items/a").exists());
     assert!(env.cake_err(&d, &["mv", "b", "c"]).contains("cycle"));
     env.cake_ok(&d, &["mv", "c", "-"]);
     assert!(!read_item(&d, "c").contains("parent:"));
+    assert!(d.join(".cake/items/c.md").is_file());
+}
+
+#[test]
+fn add_derives_a_slug_id_from_the_title() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "-m", "# Fix the merge driver for sync conflicts"]);
+    env.cake_ok(&d, &["add", "-p", "fix", "-m", "# Fix the merge driver for sync conflicts"]);
+    assert!(d.join(".cake/items/fix-merge-driver-sync.md").is_file());
+    assert!(d.join(".cake/items/fix-merge-driver-sync/fix-merge-driver-sync-2.md").is_file());
+    assert!(env.cake_err(&d, &["add", "a/b", "-m", "x"]).contains("not a valid id"));
 }
 
 #[test]

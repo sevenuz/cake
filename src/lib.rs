@@ -164,7 +164,7 @@ impl SelectorArgs {
 pub enum Commands {
     /// add a note, with --todo a task; the editor opens without -m
     Add {
-        /// custom id, default: random
+        /// custom id, default: slug of the title (e.g. fix-merge-driver)
         ids: Option<String>,
 
         /// move these items under the new one

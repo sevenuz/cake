@@ -472,13 +472,7 @@ impl Item {
 
     /// first `# heading`, else the first non-empty line
     pub fn title(&self) -> String {
-        let lines = || self.content.lines().map(|l| l.trim());
-        lines()
-            .find_map(|l| l.strip_prefix("# "))
-            .or_else(|| lines().find(|l| !l.is_empty()))
-            .unwrap_or_default()
-            .trim()
-            .to_string()
+        title_of(&self.content)
     }
 
     /// tracked time, a running interval counts until now
@@ -533,4 +527,15 @@ impl Item {
         *self = item;
         self.children = children;
     }
+}
+
+/// the first `# heading`, else the first non-empty line
+pub fn title_of(content: &str) -> String {
+    let lines = || content.lines().map(|l| l.trim());
+    lines()
+        .find_map(|l| l.strip_prefix("# "))
+        .or_else(|| lines().find(|l| !l.is_empty()))
+        .unwrap_or_default()
+        .trim()
+        .to_string()
 }

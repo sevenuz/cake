@@ -6,7 +6,8 @@ description: Track tasks, plans, docs and ideas with the cake CLI (markdown item
 # cake
 
 One markdown file per item in `.cake/items/` (project store, own git branch)
-or `~/.local/share/cake` (personal store, `-g`). Every change through `cake`
+or `~/.local/share/cake` (personal store, `-g`). The tree is on disk:
+children of `sync.md` live in `sync/`. Every change through `cake`
 is committed automatically. Your items get `by: <agent>`, changed items record
 your session in `sessions`, your commits are tagged `[<agent>]`.
 
@@ -25,6 +26,13 @@ your session in `sessions`, your commits are tagged `[<agent>]`.
   Aim for 3–5 bullets, but use more rather than lose details; split into
   children only when parts are worked on separately.
 - **No `cake sync`** unless asked. Cite items by id.
+- **Ids are names:** the default id is a slug of the title, so write titles
+  that start with the topic. Pass an id (`cake add <id>`) when the slug is
+  poor: kebab-case, 2–4 words, topic first (`merge-driver`, `edit-lock`),
+  no parent prefix (the directory gives it), no status or date. Ids never
+  change.
+- **Shallow trees:** at most 3 levels; cross links via `[[id]]` or
+  `--blocked-by`, not via nesting.
 
 ## Workflow
 
@@ -60,7 +68,7 @@ your session in `sessions`, your commits are tagged `[<agent>]`.
 cake ls --json [selectors]              # tree: matches with children; -l adds bodies
 cake ready --json                       # approved, unblocked, by priority/due
 cake show <id> --json                   # one item with body
-cake add --json [--todo] [-p ID] [-t TAGS] [--blocked-by IDS] [--prio N] [--due D] -m TEXT
+cake add [ID] --json [--todo] [-p ID] [-t TAGS] [--blocked-by IDS] [--prio N] [--due D] -m TEXT
 cake edit <id> --json -m -              # replace the body (your items only)
 cake edit <id> --json --prio 1 --due 2026-10-30   # 0 / - clear
 cake start|stop <id> --json             # timer; start sets doing
