@@ -1,6 +1,6 @@
 ---
 id: statuses-and-assignee
-status: doing
+status: review
 tags: [plan]
 parent: "[[workflow-v2]]"
 created: 2026-11-13T23:04:17+01:00
@@ -25,3 +25,5 @@ time:
   inbox, todo/doing get an assignee from `by`; tags triaged/sorted go
 - done when: migrate on a copy of this store shows a sensible overview
   and the tests cover every status change
+
+changed: statuses inbox/note/task/doing/review, assignee and owner, commands note/review/assign/comment, cake migrate; commit a5b04ea; try: cake add -m x, then sort it in cake
