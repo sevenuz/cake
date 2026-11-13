@@ -10,10 +10,14 @@ sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
 ---
 # cake morning: terminal form
 
-- step 1 paper: one line = one todo by user, empty line ends
-- step 2 queue by score: answer / due / deadline / prio,
-  approve · split · drop · skip
-- step 3 summary: what agents can work on now
-- no store lock while waiting for input: reload + write per answer
-- crate: inquire (DateSelect for deadlines) — pending user choice
-- done when: full morning pass works on the real store
+- `cake` alone (terminal) or `cake morning`
+- 1 paper: one line = one todo by user, empty line ends
+- 2 questions: open asks by score, letter picks option line, text = answer
+- 3 planned: agents' notes with `done when`, no open ask: do · do with
+  due/deadline · drop · skip · quit
+- summary: added, answered, approved, ready for agents / for you
+- each change is its own cake call: no lock while waiting
+- termimad Question, no new dependency
+- also: `cake do` (approve), space separated ids
+- done when: full pass on a scratch store ✓, on the real store (user)
+- commit: f45844f
