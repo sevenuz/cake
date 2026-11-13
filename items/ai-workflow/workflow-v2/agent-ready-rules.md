@@ -1,12 +1,13 @@
 ---
 id: agent-ready-rules
-status: review
+status: done
 tags: [plan]
 parent: "[[workflow-v2]]"
 blocked_by: ["[[statuses-and-assignee]]"]
 created: 2026-11-13T23:04:17+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+closed: 2026-11-13T23:50:38+01:00
 assignee: claude-code
 owner: sevenuz
 ---
