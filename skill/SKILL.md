@@ -156,7 +156,8 @@ cake ready --json                       # approved, unblocked, by score
 cake show <id> --json                   # one item with body
 cake add [ID] --json [--todo] [-p ID] [-t TAGS] [--blocked-by IDS] [--prio N] [--due D] [--deadline D] -m TEXT
 cake edit <id> --json -m -              # replace the body (your items only)
-cake edit <id> --json --prio 1 --due 2026-10-30 --deadline 2026-11-15   # 0 / - clear
+cake edit <id> --json --prio 1 --due fri --deadline 30.11.   # 0 / - clear
+# dates: 2026-11-30, 30.11., today, tomorrow, mon..sun, +3d, 2w; stored as YYYY-MM-DD
 cake start|stop <id> --json             # timer; start sets doing
 cake do <ids> --json                    # approve: status todo (alias todo, reopen)
 cake done|drop <ids> [-m NOTE] --json   # -m appends a note (answer, reason)

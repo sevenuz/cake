@@ -94,7 +94,9 @@ fn status_parse_rejects_unknown() {
 #[test]
 fn add_fields_validate_and_serialize() {
     let mut item = Item::new("a".into(), vec![], None, vec![]);
-    assert!(item.set_due(Some("tomorrow".into())).is_err());
+    assert!(item.set_due(Some("someday".into())).is_err());
+    item.set_due(Some("tomorrow".into())).unwrap();
+    assert!(item.due().unwrap().len() == 10, "stored as YYYY-MM-DD");
     item.set_due(Some("2026-10-30".into())).unwrap();
     item.set_due(Some("2026-10-30T12:00:00+01:00".into())).unwrap();
     assert!(item.set_priority(Some(4)).is_err());

@@ -615,8 +615,8 @@ fn decide(
             }
             (Kind::Plan, 0) => ui.save(&mut screen, || cake.call(&["do", &id]).map(|_| ("approved".to_string(), true)))?,
             (Kind::Plan, 1) => {
-                let Some(due) = ui.input(&mut screen, "due, soft target (2026-11-30, enter for none):")? else { continue };
-                let Some(deadline) = ui.input(&mut screen, "deadline, hard limit (enter for none):")? else { continue };
+                let Some(due) = ui.input(&mut screen, "due, soft target (fri, +3d, 30.11., 2026-11-30; enter for none):")? else { continue };
+                let Some(deadline) = ui.input(&mut screen, "deadline, hard limit (same forms; enter for none):")? else { continue };
                 ui.save(&mut screen, || {
                     let mut args = vec!["edit", id.as_str()];
                     if !due.is_empty() {

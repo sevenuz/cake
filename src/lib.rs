@@ -220,11 +220,11 @@ pub enum Commands {
         #[arg(long)]
         todo: bool,
 
-        /// soft target date, e.g. 2026-10-30
+        /// soft target date: 2026-11-30, 30.11., today, tomorrow, fri, +3d, 2w
         #[arg(long, value_name = "DATE")]
         due: Option<String>,
 
-        /// hard limit date, e.g. 2026-11-15
+        /// hard limit date, same forms as --due
         #[arg(long, value_name = "DATE")]
         deadline: Option<String>,
 
@@ -248,7 +248,7 @@ pub enum Commands {
         #[arg(long, value_name = "N")]
         prio: Option<u64>,
 
-        /// soft target date, e.g. 2026-10-30, - clears
+        /// soft target date (2026-11-30, 30.11., fri, +3d, ...), - clears
         #[arg(long, value_name = "DATE")]
         due: Option<String>,
 

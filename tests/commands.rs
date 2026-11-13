@@ -172,7 +172,10 @@ fn ready_orders_by_score_deadline_before_prio() {
     assert!(read_item(&d, "late").contains("deadline: 2000-01-01\n"));
     env.cake_ok(&d, &["edit", "late", "--deadline", "-"]);
     assert!(!read_item(&d, "late").contains("deadline"));
-    assert!(env.cake_err(&d, &["edit", "late", "--deadline", "soon"]).contains("invalid deadline"));
+    assert!(env.cake_err(&d, &["edit", "late", "--deadline", "soon"]).contains("deadline: 'soon' is no date"));
+    env.cake_ok(&d, &["edit", "late", "--due", "+3d", "--deadline", "fri"]);
+    let item = read_item(&d, "late");
+    assert!(item.contains("due: 20") && item.contains("deadline: 20"), "stored as dates: {}", item);
 }
 
 #[test]

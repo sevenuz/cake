@@ -108,6 +108,30 @@ mod tests {
     }
 
     #[test]
+    fn parse_date_understands_short_forms() {
+        use chrono::{Datelike, Duration};
+        let today = Local::now().date_naive();
+        let fmt = |d: chrono::NaiveDate| d.format("%Y-%m-%d").to_string();
+        assert_eq!(parse_date("2026-11-30").unwrap(), "2026-11-30");
+        assert_eq!(parse_date("today").unwrap(), fmt(today));
+        assert_eq!(parse_date("Morgen").unwrap(), fmt(today + Duration::days(1)));
+        assert_eq!(parse_date("+3d").unwrap(), fmt(today + Duration::days(3)));
+        assert_eq!(parse_date("2w").unwrap(), fmt(today + Duration::days(14)));
+        assert_eq!(parse_date("1w2d").unwrap(), fmt(today + Duration::days(9)));
+        let fri = parse_date("fri").unwrap();
+        let fri = chrono::NaiveDate::parse_from_str(&fri, "%Y-%m-%d").unwrap();
+        assert_eq!(fri.weekday(), chrono::Weekday::Fri);
+        assert!(fri >= today && fri < today + Duration::days(7));
+        assert_eq!(parse_date("friday").unwrap(), fmt(fri));
+        assert_eq!(parse_date("30.11.2027").unwrap(), "2027-11-30");
+        let next = parse_date("1.1.").unwrap();
+        assert!(next > fmt(today) && next.ends_with("-01-01"), "{}", next);
+        for bad in ["soon", "fr", "31.2.", "+3x", "frix"] {
+            assert!(parse_date(bad).is_err(), "{}", bad);
+        }
+    }
+
+    #[test]
     fn slug_id_takes_the_first_words_without_stop_words() {
         assert_eq!(slug_id("Fix the merge driver for sync conflicts", |_| false), "fix-merge-driver-sync");
         assert_eq!(slug_id("Größe prüfen!", |_| false), "größe-prüfen");
@@ -208,7 +232,11 @@ pub fn parse_time(t: &str) -> Result<Option<i64>, Box<dyn Error>> {
     if t.is_empty() {
         return Ok(None);
     }
+    Ok(Some(timestamp() - parse_duration(t)?))
+}
 
+/// seconds of e.g. 1y1w1d1h1m1s
+pub fn parse_duration(t: &str) -> Result<i64, Box<dyn Error>> {
     const NUMBERS: [char; 10] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
     const UNIT: [char; 6] = ['y', 'w', 'd', 'h', 'm', 's'];
     let mut values: [i64; 6] = [0, 0, 0, 0, 0, 0];
@@ -233,8 +261,51 @@ pub fn parse_time(t: &str) -> Result<Option<i64>, Box<dyn Error>> {
         + 60 * 60 * values[3] // hours
         + 60 * values[4] // minutes
         + values[5]; // seconds
-    let now = timestamp();
-    Ok(Some(now - t))
+    Ok(t)
+}
+
+/// a due date or deadline as YYYY-MM-DD (RFC 3339 times stay): today,
+/// tomorrow, mon..sun (the next one, today included), +3d / 2w1d (from
+/// now), 30.11. or 30.11.2026 (day.month, without year the next one)
+pub fn parse_date(s: &str) -> Result<String, String> {
+    use chrono::{Datelike, Duration, NaiveDate};
+    let s = s.trim();
+    let err = || format!("'{}' is no date: use 2026-11-30, 30.11., today, tomorrow, fri, +3d, 2w", s);
+    if NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok() || parse_timestamp(s).is_ok() {
+        return Ok(s.to_string());
+    }
+    let today = Local::now().date_naive();
+    let lower = s.to_lowercase();
+    let day = match lower.as_str() {
+        "today" | "heute" => Some(today),
+        "tomorrow" | "morgen" => Some(today + Duration::days(1)),
+        _ => None,
+    };
+    let weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+    let weekday = weekdays.iter().position(|w| lower.len() >= 3 && w.starts_with(&lower[..3]) && "monday tuesday wednesday thursday friday saturday sunday".contains(lower.as_str()));
+    let day = day.or_else(|| {
+        weekday.map(|w| {
+            let ahead = (w as i64 - today.weekday().num_days_from_monday() as i64).rem_euclid(7);
+            today + Duration::days(ahead)
+        })
+    });
+    let day = day.or_else(|| {
+        let d = lower.strip_prefix('+').unwrap_or(&lower);
+        d.chars().next().filter(|c| c.is_ascii_digit())?;
+        let secs = parse_duration(d).ok()?;
+        Some((Local::now() + Duration::seconds(secs)).date_naive())
+    });
+    let day = day.or_else(|| {
+        let parts: Vec<&str> = lower.trim_end_matches('.').split('.').collect();
+        let (d, m) = (parts.first()?.parse::<u32>().ok()?, parts.get(1)?.parse::<u32>().ok()?);
+        match parts.get(2) {
+            Some(y) => NaiveDate::from_ymd_opt(y.parse::<i32>().ok()?, m, d),
+            None => NaiveDate::from_ymd_opt(today.year(), m, d)
+                .filter(|date| *date >= today)
+                .or_else(|| NaiveDate::from_ymd_opt(today.year() + 1, m, d)),
+        }
+    });
+    day.map(|d| d.format("%Y-%m-%d").to_string()).ok_or_else(err)
 }
 
 /// show timestamp in hours, minutes, seconds

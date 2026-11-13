@@ -494,17 +494,15 @@ impl Item {
         Ok(())
     }
 
-    /// soft target: a date (2026-10-30) or an RFC 3339 datetime
+    /// soft target: a date in any form of util::parse_date, stored as YYYY-MM-DD
     pub fn set_due(&mut self, due: Option<String>) -> Result<(), String> {
-        check_date("due", &due)?;
-        self.due = due;
+        self.due = due.map(|d| util::parse_date(&d).map_err(|e| format!("due: {}", e))).transpose()?;
         Ok(())
     }
 
-    /// hard limit, same format as `due`
+    /// hard limit, same forms as `due`
     pub fn set_deadline(&mut self, deadline: Option<String>) -> Result<(), String> {
-        check_date("deadline", &deadline)?;
-        self.deadline = deadline;
+        self.deadline = deadline.map(|d| util::parse_date(&d).map_err(|e| format!("deadline: {}", e))).transpose()?;
         Ok(())
     }
 
@@ -598,15 +596,6 @@ pub fn title_of(content: &str) -> String {
         .unwrap_or_default()
         .trim()
         .to_string()
-}
-
-fn check_date(field: &str, value: &Option<String>) -> Result<(), String> {
-    match value {
-        Some(d) if util::date_timestamp(d).is_none() => {
-            Err(format!("invalid {} '{}', use 2026-10-30 or an RFC 3339 time", field, d))
-        }
-        _ => Ok(()),
-    }
 }
 
 /// tokens of one model
