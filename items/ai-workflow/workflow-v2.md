@@ -1,6 +1,6 @@
 ---
 id: workflow-v2
-status: task
+status: review
 tags: [plan]
 parent: "[[ai-workflow]]"
 created: 2026-11-13T23:04:17+01:00
