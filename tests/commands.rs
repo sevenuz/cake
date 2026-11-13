@@ -218,6 +218,52 @@ fn ascii_style_replaces_every_special_character() {
 }
 
 #[test]
+fn claude_hook_gives_tokens_to_the_item_whose_timer_ran() {
+    let env = Env::new();
+    let d = env.plain_store();
+    let s = [("AI_AGENT", "claude-code"), ("CLAUDE_CODE_SESSION_ID", "s1")];
+    env.cake_env(&d, &["add", "work", "--todo", "-m", "# Work"], &s);
+    env.cake_env(&d, &["start", "work"], &s);
+    let now = chrono::Utc::now();
+    let line = |id: &str, t: chrono::DateTime<chrono::Utc>, model: &str| {
+        format!(
+            "{{\"type\":\"assistant\",\"timestamp\":\"{}\",\"message\":{{\"id\":\"{}\",\"model\":\"{}\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":100,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":50}}}}}}\n",
+            t.to_rfc3339(), id, model
+        )
+    };
+    let transcript = env.path("t.jsonl");
+    let old = now - chrono::Duration::hours(2); // before the timer: nobody's
+    std::fs::write(&transcript, line("a", old, "m1") + &line("b", now, "m1")).unwrap();
+    let hook = |cwd: &std::path::Path| {
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_cake"))
+            .args(["usage", "claude-hook"])
+            .current_dir(cwd)
+            .env("XDG_CONFIG_HOME", env.path("config"))
+            .env("XDG_DATA_HOME", env.path("data"))
+            .env("XDG_STATE_HOME", env.path("state"))
+            .env("AI_AGENT", "claude-code")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let input = format!("{{\"session_id\":\"s1\",\"transcript_path\":\"{}\"}}", transcript.display());
+        std::io::Write::write_all(child.stdin.as_mut().unwrap(), input.as_bytes()).unwrap();
+        assert!(child.wait().unwrap().success());
+    };
+    hook(&d);
+    assert!(!read_item(&d, "work").contains("usage:"), "running: still pending");
+
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    env.cake_env(&d, &["stop", "work"], &s);
+    let item = read_item(&d, "work");
+    assert!(item.contains("usage: {m1: {in: 10, out: 100, cache_read: 1000, cache_write: 50}}"), "{}", item);
+    let show = env.cake_ok(&d, &["show", "work"]);
+    assert!(show.contains("tokens 1.2k (m1)") && show.contains("Wh"), "{}", show);
+
+    env.cake_ok(&d, &["usage", "add", "wo", "--model", "local", "--out", "7"]);
+    assert!(read_item(&d, "work").contains("local: {in: 0, out: 7"));
+}
+
+#[test]
 fn ls_filters_by_text_status_and_blockers() {
     let env = Env::new();
     let d = env.plain_store();

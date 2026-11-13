@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::error::ParseError;
 use crate::util;
 use core::fmt;
@@ -49,6 +50,7 @@ pub struct Item {
     timestamp: i64, // creation timestamp
     by: Option<String>, // creator, set once
     sessions: Vec<String>, // agent sessions that changed the item
+    usage: BTreeMap<String, Usage>, // tokens by model
     closed: Option<i64>,
     due: Option<String>,
     deadline: Option<String>,
@@ -138,6 +140,7 @@ impl Item {
             timestamp: util::timestamp(),
             by: None,
             sessions: vec![],
+            usage: BTreeMap::new(),
             closed: None,
             due: None,
             deadline: None,
@@ -176,6 +179,10 @@ impl Item {
         let timestamp = take_time(&mut m, "created")?.unwrap_or(fallback_created);
         let by = take_str(&mut m, "by")?;
         let sessions = take_list(&mut m, "sessions")?;
+        let usage = match m.shift_remove("usage") {
+            None | Some(Value::Null) => BTreeMap::new(),
+            Some(v) => serde_yaml_ng::from_value(v).map_err(|e| err(format!("'usage': {}", e)))?,
+        };
         let closed = take_time(&mut m, "closed")?;
         let due = take_str(&mut m, "due")?;
         let deadline = take_str(&mut m, "deadline")?;
@@ -205,6 +212,7 @@ impl Item {
             timestamp,
             by,
             sessions,
+            usage,
             closed,
             due,
             deadline,
@@ -236,6 +244,23 @@ impl Item {
         }
         if !self.sessions.is_empty() {
             s += &format!("sessions: {}\n", list(&self.sessions, yaml_str));
+        }
+        if !self.usage.is_empty() {
+            let models: Vec<String> = self
+                .usage
+                .iter()
+                .map(|(m, u)| {
+                    format!(
+                        "{}: {{in: {}, out: {}, cache_read: {}, cache_write: {}}}",
+                        yaml_str(m),
+                        u.input,
+                        u.output,
+                        u.cache_read,
+                        u.cache_write
+                    )
+                })
+                .collect();
+            s += &format!("usage: {{{}}}\n", models.join(", "));
         }
         if let Some(c) = self.closed {
             s += &format!("closed: {}\n", util::format_timestamp(c));
@@ -285,6 +310,9 @@ impl Item {
         if tracked > 0 {
             let running = if self.is_started() { " running" } else { "" };
             meta.push(format!("tracked {}{}", util::timestamp_to_hms(tracked), running));
+        }
+        if !self.usage.is_empty() {
+            meta.push(crate::footprint::describe(&self.usage));
         }
         if let Some(p) = self.priority {
             meta.push(format!("prio {}", p));
@@ -360,6 +388,14 @@ impl Item {
     }
 
     /// tracked intervals as (start, end), a running one ends now
+    pub fn add_usage(&mut self, model: &str, u: Usage) {
+        *self.usage.entry(model.to_string()).or_default() += u;
+    }
+
+    pub fn sessions(&self) -> &Vec<String> {
+        &self.sessions
+    }
+
     pub fn intervals(&self) -> Vec<(i64, i64)> {
         self.timetrack
             .chunks(2)
@@ -525,6 +561,8 @@ impl Item {
             "created": util::format_timestamp(self.timestamp),
             "by": self.by,
             "sessions": self.sessions,
+            "usage": self.usage,
+            "footprint": crate::footprint::estimate(&self.usage),
             "closed": self.closed.map(util::format_timestamp),
             "due": self.due,
             "deadline": self.deadline,
@@ -568,5 +606,44 @@ fn check_date(field: &str, value: &Option<String>) -> Result<(), String> {
             Err(format!("invalid {} '{}', use 2026-10-30 or an RFC 3339 time", field, d))
         }
         _ => Ok(()),
+    }
+}
+
+/// tokens of one model
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Usage {
+    #[serde(rename = "in", default)]
+    pub input: u64,
+    #[serde(rename = "out", default)]
+    pub output: u64,
+    #[serde(default)]
+    pub cache_read: u64,
+    #[serde(default)]
+    pub cache_write: u64,
+}
+
+impl Usage {
+    pub fn total(&self) -> u64 {
+        self.input + self.output + self.cache_read + self.cache_write
+    }
+
+    /// `self` split into `n` parts, the remainder in the first
+    pub fn split(&self, n: u64, first: bool) -> Usage {
+        let part = |v: u64| v / n + if first { v % n } else { 0 };
+        Usage {
+            input: part(self.input),
+            output: part(self.output),
+            cache_read: part(self.cache_read),
+            cache_write: part(self.cache_write),
+        }
+    }
+}
+
+impl std::ops::AddAssign for Usage {
+    fn add_assign(&mut self, o: Usage) {
+        self.input += o.input;
+        self.output += o.output;
+        self.cache_read += o.cache_read;
+        self.cache_write += o.cache_write;
     }
 }

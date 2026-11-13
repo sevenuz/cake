@@ -1,6 +1,7 @@
 mod commands;
 mod config;
 mod error;
+mod footprint;
 mod git;
 mod item;
 mod markdown;
@@ -11,6 +12,7 @@ mod store;
 mod stores;
 mod style;
 mod theme;
+mod usage;
 #[cfg(test)]
 mod test_support;
 mod util;
@@ -171,6 +173,27 @@ impl SelectorArgs {
 }
 
 #[derive(Subcommand)]
+pub enum UsageAction {
+    /// add tokens of one model to an item (any agent)
+    Add {
+        id: String,
+        #[arg(long)]
+        model: String,
+        #[arg(long = "in", default_value_t = 0)]
+        input: u64,
+        #[arg(long, default_value_t = 0)]
+        out: u64,
+        #[arg(long, default_value_t = 0)]
+        cache_read: u64,
+        #[arg(long, default_value_t = 0)]
+        cache_write: u64,
+    },
+    /// Claude Code Stop hook: hook JSON on stdin, attributes the session's
+    /// new answers to the items whose timer ran
+    ClaudeHook {},
+}
+
+#[derive(Subcommand)]
 pub enum Commands {
     /// add a note, with --todo a task; the editor opens without -m
     Add {
@@ -308,6 +331,11 @@ pub enum Commands {
     },
     /// guided pass: new tasks, questions by score, plans to approve; -g: all stores
     Morning {},
+    /// tokens per item, with an energy, CO2e and water estimate in show
+    Usage {
+        #[command(subcommand)]
+        action: UsageAction,
+    },
     /// move an item under a parent, or with its subtree to another store
     Mv {
         id: String,
@@ -374,6 +402,7 @@ impl Commands {
             Commands::Show { target } if store.resolve(target).map_or(false, |t| store.get_item(&t).is_some()) => {
                 one(target)?
             }
+            Commands::Usage { action: UsageAction::Add { id, .. } } => one(id)?,
             Commands::Mv { id, parent, .. } => {
                 one(id)?;
                 if let Some(p) = parent.as_mut().filter(|p| *p != "-") {
@@ -442,6 +471,7 @@ impl Commands {
                 | Commands::Start { .. }
                 | Commands::Stop { .. }
                 | Commands::Mv { .. }
+                | Commands::Usage { .. }
                 | Commands::Block { .. }
                 | Commands::Unblock { .. }
                 | Commands::Done { .. }
@@ -557,6 +587,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let config = Config::new()?;
     style::init(&config.style);
     theme::init()?;
+    footprint::init(config.footprint.clone());
     let mut aliases = config.aliases(&guess_root(&args)?)?;
     // agents and the morning form get the documented built-ins
     if config.agent().is_some() || std::env::var_os(morning::PLAIN_ENV).is_some() {
@@ -786,6 +817,15 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
         Some(Commands::Morning {}) => unreachable!("handled before the lock"),
+        Some(Commands::Usage { action: UsageAction::Add { id, model, input, out, cache_read, cache_write } }) => {
+            let u = item::Usage { input: *input, output: *out, cache_read: *cache_read, cache_write: *cache_write };
+            store.get_item_mut(id).ok_or_else(|| error::not_found(id))?.add_usage(model, u);
+            commands::Report::Items(vec![id.to_owned()])
+        }
+        Some(Commands::Usage { action: UsageAction::ClaudeHook {} }) => {
+            usage::claude_hook(&mut store)?;
+            commands::Report::None
+        }
         None => {
             if !out::json() {
                 Cli::command().print_help()?;
@@ -794,6 +834,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    if cli.command.as_ref().is_some_and(Commands::writes) {
+        usage::fold(&mut store)?;
+    }
     if let Some(session) = config.session() {
         store.add_session(&session);
     }

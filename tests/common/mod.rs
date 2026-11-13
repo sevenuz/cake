@@ -53,6 +53,7 @@ impl Env {
             .current_dir(cwd)
             .env("XDG_CONFIG_HOME", self.path("config"))
             .env("XDG_DATA_HOME", self.path("data"))
+            .env("XDG_STATE_HOME", self.path("state"))
             .env_remove("CAKE_STORE")
             .env_remove("CAKE_AUTHOR")
             .env_remove("AI_AGENT")

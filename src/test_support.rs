@@ -19,6 +19,7 @@ pub struct Sandbox {
     prev_cwd: PathBuf,
     prev_xdg_config: Option<String>,
     prev_xdg_data: Option<String>,
+    prev_xdg_state: Option<String>,
 }
 
 impl Sandbox {
@@ -27,6 +28,7 @@ impl Sandbox {
         let prev_cwd = env::current_dir().expect("read cwd");
         let prev_xdg_config = env::var("XDG_CONFIG_HOME").ok();
         let prev_xdg_data = env::var("XDG_DATA_HOME").ok();
+        let prev_xdg_state = env::var("XDG_STATE_HOME").ok();
 
         let config_dir = dir.path().join("config");
         let data_dir = dir.path().join("data");
@@ -34,6 +36,7 @@ impl Sandbox {
         std::fs::create_dir_all(&data_dir).unwrap();
         env::set_var("XDG_CONFIG_HOME", &config_dir);
         env::set_var("XDG_DATA_HOME", &data_dir);
+        env::set_var("XDG_STATE_HOME", dir.path().join("state"));
         env::set_current_dir(dir.path()).expect("chdir into sandbox");
 
         Self {
@@ -41,6 +44,7 @@ impl Sandbox {
             prev_cwd,
             prev_xdg_config,
             prev_xdg_data,
+            prev_xdg_state,
         }
     }
 
@@ -68,6 +72,10 @@ impl Drop for Sandbox {
         match &self.prev_xdg_config {
             Some(v) => env::set_var("XDG_CONFIG_HOME", v),
             None => env::remove_var("XDG_CONFIG_HOME"),
+        }
+        match &self.prev_xdg_state {
+            Some(v) => env::set_var("XDG_STATE_HOME", v),
+            None => env::remove_var("XDG_STATE_HOME"),
         }
         match &self.prev_xdg_data {
             Some(v) => env::set_var("XDG_DATA_HOME", v),

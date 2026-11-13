@@ -49,6 +49,9 @@ pub struct Config {
     /// env CAKE_STYLE wins. Color follows NO_COLOR and the terminal.
     #[serde(default = "default_style")]
     pub style: String,
+    /// rough energy/CO2e/water estimate per token (see footprint.rs)
+    #[serde(default)]
+    pub footprint: crate::footprint::Footprint,
     /// When output has more lines than the threshold, then show it in scrollview
     /// -1 to never go into scrollview
     /// 127 as maximum
@@ -151,6 +154,7 @@ impl Config {
                 aliases: BTreeMap::new(),
                 status: default_status(),
                 style: default_style(),
+                footprint: Default::default(),
                 scrollview_threshold: 30,
             })
         }
