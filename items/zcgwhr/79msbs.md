@@ -1,7 +1,7 @@
 ---
 id: 79msbs
 status: todo
-tags: [cli, review]
+tags: [cli]
 parent: "[[zcgwhr]]"
 blocked_by: ["[[store-list]]"]
 created: 2026-10-27T13:29:58+01:00
