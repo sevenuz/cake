@@ -1,5 +1,6 @@
 ---
 id: kqejfn
+status: todo
 parent: "[[cpfsjb]]"
 created: 2026-10-27T14:51:01+01:00
 by: claude-code
