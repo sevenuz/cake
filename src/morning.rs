@@ -254,7 +254,6 @@ pub fn run(root: &Path, user: &str, all: bool) -> Result<(), Box<dyn Error>> {
     };
     let title = |t: &str| println!("\n{}", t.bold().underlined());
 
-    println!("{}", "Ctrl-C ends any time, every change is saved right away.".dark_grey());
     title(&format!("1/3 New tasks for {}", stores[0].0));
     println!("Tasks you already know (e.g. from a paper list), one per line, empty line ends.");
     let here = Cake { root };
