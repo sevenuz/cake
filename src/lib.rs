@@ -655,7 +655,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             return Err(error::invalid("cake morning needs a terminal and no --json."))
         }
         Some(Commands::Morning {}) | None if interactive => {
-            return morning::run(&root, &config.user(&root), cli.global)
+            return morning::run(&root, &config.user(&root), cli.global, config.animations)
         }
         _ => (),
     }

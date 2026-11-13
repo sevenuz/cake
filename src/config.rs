@@ -20,6 +20,7 @@ pub struct Config {
     pub aliases: BTreeMap<String, String>,
     pub style: String,
     pub scrollview_threshold: i8,
+    pub animations: bool,
     pub usage_tracking: bool,
     pub score: crate::store::ScoreWeights,
     pub footprint: crate::footprint::Footprint,
@@ -38,6 +39,7 @@ impl Default for Config {
             aliases: BTreeMap::new(),
             style: default_style(),
             scrollview_threshold: 30,
+            animations: true,
             usage_tracking: true,
             score: Default::default(),
             footprint: Default::default(),
@@ -71,6 +73,8 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   style: auto
   // lines from which cake show opens a pager, -1 never
   scrollview_threshold: 30
+  // the cake at the end of the morning form; false: shown without animation
+  animations: true
 
   // tokens per item from agents (cake usage); false: the Claude hook does nothing
   usage_tracking: true

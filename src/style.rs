@@ -23,6 +23,17 @@ pub struct Glyphs {
     /// markdown list and rule in `show`
     pub bullet: char,
     pub rule: char,
+    /// selected option, done item, free text entry
+    pub select: &'static str,
+    pub check: &'static str,
+    pub ellipsis: &'static str,
+    /// progress bar
+    pub bar_full: &'static str,
+    pub bar_empty: &'static str,
+    /// saving spinner frames
+    pub spinner: &'static [&'static str],
+    /// card and header borders
+    pub border: ratatui::symbols::border::Set<'static>,
 }
 
 const UNICODE: Glyphs = Glyphs {
@@ -40,6 +51,13 @@ const UNICODE: Glyphs = Glyphs {
     more: "…",
     bullet: '•',
     rule: '─',
+    select: "›",
+    check: "✓",
+    ellipsis: "…",
+    bar_full: "━",
+    bar_empty: "─",
+    spinner: &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+    border: ratatui::symbols::border::ROUNDED,
 };
 
 const ASCII: Glyphs = Glyphs {
@@ -57,6 +75,22 @@ const ASCII: Glyphs = Glyphs {
     more: "...",
     bullet: '-',
     rule: '-',
+    select: ">",
+    check: "x",
+    ellipsis: "...",
+    bar_full: "#",
+    bar_empty: ".",
+    spinner: &["|", "/", "-", "\\"],
+    border: ratatui::symbols::border::Set {
+        top_left: "+",
+        top_right: "+",
+        bottom_left: "+",
+        bottom_right: "+",
+        vertical_left: "|",
+        vertical_right: "|",
+        horizontal_top: "-",
+        horizontal_bottom: "-",
+    },
 };
 
 static IS_ASCII: OnceLock<bool> = OnceLock::new();
