@@ -7,7 +7,7 @@ use std::error::Error;
 use std::io::{BufRead, Write};
 use std::path::Path;
 use std::process::Command;
-use termimad::crossterm::style::Stylize;
+use ratatui::crossterm::style::Stylize;
 
 /// set for the form's own cake calls: built-ins without alias overrides
 pub const PLAIN_ENV: &str = "CAKE_PLAIN";

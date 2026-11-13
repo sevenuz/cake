@@ -10,7 +10,8 @@ use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use termimad::crossterm::style::Stylize;
+use crate::theme;
+use ratatui::style::{Modifier, Style};
 
 /// fields of a new item besides selector and content
 pub struct AddOptions {
@@ -574,14 +575,17 @@ fn line(item: &Item, short: &str, color: bool) -> String {
     if !color {
         return format!("{} {} {}{}", marker, short, item.title(), tags);
     }
+    let t = theme::t();
     let marker = match item.status() {
-        Some(Status::Doing) if item.is_started() => marker.green().bold(),
-        Some(Status::Doing) => marker.yellow(),
-        _ => marker.stylize(),
+        Some(Status::Doing) if item.is_started() => {
+            theme::paint(marker, Style::default().fg(t.running).add_modifier(Modifier::BOLD))
+        }
+        Some(Status::Doing) => theme::fg(marker, t.doing),
+        _ => marker.to_string(),
     };
-    let title = if open { item.title().stylize() } else { item.title().dark_grey() };
-    let text = format!("{} {}", short.dark_grey(), title);
-    format!("{} {}{}", marker, text, tags.dark_grey())
+    let title = if open { item.title() } else { theme::fg(&item.title(), t.dim) };
+    let text = format!("{} {}", theme::fg(short, t.dim), title);
+    format!("{} {}{}", marker, text, theme::fg(&tags, t.dim))
 }
 
 /// shows an item by id, or any markdown file by path

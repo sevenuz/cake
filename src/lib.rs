@@ -9,6 +9,7 @@ mod selector;
 mod store;
 mod stores;
 mod style;
+mod theme;
 #[cfg(test)]
 mod test_support;
 mod util;
@@ -26,7 +27,7 @@ use std::{
     error::Error,
     path::PathBuf,
 };
-use termimad::crossterm::style::Stylize;
+use ratatui::crossterm::style::Stylize;
 
 /// Tasks, time tracking and notes as markdown files, synced with git.
 #[derive(Parser)]
@@ -554,6 +555,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     out::set_json(args.iter().any(|a| a == "--json")); // for errors before parsing
     let config = Config::new()?;
     style::init(&config.style);
+    theme::init()?;
     let mut aliases = config.aliases(&guess_root(&args)?)?;
     // agents and the morning form get the documented built-ins
     if config.agent().is_some() || std::env::var_os(morning::PLAIN_ENV).is_some() {
