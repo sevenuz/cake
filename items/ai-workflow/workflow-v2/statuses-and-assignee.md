@@ -6,6 +6,7 @@ parent: "[[workflow-v2]]"
 created: 2026-11-13T23:04:17+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+usage: {claude-opus-5-5: {in: 98, out: 43840, cache_read: 30590236, cache_write: 66781}}
 time:
   - 2026-11-13T23:16:48+01:00/2026-11-13T23:25:40+01:00
 ---
