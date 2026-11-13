@@ -13,4 +13,7 @@ priority: 2
 
 - move an item (and children) between stores, e.g. -g idea → project
 - keeps id, by, created, sessions
-- done when: tested in both directions
+- target: name from stores.json, `global`, or a path; top-level there
+- refuses ids that exist in the target; target locked + committed on its own
+- done when: tested in both directions ✓
+- commit: 45cf693
