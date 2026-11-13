@@ -432,7 +432,7 @@ fn aliases_from_defaults_user_and_store_config() {
     assert_eq!(ids(&["ideas"]), vec!["c"], "i has a child");
 
     let user = env.path("config/cake/config.hjson");
-    let cfg = std::fs::read_to_string(&user).unwrap().replace("\"aliases\": {}", "\"aliases\": {\"mine\": \"ls -s idea\"}");
+    let cfg = std::fs::read_to_string(&user).unwrap().replace("aliases: {}", "aliases: {mine: \"ls -s idea\"}");
     std::fs::write(&user, cfg).unwrap();
     assert_eq!(ids(&["mine"]), vec!["i", "c"], "ls shows children of matches");
     std::fs::write(d.join(".cake/config.hjson"), "{ aliases: { mine: \"ls -s child\" } }").unwrap();
@@ -465,10 +465,11 @@ fn status_shows_your_timers_others_ready_and_configured_tags() {
     assert_eq!(run(&["status"], &agent), "▶ ab a task with a rather lon… 0h00 · ▶ 1 others · ready 3 · review 1\n");
 
     let user = env.path("config/cake/config.hjson");
-    let cfg = std::fs::read_to_string(&user).unwrap();
-    let start = cfg.find("\"status\": [").unwrap();
-    let end = start + cfg[start..].find(']').unwrap() + 1;
-    std::fs::write(&user, format!("{}\"status\": [\"ready\", \"tag:review\"]{}", &cfg[..start], &cfg[end..])).unwrap();
+    let cfg = std::fs::read_to_string(&user).unwrap().replace(
+        "status: [\"mine\", \"others\", \"ready\", \"today\", \"tag:review\"]",
+        "status: [\"ready\", \"tag:review\"]",
+    );
+    std::fs::write(&user, cfg).unwrap();
     assert_eq!(run(&["status"], &jul), "ready 3 · review 1\n");
     let json: serde_json::Value = serde_json::from_str(&run(&["status", "--json"], &jul)).unwrap();
     assert_eq!((json["user"].as_str(), json["others"].as_u64(), json["ready"].as_u64()), (Some("jul"), Some(1), Some(3)));

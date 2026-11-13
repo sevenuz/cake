@@ -4,59 +4,147 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 
-// color scheme of madskin in separat hjson file -> gruvbox default theme
-// skin_path in config file
-// default saving location -> md or json
-// aliases for run cmd or hook cmds?
-// default selectors
-// default modifiers for one or multiple hits
-// hire_recursive_elements
-// default editor or environment var?
-// .cake folder in ~ with default md/json file?
+/// ~/.config/cake/config.hjson; every field has a default, a missing file
+/// is created from TEMPLATE (with comments and sources), and TEMPLATE is
+/// kept as config.default.hjson next to it for reference
 #[derive(Serialize, Deserialize)]
+#[serde(default)]
 pub struct Config {
-    /// if the config is changed, it will be written to config_file
-    /// default initialization to false
-    #[serde(skip)]
-    dirty: bool,
-    /// editor for cake add
     pub editor: String,
-    /// disable all git actions
     pub disable_git: bool,
-    /// branch of the project store worktree
-    #[serde(default = "default_git_branch")]
     pub git_branch: String,
-    /// remote used by cake init and cake sync --publish
     pub git_remote_name: String,
-    /// env vars naming the AI agent running cake, first set one wins,
-    /// value cut at the first _ (claude-code_2-1_agent -> claude-code)
-    #[serde(default = "default_agent_env")]
     pub agent_env: Vec<String>,
-    /// env vars holding the agent's session id, first set one wins
-    #[serde(default = "default_session_env")]
     pub session_env: Vec<String>,
-    /// cake status segments: mine (your running timers), others (count of
-    /// others' running timers), ready, today (time tracked today in the store,
-    /// overlaps once), tag:<name> (open items with that tag)
-    #[serde(default = "default_status")]
     pub status: Vec<String>,
-    /// own commands: name -> command line, e.g. review: "ls -t review"; may
-    /// override built-ins (ls: "ls --status todo"); added to the defaults, a
-    /// store's .cake/config.hjson overrides them
-    #[serde(default)]
     pub aliases: BTreeMap<String, String>,
-    /// characters: auto (ascii without a UTF-8 locale), unicode or ascii;
-    /// env CAKE_STYLE wins. Color follows NO_COLOR and the terminal.
-    #[serde(default = "default_style")]
     pub style: String,
-    /// rough energy/CO2e/water estimate per token (see footprint.rs)
-    #[serde(default)]
-    pub footprint: crate::footprint::Footprint,
-    /// When output has more lines than the threshold, then show it in scrollview
-    /// -1 to never go into scrollview
-    /// 127 as maximum
     pub scrollview_threshold: i8,
+    pub usage_tracking: bool,
+    pub score: crate::store::ScoreWeights,
+    pub footprint: crate::footprint::Footprint,
 }
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            editor: std::env::var("EDITOR").unwrap_or("vim".to_string()),
+            disable_git: false,
+            git_branch: default_git_branch(),
+            git_remote_name: "origin".to_string(),
+            agent_env: default_agent_env(),
+            session_env: default_session_env(),
+            status: default_status(),
+            aliases: BTreeMap::new(),
+            style: default_style(),
+            scrollview_threshold: 30,
+            usage_tracking: true,
+            score: Default::default(),
+            footprint: Default::default(),
+        }
+    }
+}
+
+/// the defaults with explanations; must parse to Config::default()
+pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes optional).
+// Remove a line to get its default back. config.default.hjson next to this
+// file always holds the current defaults with these comments.
+{
+  // editor for cake add / cake edit without -m
+  editor: vim
+  // no git commits and syncs at all
+  disable_git: false
+  // branch of a project store (a worktree in .cake) and the remote it syncs with
+  git_branch: cake/main
+  git_remote_name: origin
+  // env vars naming the agent running cake (value cut at the first _) and
+  // holding its session id; first set one wins
+  agent_env: ["AI_AGENT"]
+  session_env: ["CAKE_SESSION", "CLAUDE_CODE_SESSION_ID"]
+  // cake status: mine, others, ready, today, tag:<name>
+  status: ["mine", "others", "ready", "today", "tag:review"]
+  // own commands, may override built-ins for you (not for agents):
+  // review: "ls -t review", ls: "ls --mine"
+  aliases: {}
+  // characters: auto (ascii without a UTF-8 locale), unicode, ascii;
+  // env CAKE_STYLE wins. Colors: theme.hjson, off with NO_COLOR.
+  style: auto
+  // lines from which cake show opens a pager, -1 never
+  scrollview_threshold: 30
+
+  // tokens per item from agents (cake usage); false: the Claude hook does nothing
+  usage_tracking: true
+
+  // order of ls/ready and the morning form: higher first
+  score: {
+    // hard deadline: deadline_today points on the day, +/- per day, capped
+    deadline_today: 100
+    deadline_per_day: 10
+    deadline_max: 200
+    // soft due date, same scheme
+    due_today: 50
+    due_per_day: 5
+    due_max: 100
+    // per open item waiting on it (blocked_by), transitively
+    per_waiting: 10
+    // priority 1, 2, 3
+    prio: [30, 20, 10]
+    // one point per day of age, up to
+    age_max: 20
+  }
+
+  // Rough estimate of energy, CO2e and water behind the tokens of an item,
+  // leaning high. Real values depend on model, hardware, batching, data
+  // center and grid; read it as an order of magnitude.
+  footprint: {
+    // Wh per 1000 tokens for a large model, GPU only:
+    // - output: 0.1 to 2 Wh per 1000 output tokens depending on model size
+    //   (Epoch AI 2025, as cited in https://arxiv.org/pdf/2603.06630);
+    //   Llama 3.1 405B about 0.21 Wh for ~367 output tokens per query
+    //   (ML.ENERGY, NeurIPS 2025, reviewed in Joule,
+    //   https://www.cell.com/joule/fulltext/S2542-4351(26)00114-5).
+    //   Frontier models are larger: the top of the range.
+    // - input: about 1/8 of an output token; 800 more output tokens cost
+    //   ~10x the base energy, 800 more input tokens ~1.2x (OPT-30B on A100,
+    //   https://arxiv.org/html/2511.05597)
+    // - cache_write: like input (the prefill happens once)
+    // - cache_read: no measurement found; assumed 1/10 of input, like the
+    //   price ratio. In long agent sessions this term dominates.
+    wh_per_1k: {
+      output: 2.0
+      input: 0.25
+      cache_write: 0.25
+      cache_read: 0.025
+    }
+    // factor per model name part, the longest match wins, * otherwise.
+    // Assumption: sizes relative to the largest model, no published numbers.
+    model_factor: {
+      "*": 1.0
+      opus: 1.0
+      sonnet: 0.5
+      haiku: 0.2
+    }
+    // server around the GPUs (CPU, memory, network): the measurements above
+    // are GPU only. Assumption.
+    server_overhead: 1.3
+    // data center overhead (power usage effectiveness); assumption between
+    // hyperscale (~1.1) and older facilities
+    pue: 1.2
+    // grid carbon intensity: EU 2021, 226.4 g CO2 per kWh (Climate
+    // Transparency Report 2022, EU profile,
+    // https://www.climate-transparency.org/wp-content/uploads/2022/10/CT2022-EU-Web.pdf).
+    // Where the model runs is unknown; set your own grid.
+    co2_g_per_kwh: 226.4
+    // water on site per kWh of IT energy (WUE): industry average about
+    // 1.8 l/kWh, hyperscale down to ~0.2
+    // (https://www.hcltech.com/blogs/understanding-water-use-data-centers)
+    wue_l_per_kwh: 1.8
+    // water at the power plants per kWh drawn: thermoelectric plants about
+    // 2 l/kWh, wind and solar near 0 (same source); taken high
+    ewif_l_per_kwh: 2.0
+  }
+}
+"##;
 
 fn default_git_branch() -> String {
     "cake/main".to_string()
@@ -138,34 +226,24 @@ impl Config {
             .unwrap_or("unknown".to_string())
     }
 
+    /// reads the config, creates it from TEMPLATE if missing and refreshes
+    /// config.default.hjson
     pub fn new() -> Result<Config, Box<dyn Error>> {
-        if let Ok(serialized) = std::fs::read_to_string(util::config_file()?) {
-            Ok(deser_hjson::from_str::<Config>(&serialized)?)
-        } else {
-            // default settings on linux at ~/.config/cake
-            Ok(Config {
-                dirty: true,
-                editor: std::env::var("EDITOR").unwrap_or("vim".to_string()),
-                disable_git: false,
-                git_branch: default_git_branch(),
-                git_remote_name: "origin".to_string(),
-                agent_env: default_agent_env(),
-                session_env: default_session_env(),
-                aliases: BTreeMap::new(),
-                status: default_status(),
-                style: default_style(),
-                footprint: Default::default(),
-                scrollview_threshold: 30,
-            })
+        let file = util::config_file()?;
+        let reference = util::config_path()?.join("config.default.hjson");
+        if fs::read_to_string(&reference).ok().as_deref() != Some(TEMPLATE) {
+            let _ = fs::write(&reference, TEMPLATE);
         }
-    }
-
-    pub fn write_json_if_dirty(&self) -> Result<(), Box<dyn Error>> {
-        if self.dirty {
-            let serialized = serde_json::to_string_pretty(&self)?;
-            std::fs::write(util::config_file()?, serialized)?;
-        }
-        Ok(())
+        let text = match fs::read_to_string(&file) {
+            Ok(text) => text,
+            Err(_) => {
+                let editor = std::env::var("EDITOR").unwrap_or("vim".to_string());
+                let text = TEMPLATE.replacen("editor: vim", &format!("editor: {}", editor), 1);
+                let _ = fs::write(&file, &text);
+                text
+            }
+        };
+        Ok(deser_hjson::from_str::<Config>(&text).map_err(|e| format!("{}: {}", file.display(), e))?)
     }
 }
 
@@ -173,6 +251,28 @@ impl Config {
 mod tests {
     use super::*;
     use crate::test_support::Sandbox;
+
+    #[test]
+    fn template_parses_to_the_defaults() {
+        let parsed: Config = deser_hjson::from_str(TEMPLATE).unwrap();
+        let json = |c: &Config| {
+            let mut v = serde_json::to_value(c).unwrap();
+            v["editor"] = "x".into();
+            v
+        };
+        assert_eq!(json(&parsed), json(&Config::default()));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn missing_config_is_written_from_the_template_with_comments() {
+        let _sandbox = Sandbox::new();
+        Config::new().unwrap();
+        let text = fs::read_to_string(util::config_file().unwrap()).unwrap();
+        assert!(text.contains("// grid carbon intensity") && text.contains("226.4"));
+        let reference = util::config_path().unwrap().join("config.default.hjson");
+        assert_eq!(fs::read_to_string(reference).unwrap(), TEMPLATE);
+    }
 
     #[test]
     #[serial_test::serial]

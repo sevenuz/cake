@@ -1,4 +1,4 @@
-pub use self::inner::Store;
+pub use self::inner::{init_weights, ScoreWeights, Store};
 pub use self::inner::MAX_DEPTH;
 
 pub mod inner {
@@ -11,6 +11,45 @@ pub mod inner {
     use crate::error;
     use crate::item::Item;
     use crate::util;
+    use serde::{Deserialize, Serialize};
+    use std::sync::OnceLock;
+
+    /// points of the score, config `score`
+    #[derive(Serialize, Deserialize, Clone, Debug)]
+    #[serde(default)]
+    pub struct ScoreWeights {
+        pub deadline_today: i64,
+        pub deadline_per_day: i64,
+        pub deadline_max: i64,
+        pub due_today: i64,
+        pub due_per_day: i64,
+        pub due_max: i64,
+        pub per_waiting: i64,
+        pub prio: [i64; 3],
+        pub age_max: i64,
+    }
+
+    impl Default for ScoreWeights {
+        fn default() -> Self {
+            ScoreWeights {
+                deadline_today: 100,
+                deadline_per_day: 10,
+                deadline_max: 200,
+                due_today: 50,
+                due_per_day: 5,
+                due_max: 100,
+                per_waiting: 10,
+                prio: [30, 20, 10],
+                age_max: 20,
+            }
+        }
+    }
+
+    static WEIGHTS: OnceLock<ScoreWeights> = OnceLock::new();
+
+    pub fn init_weights(w: ScoreWeights) {
+        let _ = WEIGHTS.set(w);
+    }
 
     #[derive(Copy, Clone)]
     pub enum RecState {
@@ -385,30 +424,28 @@ pub mod inner {
             seen.len()
         }
 
-        /// how much an open item needs attention, 0 for closed ones:
-        /// deadline pressure (hard 100 at the day, +10 per day closer or
-        /// overdue, soft half of that), 10 per item waiting on it,
-        /// priority 30/20/10, one per day of age up to 20
+        /// how much an open item needs attention, 0 for closed ones: deadline
+        /// pressure (hard and soft), items waiting on it, priority and age,
+        /// weighted by config `score`
         pub fn score(&self, id: &str, now: i64) -> i64 {
             let Some(i) = self.items.get(id).filter(|i| i.status().map_or(true, |s| s.is_open())) else {
                 return 0;
             };
+            let w = WEIGHTS.get_or_init(ScoreWeights::default);
             let days = |d: Option<&String>| d.and_then(|d| util::date_timestamp(d)).map(|t| (t - now) / 86400);
             let mut score = 0;
             if let Some(d) = days(i.deadline()) {
-                score += (100 - 10 * d).clamp(0, 200);
+                score += (w.deadline_today - w.deadline_per_day * d).clamp(0, w.deadline_max);
             }
             if let Some(d) = days(i.due()) {
-                score += (50 - 5 * d).clamp(0, 100);
+                score += (w.due_today - w.due_per_day * d).clamp(0, w.due_max);
             }
-            score += 10 * self.waiting_on(id) as i64;
+            score += w.per_waiting * self.waiting_on(id) as i64;
             score += match i.priority() {
-                Some(1) => 30,
-                Some(2) => 20,
-                Some(3) => 10,
+                Some(p @ 1..=3) => w.prio[p as usize - 1],
                 _ => 0,
             };
-            score + ((now - i.timestamp()) / 86400).clamp(0, 20)
+            score + ((now - i.timestamp()) / 86400).clamp(0, w.age_max)
         }
 
         /// open item with at least one open blocker

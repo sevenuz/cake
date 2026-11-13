@@ -494,6 +494,12 @@ pub fn print_error(e: &Box<dyn Error>) {
     }
 }
 
+/// fields of ls/ready --json without -l
+const BRIEF: &[&str] = &[
+    "id", "title", "status", "tags", "parent", "children", "blocked_by", "blocks", "ready", "score", "due",
+    "deadline", "priority", "running", "by",
+];
+
 fn print_report(store: &Store, report: commands::Report) {
     let json = match report {
         commands::Report::None => serde_json::json!({ "v": 1 }),
@@ -501,13 +507,14 @@ fn print_report(store: &Store, report: commands::Report) {
             "v": 1,
             "items": ids.iter().filter_map(|id| store.item_json(id)).collect::<Vec<_>>(),
         }),
+        // ls and ready: what an agent needs to choose, -l or show for the rest
         commands::Report::Brief(ids) => serde_json::json!({
             "v": 1,
             "items": ids
                 .iter()
                 .filter_map(|id| store.item_json(id))
                 .map(|mut i| {
-                    i.as_object_mut().unwrap().remove("body");
+                    i.as_object_mut().unwrap().retain(|k, _| BRIEF.contains(&k.as_str()));
                     i
                 })
                 .collect::<Vec<_>>(),
@@ -588,6 +595,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     style::init(&config.style);
     theme::init()?;
     footprint::init(config.footprint.clone());
+    store::init_weights(config.score.clone());
     let mut aliases = config.aliases(&guess_root(&args)?)?;
     // agents and the morning form get the documented built-ins
     if config.agent().is_some() || std::env::var_os(morning::PLAIN_ENV).is_some() {
@@ -823,7 +831,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             commands::Report::Items(vec![id.to_owned()])
         }
         Some(Commands::Usage { action: UsageAction::ClaudeHook {} }) => {
-            usage::claude_hook(&mut store)?;
+            if config.usage_tracking {
+                usage::claude_hook(&mut store)?;
+            }
             commands::Report::None
         }
         None => {
@@ -846,7 +856,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         debug(&format!("git commit {:?}: {}", changed, message));
         git::commit(&root, &changed, &message)?;
     }
-    config.write_json_if_dirty()?;
     if out::json() {
         print_report(&store, report);
     }

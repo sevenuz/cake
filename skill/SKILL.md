@@ -175,13 +175,14 @@ separated (`cake done a b`). `cake tag`: the last word are the tags. Selectors (
 ## Output
 
 - `{"v": 1, "items": [...]}` (after the change), `rm` → `{"v": 1, "removed": [ids]}`.
-  `ls`/`ready` without `body` unless `-l`.
-- Item: `id`, `title`, `body`, `status` (null = note), `tags`, `parent`,
-  `children`, `blocked_by`, `blocks`, `ready`, `score`, `due`, `deadline`,
-  `priority`, `created`, `closed`, `by`, `sessions`, `running`,
-  `tracked_seconds`, `time`, `path`.
+- `ls`/`ready` are short: `id`, `title`, `status` (null = note), `tags`,
+  `parent`, `children`, `blocked_by`, `blocks`, `ready`, `score`, `due`,
+  `deadline`, `priority`, `running`, `by`. Use `-l` or `show` for the rest:
+  `body`, `created`, `closed`, `sessions`, `time`, `tracked_seconds`,
+  `usage` (tokens per model), `footprint` (rough Wh, CO2e, water), `path`.
 - `score`: attention needed, higher first: deadline pressure (hard ≫ soft),
-  10 per item waiting on it, priority, age.
+  items waiting on it, priority, age (weights in config `score`).
+- Prefer narrow selectors over a full `ls`: every listed item costs tokens.
 - Error: `{"v": 1, "error": {"code", "message"}}`, exit 1. Codes:
   `not_found`, `ambiguous_id` (use a longer prefix), `invalid_input`,
   `conflict` (unresolved sync merge: tell the user, stop writing),

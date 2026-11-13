@@ -54,6 +54,7 @@ fn item_commands_report_items_after_the_change() {
     let all = ls["items"].as_array().unwrap();
     assert_eq!(all.len(), 3);
     assert!(all.iter().all(|i| i.get("body").is_none() && i["title"].is_string()), "no body without -l");
+    assert!(all.iter().all(|i| i.get("sessions").is_none() && i.get("usage").is_none()), "short without -l");
     let long = ok(&env, &d, &["ls", "-l", "aaa"]);
     assert_eq!(long["items"][0]["body"], "# Alpha\n\nbody");
     let aaa = all.iter().find(|i| i["id"] == "aaa").unwrap();
