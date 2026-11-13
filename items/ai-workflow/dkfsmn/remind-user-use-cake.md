@@ -1,10 +1,11 @@
 ---
 id: remind-user-use-cake
-status: doing
+status: done
 parent: "[[dkfsmn]]"
 created: 2026-11-13T18:39:06+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+closed: 2026-11-13T20:13:21+01:00
 time:
   - 2026-11-13T18:49:33+01:00/2026-11-13T18:49:33+01:00
 ---
