@@ -9,10 +9,11 @@ sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
 ---
 # Plain ASCII output everywhere
 
-- why (user): too many non-ASCII signs and ugly ~~~~ dividers
-- done: the morning form is plain (7348abf)
-- left: `cake ls` markers (· ○ ◐ ▶ ✓ ✗) and tree lines (├─ └─),
-  `cake show` (· separators, ~~~~ for a markdown rule from the skin)
-- option: ASCII by default (o todo, > doing, x done, - dropped, tree with
-  |- and \`-), unicode behind a config switch
-- done when: ls, show, status and the form print ASCII only by default
+- why (user): too many special characters, ugly ~~~~ dividers; both
+  modes wanted for every command
+- one table in src/style.rs: status markers, tree lines, separators,
+  markdown bullet and rule, each with a unicode and an ascii form
+- config `style`: auto (ascii without UTF-8 locale or TERM=dumb),
+  unicode, ascii; env CAKE_STYLE wins
+- color off with NO_COLOR or when output is not a terminal
+- done when: ls, show, status and the form follow it ✓ (ce124c2)
