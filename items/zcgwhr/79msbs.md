@@ -17,3 +17,4 @@ priority: 2
 - refuses ids that exist in the target; target locked + committed on its own
 - done when: tested in both directions ✓
 - commit: 45cf693
+- try: `cake -g add -m "test idea"`, then `cake -g mv test-idea --to-store cake`: it appears in this store, gone from -g
