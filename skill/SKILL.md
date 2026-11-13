@@ -64,22 +64,24 @@ and it is the file name. Ids never change.
                            todo ○  (ready if no open blockers)
                              │ cake start <id>                 (timer runs)
                            doing ◐  stuck? new ask, next item
-                             │ you: cake stop, cake tag <id> review,
-                             │      list the commits in chat
-                           review
-                             ├ user "ok"       → you: cake done → ✓
-                             ├ user "change X" → back to doing
-                             └ user "drop"     → you: cake drop → ✗
+                             │ you: cake stop, add to the body what
+                             │      changed, the commits, how to try it;
+                             │      cake tag <id> review
+                           review   (the user checks it in `cake`)
+                             ├ a ok     → cake closes it ✓
+                             ├ b change → a reply under it, back to you
+                             └ c drop   → cake drops it ✗
 ```
 
 - **Plans:** one note per idea or deliverable under the idea, bullets,
   `done when` included. Ordering with `--blocked-by`. Link with `[[id]]`.
 - **Ready to approve** = `done when` present, no open asks, deadlines set
   when they matter. Only then is a planned item a candidate.
-- **The user's side** is `cake` (= `cake morning`, `-g`: all stores): new
-  tasks, your asks by score, then your plans to approve (your notes with
-  `done when` and no children of their own). Free text on a plan becomes
-  a reply: a todo item by the user tagged `reply` under your plan.
+- **The user's side** is only `cake` (= `cake morning`, `-g`: all stores)
+  and `cake add`: new tasks, your asks, your finished work (tag `review`),
+  then your plans to approve (your notes with `done when` and no children
+  of their own). Comments and change requests come back as replies: todo
+  items by the user tagged `reply` under your item.
 - **Docs:** your reference notes are top-level and tagged `doc`.
 - **Time:** start your timer on approved items you work on, stop it when you
   pause or request review. The owner of an item tracks its time.
@@ -138,7 +140,7 @@ moved ideas are triaged in their project:
 1. `cake sync --json` (only in a routine).
 2. Apply answered asks (`cake ls -t ask --status done --json`, newest)
    and replies (`cake ls -t reply --status todo --json`): rework the
-   plan, add asks if needed, then `cake done <reply>`.
+   plan or the work, add asks if needed, then `cake done <reply>`.
 3. Triage the inbox.
 4. Work: `cake ready --by <you> -t ~ask --json` plus `-t ai`, highest
    score first. Code on a branch per item, never push to main. Stuck →

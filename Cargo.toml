@@ -28,3 +28,12 @@ strip = true # Automatically strip symbols from the binary
 opt-level = "s" # Optimize for size
 lto = true # Enable link time optimization
 codegen-units = 1 # Maximize site reduction optimizations
+# Smaller still (measured 2026-11-13, 1.77 MB with the lines above):
+# panic = "abort"   # 1.63 MB: no unwinding/backtrace code; ratatui's panic
+#                   # hook still restores the terminal before the abort
+# opt-level = "z"   # 1.64 MB: like "s" but also skips loop vectorization
+#                   # and inlines less; slower code, irrelevant for cake
+# both              # 1.50 MB
+# Dependencies that could go: nanoid (pulls rand, only the random id
+# fallback; /dev/urandom is enough), serde_yaml_ng (~80 KB, frontmatter
+# only), clap features (env, color, suggestions).

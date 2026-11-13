@@ -161,6 +161,8 @@ enum Kind {
     Ask,
     /// agents' plans to approve
     Plan,
+    /// work agents finished (tag review): ok, change or drop
+    Review,
 }
 
 /// what the user did with one item
@@ -273,6 +275,10 @@ fn decide(
             body.clone(),
             vec![('a', "approve".to_string()), ('b', "approve with dates".to_string()), ('c', "drop".to_string())],
         ),
+        Kind::Review => (
+            body.clone(),
+            vec![('a', "ok, done".to_string()), ('b', "change something".to_string()), ('c', "drop".to_string())],
+        ),
     };
     let tree = overview(all, goal, targets);
     let mut hints = false;
@@ -353,6 +359,7 @@ fn decide(
                 legend(&parts)
             }
             (Kind::Plan, false) => legend(&[("a-c", "choose"), ("i", "comment"), ("s", "skip"), ("f", "open"), ("n", "next goal"), ("q", "quit")]),
+            (Kind::Review, false) => legend(&[("a-c", "choose"), ("s", "skip"), ("f", "open"), ("n", "next goal"), ("q", "quit")]),
         };
         let keys = if opened.is_some() && !hints {
             let mut l = keys;
@@ -421,6 +428,21 @@ fn decide(
                 edit.and_then(|_| cake.call(&["do", &id])).map(|_| ("approved with dates".to_string(), true))
             }
             (Kind::Plan, 'c') => cake.call(&["drop", &id]).map(|_| ("dropped".to_string(), false)),
+            (Kind::Review, 'a') => cake
+                .call(&["tag", &id, "~review"])
+                .and_then(|_| cake.call(&["done", &id]))
+                .map(|_| ("done".to_string(), true)),
+            (Kind::Review, 'b') => match ui.input(title, &render, "what should change:")? {
+                Some(text) if !text.is_empty() => cake
+                    .call(&["add", "--todo", "-p", &id, "-t", "reply", "-m", &text])
+                    .and_then(|_| cake.call(&["tag", &id, "~review"]))
+                    .map(|_| ("sent back to the agent".to_string(), false)),
+                _ => continue,
+            },
+            (Kind::Review, 'c') => cake
+                .call(&["tag", &id, "~review"])
+                .and_then(|_| cake.call(&["drop", &id]))
+                .map(|_| ("dropped".to_string(), false)),
             _ => continue,
         };
         match result {
@@ -440,6 +462,11 @@ fn step(ui: &mut Ui, cake: &Cake, kind: Kind, user: &str, name: &str) -> Result<
     let targets: Vec<&Value> = match kind {
         Kind::Ask => {
             let ids: Vec<String> = cake.call(&["ready", "-t", "ask"])?.iter().map(|i| str_of(i, "id").to_string()).collect();
+            all.iter().filter(|i| ids.iter().any(|id| id == str_of(i, "id"))).collect()
+        }
+        Kind::Review => {
+            let ids: Vec<String> =
+                cake.call(&["ls", "-t", "review", "--status", "todo,doing"])?.iter().map(|i| str_of(i, "id").to_string()).collect();
             all.iter().filter(|i| ids.iter().any(|id| id == str_of(i, "id"))).collect()
         }
         Kind::Plan => {
@@ -464,7 +491,11 @@ fn step(ui: &mut Ui, cake: &Cake, kind: Kind, user: &str, name: &str) -> Result<
     }
     let score = |v: &&Value| v["score"].as_i64().unwrap_or(0);
     goals.sort_by_key(|(_, items)| std::cmp::Reverse(items.iter().map(score).max().unwrap_or(0)));
-    let what = if kind == Kind::Ask { "Questions" } else { "Plans to approve" };
+    let what = match kind {
+        Kind::Ask => "Questions",
+        Kind::Review => "Finished, please check",
+        Kind::Plan => "Plans to approve",
+    };
     let (mut counted, mut n) = (0, 0);
     'goals: for (goal, items) in &goals {
         for (i, item) in items.iter().enumerate() {
@@ -494,7 +525,7 @@ pub fn run(root: &Path, user: &str, all: bool) -> Result<(), Box<dyn Error>> {
         stores.extend(known.into_iter().filter(|(_, s)| !same(s, root)));
     }
     let mut ui = Ui { term: ratatui::init(), flash: None };
-    let result = (|| -> Result<(usize, usize, usize), Box<dyn Error>> {
+    let result = (|| -> Result<(usize, usize, usize, usize), Box<dyn Error>> {
         let here = Cake { root };
         let mut added: Vec<String> = vec![];
         let title = format!("New tasks  {}", stores[0].0);
@@ -519,29 +550,29 @@ pub fn run(root: &Path, user: &str, all: bool) -> Result<(), Box<dyn Error>> {
                 _ => break,
             }
         }
-        let (mut answered, mut approved) = (0, 0);
-        'steps: for kind in [Kind::Ask, Kind::Plan] {
+        let (mut answered, mut approved, mut reviewed) = (0, 0, 0);
+        'steps: for kind in [Kind::Ask, Kind::Review, Kind::Plan] {
             for (name, root) in &stores {
                 let (counted, _, quit) = step(&mut ui, &Cake { root }, kind, user, name)?;
-                if kind == Kind::Ask {
-                    answered += counted;
-                } else {
-                    approved += counted;
+                match kind {
+                    Kind::Ask => answered += counted,
+                    Kind::Review => reviewed += counted,
+                    Kind::Plan => approved += counted,
                 }
                 if quit {
                     break 'steps;
                 }
             }
         }
-        Ok((added.len(), answered, approved))
+        Ok((added.len(), answered, reviewed, approved))
     })();
     let last_flash = ui.flash.take();
     ratatui::restore();
-    let (added, answered, approved) = result?;
+    let (added, answered, reviewed, approved) = result?;
     if let Some((text, ok)) = last_flash {
         println!("{}", theme::fg(&text, if ok { theme::t().ok } else { theme::t().error }));
     }
-    println!("{} added, {} answered, {} approved", added, answered, approved);
+    println!("{} added, {} answered, {} checked, {} approved", added, answered, reviewed, approved);
     for (name, root) in &stores {
         let ready = Cake { root }.call(&["ready", "-t", "~ask,~reply"])?;
         let agents = ready.iter().filter(|i| str_of(i, "by") != user).count();
