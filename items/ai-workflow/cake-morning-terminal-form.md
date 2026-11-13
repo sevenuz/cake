@@ -2,6 +2,7 @@
 id: cake-morning-terminal-form
 tags: [plan]
 parent: "[[ai-workflow]]"
+blocked_by: ["[[deadline-field-asks-score]]"]
 created: 2026-11-13T17:35:30+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
