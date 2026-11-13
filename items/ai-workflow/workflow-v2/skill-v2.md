@@ -1,6 +1,6 @@
 ---
 id: skill-v2
-status: task
+status: review
 tags: [plan, skill]
 parent: "[[workflow-v2]]"
 blocked_by: ["[[agent-ready-rules]]"]
@@ -23,3 +23,5 @@ owner: sevenuz
 - the agent run: loop over ready items until none or "waiting for
   review"; then a short summary
 - done when: one agent run on a scratch store follows it without help
+
+changed: skill describes the v2 states, questions as blocking tasks, comments, the agent run loop and the brake; commit 760a4fd; try: ask Claude to triage this store
