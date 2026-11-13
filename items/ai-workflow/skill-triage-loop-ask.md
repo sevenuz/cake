@@ -11,8 +11,11 @@ time:
 ---
 # Skill: triage loop and ask protocol
 
-- triage steps: read inbox, mv/tag user items (never edit text),
+- names: title starts with topic (id = slug), no tool/parent/status
+- triage steps: inbox query, mv/tag user items (never edit text),
   cleaned-up child, split rules, definition of ready
-- ask protocol: format (context + options), blocking, max N asks per run
-- run prompt usable by a Claude routine and a local model agent
-- done when: dry run on 5 real inbox thoughts gives sensible tree + asks
+- ask protocol: ask item blocks its item, context + options a/b/c,
+  answer via `done -m`, max 5 asks per run
+- agent run steps usable by a Claude routine and a local model
+- done when: dry run in a scratch store gives tree + asks ✓
+- commit: cdef073
