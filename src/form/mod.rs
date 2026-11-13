@@ -659,3 +659,72 @@ mod tests {
         assert_eq!(answer_text(body, "files, but plain"), "files, but plain");
     }
 }
+
+/// writes every screen as text into $CAKE_SCREENS (for the review page):
+/// CAKE_SCREENS=dir CAKE_STYLE=ascii cargo test --lib dump_screens -- --ignored
+#[cfg(test)]
+mod screens {
+    use super::*;
+
+    pub(in crate::form) fn dump(name: &str, width: u16, screen: &Screen, step: usize) {
+        let Ok(dir) = std::env::var("CAKE_SCREENS") else { return };
+        let names: Vec<String> = MODULES.iter().map(|m| m.to_string()).collect();
+        let col = column_width(width, 100);
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 26)).unwrap();
+        term.draw(|f| paint(f, &header(&names, step, 3, 9, col.saturating_sub(4)), screen, step, 100)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let mut lines: Vec<String> = (0..buf.area.height)
+            .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string())
+            .collect();
+        while lines.last().is_some_and(|l| l.is_empty()) {
+            lines.pop();
+        }
+        let style = std::env::var("CAKE_STYLE").unwrap_or("unicode".into());
+        std::fs::write(format!("{}/{}-{}-{}.txt", dir, name, width, style), lines.join("\n")).unwrap();
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_screens() {
+        style::init(&std::env::var("CAKE_STYLE").unwrap_or("unicode".into()));
+        let keymap = Keymap::new(&Default::default()).unwrap();
+        let item = |id: &str, parent: &str, title: &str, body: &str, status: &str| {
+            serde_json::json!({"id": id, "parent": parent, "title": title, "status": status,
+                "body": format!("# {}\n\n{}", title, body)})
+        };
+        let all = vec![
+            item("cli", "", "cake CLI: fast capture", "", "task"),
+            item("sync", "cli", "Sync errors that say what failed", "- why: unclear git errors", "task"),
+            item("hint", "sync", "Hint per error type", "", "task"),
+            item("raw", "hint", "Show git's raw message too?", "Git's own text helps experts.\n\n- a) always\n- b) only with -d (recommended)", "task"),
+            item("step", "sync", "Name the failed git step", "- changed: fetch, merge, push named\n- try: cake sync offline", "review"),
+        ];
+        for width in [60u16, 100] {
+            let inner = column_width(width, 100).saturating_sub(4);
+            // answer card
+            let targets: Vec<&Value> = vec![&all[3]];
+            let tree = overview(&all, &all[0], &targets);
+            let (context, options) = split_options(&body_of(&all[3]));
+            let mut card = markdown::render(&context, inner);
+            card.push(Line::default());
+            for (n, (_, text)) in options.iter().enumerate() {
+                let mark = if n == 0 { style::g().select } else { " " };
+                card.push(Line::from(format!("{} {}) {}", mark, n + 1, text)));
+            }
+            card.push(Line::from(format!("  3) {} own words", style::g().ellipsis)));
+            let k = |a: Act| keymap.keys_of(a);
+            let card_keys = keys(&[("1-3", "choose"), (&k(Act::Confirm), "confirm"), (&k(Act::Insert), "own words"), (&k(Act::Hints), "open"), (&k(Act::Next), "skip"), (&k(Act::Help), "keys")]);
+            let screen = Screen {
+                tree: tree_lines(&all, &tree, &targets, "raw", &Default::default(), false, Some("sync"), inner),
+                card_title: "Show git's raw message too? · cake".into(),
+                card,
+                keys: card_keys.clone(),
+                ..Default::default()
+            };
+            dump("answer", width, &screen, 2);
+            // help overlay
+            let screen = Screen { help: keymap.help(), ..Default::default() };
+            dump("help", width, &screen, 2);
+        }
+    }
+}

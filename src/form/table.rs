@@ -536,4 +536,65 @@ mod tests {
         assert!(lines.iter().any(|l| l.contains("task") && l.contains("renew passport") && l.contains("me") && l.contains("20.11.")));
         assert!(lines.iter().any(|l| l.contains("→paper")));
     }
+
+    #[test]
+    #[ignore]
+    fn dump_screens_tables() {
+        style::init(&std::env::var("CAKE_STYLE").unwrap_or("unicode".into()));
+        let keymap = Keymap::new(&Default::default()).unwrap();
+        let k = |a: Act| keymap.keys_of(a);
+        let row = |id: &str, title: &str, prefix: &str| Row { id: id.into(), title: title.into(), prefix: prefix.into(), ..Default::default() };
+        let mut sort = vec![
+            row("pass", "renew passport", ""),
+            row("blog", "blog post about cake", ""),
+            row("dash", "Dashboard: one screen for what runs", ""),
+            row("sect", "dashboard should come after the form", "Dashboard: one screen for what runs"),
+            row("land", "call landlord", ""),
+        ];
+        sort[0].action = Some("task");
+        sort[0].who = Some("jul".into());
+        sort[0].due = Some("2026-11-20".into());
+        sort[1].action = Some("note");
+        sort[2].action = Some("task");
+        sort[2].who = Some("ai".into());
+        sort[2].deadline = Some("2026-11-30".into());
+        sort[2].prio = Some(2);
+        let mut news = vec![row("hint", "Hint per error type", "Sync errors"), row("step", "Name the failed git step", "Sync errors")];
+        news[0].what = "new".into();
+        news[0].status = "task".into();
+        news[1].what = "finished".into();
+        news[1].status = "review".into();
+        news[1].who = Some("jul".into());
+        news[1].action = Some("assign");
+        let mut mine = vec![row("land", "call landlord", ""), row("pass", "renew passport", "")];
+        mine[0].who = Some("jul".into());
+        mine[0].action = Some("start");
+        mine[1].who = Some("ai".into());
+        mine[1].action = Some("assign");
+        mine[1].due = Some("2026-11-20".into());
+        for width in [60u16, 100] {
+            let inner = column_width(width, 100).saturating_sub(4);
+            let screen = Screen {
+                card_title: "inbox and tasks without assignee · cake".into(),
+                card: render(Kind::Sort, &sort, 4, None, inner, "jul"),
+                keys: keys(&[(&format!("{}/{}/{}", k(Act::Task), k(Act::Note), k(Act::Drop)), "task note drop"), (&k(Act::Who), "who"), (&k(Act::Prio), "prio"), (":due :deadline :move", ""), (&k(Act::Open), "open"), (&k(Act::Confirm), "save"), (&k(Act::Help), "keys")]),
+                ..Default::default()
+            };
+            super::super::screens::dump("sort", width, &screen, 1);
+            let screen = Screen {
+                card_title: "what agents did since your last run · cake".into(),
+                card: render(Kind::News, &news, 0, Some(0), inner, "jul"),
+                keys: keys(&[(&k(Act::Who), "who (hold: back to you)"), (&k(Act::Drop), "drop"), (&k(Act::Open), "open"), (&k(Act::Confirm), "save"), (&k(Act::Back), "skip")]),
+                ..Default::default()
+            };
+            super::super::screens::dump("news", width, &screen, 0);
+            let screen = Screen {
+                card_title: "your tasks · cake".into(),
+                card: render(Kind::Mine, &mine, 1, None, inner, "jul"),
+                keys: keys(&[(&format!("{}/{}/{}", k(Act::Timer), k(Act::Complete), k(Act::Drop)), "start done drop"), (&k(Act::Who), "who"), (&k(Act::Open), "open"), (&k(Act::Confirm), "save"), (&k(Act::Back), "skip")]),
+                ..Default::default()
+            };
+            super::super::screens::dump("mine", width, &screen, 4);
+        }
+    }
 }
