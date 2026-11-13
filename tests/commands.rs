@@ -176,6 +176,33 @@ fn ready_orders_by_score_deadline_before_prio() {
 }
 
 #[test]
+fn separate_store_is_found_from_its_dir_and_subtrees_move_between_stores() {
+    let env = Env::new();
+    let paper = env.path("paper");
+    std::fs::create_dir(&paper).unwrap();
+    let store = env.path("stores/paper");
+    env.cake_ok(&paper, &["--store", store.to_str().unwrap(), "init"]);
+    env.cake_ok(&paper.join(""), &["add", "outline", "-m", "# Outline"]);
+    assert!(store.join("items/outline.md").is_file(), "found via the dirs of stores.json");
+
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "idea", "-m", "# Idea"]);
+    env.cake_ok(&d, &["add", "sub", "-p", "idea", "-m", "# Sub"]);
+    let list = std::fs::read_to_string(env.path("config/cake/stores.json")).unwrap();
+    assert!(list.contains("\"p\"") && list.contains("\"paper\""), "{}", list);
+
+    env.cake_ok(&d, &["mv", "idea", "--to-store", "paper"]);
+    assert!(store.join("items/idea/sub.md").is_file());
+    assert!(!d.join(".cake/items/idea.md").exists() && !d.join(".cake/items/idea").exists());
+
+    env.cake_ok(&paper, &["mv", "idea", "--to-store", "p"]);
+    assert!(d.join(".cake/items/idea/sub.md").is_file());
+    assert!(env.cake_err(&paper, &["mv", "outline", "--to-store", "nowhere"]).contains("not a store"));
+    env.cake_ok(&d, &["add", "outline", "-m", "# Outline"]);
+    assert!(env.cake_err(&paper, &["mv", "outline", "--to-store", "p"]).contains("already exists"));
+}
+
+#[test]
 fn ls_filters_by_text_status_and_blockers() {
     let env = Env::new();
     let d = env.plain_store();

@@ -5,8 +5,10 @@ description: Track tasks, plans, docs and ideas with the cake CLI (markdown item
 
 # cake
 
-One markdown file per item in `.cake/items/` (project store, own git branch)
-or `~/.local/share/cake` (personal store, `-g`). The tree is on disk:
+One markdown file per item in `.cake/items/` (project store, own git branch),
+a separate store used from a project dir, or `~/.local/share/cake`
+(personal store, `-g`). All known stores: `~/.config/cake/stores.json`
+(name → store, dirs). The tree is on disk:
 children of `sync.md` live in `sync/`. Every change through `cake` is
 committed automatically. Your items get `by: <agent>`, changed items record
 your session in `sessions`, your commits are tagged `[<agent>]`.
@@ -89,6 +91,11 @@ null). Per item:
    item sounds time-bound.
 5. `cake tag <id> triaged`.
 
+Personal store (`-g`): an idea that belongs to a project moves there first
+(`cake -g mv <id> --to-store <name>`, names from stores.json), then triage
+it in that store. Unsure which project → ask in `-g` with the store names
+as options. Personal things stay in `-g`.
+
 ## Asks
 
 A question for the user is an item: yours, `--todo`, tag `ask`, under the
@@ -116,6 +123,9 @@ cake block <item> --by <ask> --json
 
 ## Agent run (routine, later a local model)
 
+Per store in stores.json (`cake --store <path> … --json`), `-g` first so
+moved ideas are triaged in their project:
+
 1. `cake sync --json` (only in a routine).
 2. Apply answered asks (`cake ls -t ask --status done --json`, newest).
 3. Triage the inbox.
@@ -138,6 +148,7 @@ cake do <ids> --json                    # approve: status todo (alias todo, reop
 cake done|drop <ids> [-m NOTE] --json   # -m appends a note (answer, reason)
 cake tag <ids> a,~b --json              # add a, remove b
 cake mv <id> <parent|-> --json
+cake mv <id> --to-store <name|global|path> --json   # with subtree, top-level there
 cake block <id> --by <ids> --json       # unblock removes
 cake rm <ids> --json
 ```

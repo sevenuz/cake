@@ -67,39 +67,47 @@ fn answer_text(body: &str, input: &str) -> String {
     input.to_string()
 }
 
-pub fn run(skin: &MadSkin, root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
-    let cake = Cake { root };
-    let (mut added, mut answered, mut approved) = (0, 0, 0);
+/// what a step did: count, and whether the user quit the step
+struct Step {
+    count: usize,
+    quit: bool,
+}
 
-    skin.print_text("# Morning\n**1 · Paper todos**, one per line, empty line ends:");
-    while let Some(line) = read_line("+ ")? {
-        if line.is_empty() {
-            break;
-        }
-        match cake.call(&["add", "--todo", "-m", &line]) {
-            Ok(_) => added += 1,
-            Err(e) => println!("  {}", e),
-        }
-    }
-
+/// open questions of one store by score; a letter picks an option line
+fn questions(skin: &MadSkin, cake: &Cake, header: &dyn Fn()) -> Result<Step, Box<dyn Error>> {
+    let mut step = Step { count: 0, quit: false };
     let asks = cake.call(&["ready", "-t", "ask", "-l"])?;
-    let all = cake.call(&["ls", "-l"])?;
+    let all = cake.call(&["ls"])?;
     let title_of = |id: &str| {
         all.iter().find(|i| str_of(i, "id") == id).map(|i| str_of(i, "title").to_string()).unwrap_or_default()
     };
-    skin.print_text(&format!("\n**2 · Questions** ({}), letter or text, empty skips, `q` ends:", asks.len()));
-    'asks: for ask in &asks {
+    if !asks.is_empty() {
+        header();
+    }
+    for ask in &asks {
         let id = str_of(ask, "id");
         let body = body_of(ask);
-        skin.print_text(&format!("\n---\n## {}\n*{}* · about *{}*\n\n{}", str_of(ask, "title"), id, title_of(str_of(ask, "parent")), body));
+        skin.print_text(&format!(
+            "\n---\n## {}\n*{}* · about *{}*\n\n{}",
+            str_of(ask, "title"),
+            id,
+            title_of(str_of(ask, "parent")),
+            body
+        ));
         loop {
-            let Some(input) = read_line("> ")? else { break 'asks };
+            let Some(input) = read_line("> ")? else {
+                step.quit = true;
+                return Ok(step);
+            };
             match input.as_str() {
                 "" => break,
-                "q" => break 'asks,
+                "q" => {
+                    step.quit = true;
+                    return Ok(step);
+                }
                 _ => match cake.call(&["done", id, "-m", &answer_text(&body, &input)]) {
                     Ok(_) => {
-                        answered += 1;
+                        step.count += 1;
                         break;
                     }
                     Err(e) => println!("  {}", e),
@@ -107,9 +115,12 @@ pub fn run(skin: &MadSkin, root: &Path, user: &str) -> Result<(), Box<dyn Error>
             }
         }
     }
+    Ok(step)
+}
 
-    // planned: agents' notes with `done when` and no open question below;
-    // read again, answers above may have unblocked some
+/// agents' notes with `done when` and no open question below
+fn planned(skin: &MadSkin, cake: &Cake, user: &str, header: &dyn Fn()) -> Result<Step, Box<dyn Error>> {
+    let mut step = Step { count: 0, quit: false };
     let all = cake.call(&["ls", "-l"])?;
     let open_ask = |i: &Value| {
         i["children"].as_array().into_iter().flatten().any(|c| {
@@ -125,8 +136,10 @@ pub fn run(skin: &MadSkin, root: &Path, user: &str) -> Result<(), Box<dyn Error>
         .filter(|i| i["status"].is_null() && str_of(i, "by") != user)
         .filter(|i| str_of(i, "body").contains("done when") && !open_ask(i))
         .collect();
-    skin.print_text(&format!("\n**3 · Planned by agents** ({}):", planned.len()));
-    'planned: for item in planned {
+    if !planned.is_empty() {
+        header();
+    }
+    for item in planned {
         let id = str_of(item, "id");
         skin.print_text(&format!("\n---\n## {}\n*{}*\n\n{}", str_of(item, "title"), id, body_of(item)));
         let mut q = Question::new("");
@@ -152,26 +165,78 @@ pub fn run(skin: &MadSkin, root: &Path, user: &str) -> Result<(), Box<dyn Error>
                 edit.and_then(|_| cake.call(&["do", id]))
             }
             "x" => cake.call(&["drop", id]).map(|_| vec![]),
-            "q" => break 'planned,
+            "q" => {
+                step.quit = true;
+                return Ok(step);
+            }
             _ => continue,
         };
         match result {
-            Ok(v) if !v.is_empty() => approved += 1,
+            Ok(v) if !v.is_empty() => step.count += 1,
             Ok(_) => (),
             Err(e) => println!("  {}", e),
         }
     }
+    Ok(step)
+}
 
-    let ready = cake.call(&["ready", "-t", "~ask"])?;
-    let for_agents = ready.iter().filter(|i| str_of(i, "by") != user).count();
-    skin.print_text(&format!(
-        "\n---\n**Done:** {} added · {} answered · {} approved · {} ready for agents · {} for you",
-        added,
-        answered,
-        approved,
-        for_agents,
-        ready.len() - for_agents
-    ));
+/// paper todos go to `root`; questions and planned items come from all
+/// known stores (stores.json, global), `root` first
+pub fn run(skin: &MadSkin, root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
+    let same = |a: &Path, b: &Path| std::fs::canonicalize(a).ok() == std::fs::canonicalize(b).ok();
+    let mut stores: Vec<(String, std::path::PathBuf)> = vec![("here".to_string(), root.to_path_buf())];
+    if let Some((name, _)) = crate::stores::all()?.into_iter().find(|(_, s)| same(s, root)) {
+        stores[0].0 = name;
+    }
+    stores.extend(crate::stores::all()?.into_iter().filter(|(_, s)| !same(s, root)));
+    let header = |name: &str| {
+        if stores.len() > 1 {
+            skin.print_text(&format!("\n# {}", name));
+        }
+    };
+
+    skin.print_text(&format!("# Morning\n**1 · Paper todos** for *{}*, one per line, empty line ends:", stores[0].0));
+    let here = Cake { root };
+    let mut added = 0;
+    while let Some(line) = read_line("+ ")? {
+        if line.is_empty() {
+            break;
+        }
+        match here.call(&["add", "--todo", "-m", &line]) {
+            Ok(_) => added += 1,
+            Err(e) => println!("  {}", e),
+        }
+    }
+
+    skin.print_text("\n**2 · Questions**: letter or text, empty skips, `q` ends the step");
+    let mut answered = 0;
+    for (name, root) in &stores {
+        let step = questions(skin, &Cake { root }, &|| header(name))?;
+        answered += step.count;
+        if step.quit {
+            break;
+        }
+    }
+
+    skin.print_text("\n**3 · Planned by agents**");
+    let mut approved = 0;
+    for (name, root) in &stores {
+        let step = planned(skin, &Cake { root }, user, &|| header(name))?;
+        approved += step.count;
+        if step.quit {
+            break;
+        }
+    }
+
+    let mut summary = format!("\n---\n**Done:** {} added · {} answered · {} approved\n", added, answered, approved);
+    for (name, root) in &stores {
+        let ready = Cake { root }.call(&["ready", "-t", "~ask"])?;
+        let agents = ready.iter().filter(|i| str_of(i, "by") != user).count();
+        if !ready.is_empty() {
+            summary += &format!("* *{}*: {} ready for agents · {} for you\n", name, agents, ready.len() - agents);
+        }
+    }
+    skin.print_text(&summary);
     Ok(())
 }
 

@@ -271,6 +271,68 @@ where
     Ok(Report::Items(vec![id.to_owned()]))
 }
 
+/// moves `id` and its subtree to the store at `target`, top-level there;
+/// the target is locked and committed on its own
+pub fn mv_to_store<F>(
+    debug: F,
+    config: &Config,
+    store: &mut Store,
+    id: &str,
+    target: &Path,
+    message: &str,
+) -> Result<Report, Box<dyn Error>>
+where
+    F: Fn(&str),
+{
+    debug(&format!("mv {:?} --to-store {:?}", id, target));
+    store.get_item(id).ok_or_else(|| error::not_found(id))?;
+    if !target.join("items").is_dir() {
+        return Err(error::invalid(format!("{} is not a store.", target.display())));
+    }
+    if fs::canonicalize(target)? == fs::canonicalize(store.root())? {
+        return Err(error::invalid("That is this store."));
+    }
+    let mut ids = vec![id.to_owned()];
+    let mut n = 0;
+    while n < ids.len() {
+        let children = store.get_item(&ids[n]).unwrap().children().clone();
+        for c in children {
+            if !ids.contains(&c) {
+                ids.push(c);
+            }
+        }
+        n += 1;
+    }
+    let mut lock = util::lock_file(target)?;
+    let _guard = match lock.as_mut() {
+        Some(l) => Some(util::lock(l, true)?),
+        None => None,
+    };
+    let mut other = Store::new_except(target, &[])?;
+    if let Some(taken) = ids.iter().find(|i| other.get_item(i).is_some()) {
+        return Err(error::invalid(format!("{} already exists in {}.", taken, target.display())));
+    }
+    for i in &ids {
+        let mut item = store.get_item(i).unwrap().clone();
+        if i == id {
+            item.set_parent(None);
+        }
+        other.add(item)?;
+    }
+    if let Some(session) = config.session() {
+        other.add_session(&session);
+    }
+    let changed = other.save()?;
+    if !config.disable_git && git::is_store_repo(target) {
+        git::commit(target, &changed, message)?;
+    }
+    for i in ids.iter().rev() {
+        store.remove(i)?;
+    }
+    say!("{} moved to {} ({} items).", id, target.display(), ids.len());
+    Ok(Report::Value(serde_json::json!({ "moved": ids, "store": target })))
+}
+
 /// adds or removes blockers of `id`
 pub fn block<F>(
     debug: F,
@@ -552,10 +614,28 @@ where
 /// `<repo>/.cake` (attached if the branch exists locally or on the remote),
 /// otherwise a plain `.cake` dir in the current directory.
 /// With `global`, the global store becomes a git repo on `main`.
-pub fn init<F>(debug: F, config: &Config, global: bool) -> Result<Report, Box<dyn Error>>
+pub fn init<F>(debug: F, config: &Config, global: bool, store: Option<&Path>) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
+    // a separate store, used from the current dir (e.g. a paper repo)
+    if let Some(p) = store.filter(|_| !global) {
+        if p.join("items").is_dir() {
+            return Err(error::invalid(format!("There is already a store at {}.", p.display())));
+        }
+        let files = create_store_files(p)?;
+        if !config.disable_git {
+            git::init_repo(p)?;
+            git::commit(p, &files, "cake: init")?;
+        }
+        let cwd = std::env::current_dir()?;
+        let abs = fs::canonicalize(p)?;
+        let dirs = if cwd.starts_with(&abs) { vec![] } else { vec![cwd.clone()] };
+        let name = cwd.file_name().map_or("store".into(), |n| n.to_string_lossy().to_string());
+        crate::stores::register(&abs, &name, &dirs)?;
+        say!("New store {} created, used from {} :)", p.display(), cwd.display());
+        return Ok(store_report(p));
+    }
     if global {
         let p = util::global_store()?;
         debug(&format!("init: global store {:?}", p));

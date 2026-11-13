@@ -411,12 +411,16 @@ pub fn global_store() -> Result<PathBuf, Box<dyn Error>> {
     Ok(base_dirs.data_dir().join(PKG_NAME))
 }
 
-/// find next store with an items dir in current or upper dirs, fallback is the global store
+/// the nearest .cake with an items dir, else a listed store whose dirs hold
+/// `path` (stores.json), else the global store
 pub fn find_store(path: &Path) -> Result<PathBuf, Box<dyn Error>> {
     for dir in path.ancestors() {
         if dir.join(STORE_DIR).join("items").is_dir() {
             return Ok(dir.join(STORE_DIR));
         }
+    }
+    if let Some(store) = crate::stores::for_dir(&crate::stores::load()?, path) {
+        return Ok(store);
     }
     global_store()
 }

@@ -7,6 +7,7 @@ mod morning;
 mod out;
 mod selector;
 mod store;
+mod stores;
 #[cfg(test)]
 mod test_support;
 mod util;
@@ -304,11 +305,15 @@ pub enum Commands {
     },
     /// guided pass: paper todos, questions by score, approve planned items
     Morning {},
-    /// move an item under a parent
+    /// move an item under a parent, or with its subtree to another store
     Mv {
         id: String,
         /// parent id, - detaches
-        parent: String,
+        #[arg(required_unless_present = "to_store", conflicts_with = "to_store")]
+        parent: Option<String>,
+        /// store name from stores.json, `global`, or a path; top-level there
+        #[arg(long, value_name = "STORE")]
+        to_store: Option<String>,
     },
     /// add items that must be closed first
     Block {
@@ -342,7 +347,8 @@ pub enum Commands {
         #[arg(long, group = "mode")]
         abort: bool,
     },
-    /// create a store; in a git repo on its own branch, attached if it exists on the remote
+    /// create a store; in a git repo on its own branch, attached if it exists on the remote;
+    /// with --store DIR a separate store used from here (listed in stores.json)
     Init {},
     /// open the config file in the editor
     Config {},
@@ -365,10 +371,10 @@ impl Commands {
             Commands::Show { target } if store.resolve(target).map_or(false, |t| store.get_item(&t).is_some()) => {
                 one(target)?
             }
-            Commands::Mv { id, parent } => {
+            Commands::Mv { id, parent, .. } => {
                 one(id)?;
-                if parent != "-" {
-                    one(parent)?;
+                if let Some(p) = parent.as_mut().filter(|p| *p != "-") {
+                    one(p)?;
                 }
             }
             Commands::Block { id, by } | Commands::Unblock { id, by } => {
@@ -592,6 +598,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         None => util::find_store(&current_dir()?)?,
     };
     debug(&format!("Store: {}", root.display()));
+    // project stores join the list on first use
+    if root.file_name().is_some_and(|n| n == util::STORE_DIR) && root.join("items").is_dir() {
+        let name = root.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string());
+        stores::register(&root, name.as_deref().unwrap_or("store"), &[])?;
+    }
 
     // the form runs every change as its own cake call: no lock while waiting
     let interactive = std::io::stdin().is_terminal() && std::io::stdout().is_terminal() && !out::json();
@@ -733,7 +744,16 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Stop { selector }) => {
             commands::stop(debug, &config, &mut store, selector.selector(&selector.ids)?)?
         }
-        Some(Commands::Mv { id, parent }) => commands::mv(debug, &mut store, id, parent)?,
+        Some(Commands::Mv { id, parent: Some(parent), .. }) => commands::mv(debug, &mut store, id, parent)?,
+        Some(Commands::Mv { id, to_store: Some(target), .. }) => commands::mv_to_store(
+            debug,
+            &config,
+            &mut store,
+            id,
+            &stores::resolve(&stores::load()?, target)?,
+            &commit_message(&args[1..], config.agent()),
+        )?,
+        Some(Commands::Mv { .. }) => unreachable!("clap requires a parent or --to-store"),
         Some(Commands::Block { id, by }) => commands::block(debug, &mut store, id, by, false)?,
         Some(Commands::Unblock { id, by }) => commands::block(debug, &mut store, id, by, true)?,
         Some(Commands::Ready { selector, long }) => {
@@ -757,7 +777,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
         Some(Commands::Status {}) => commands::status(&config, &store)?,
         Some(Commands::Show { target }) => commands::show(debug, &config, &store, target)?,
-        Some(Commands::Init {}) => commands::init(debug, &config, cli.global)?,
+        Some(Commands::Init {}) => commands::init(debug, &config, cli.global, cli.store.as_deref())?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
         Some(Commands::Morning {}) => unreachable!("handled before the lock"),
