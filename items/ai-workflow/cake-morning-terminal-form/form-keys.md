@@ -1,6 +1,6 @@
 ---
 id: form-keys
-status: doing
+status: review
 tags: [tui]
 parent: "[[cake-morning-terminal-form]]"
 created: 2026-11-14T00:05:44+01:00
@@ -86,3 +86,5 @@ help, quit, escape). Several keys per action, space separated.
 
 - done when: keymap implemented and configurable, all modules use it,
   scenarios pass, screen page reviewed by the user
+
+changed: vim-like keymap in all modules (1-9 options, dd/x drop, :due/:who/:move, jk leaves text), config keys, F feedback, scenario test; commits ea3ace7, bfda786; screens: https://claude.ai/artifact/32aUj3LK2Bgds1a5zSS85h; try: cake, then ? for all keys
