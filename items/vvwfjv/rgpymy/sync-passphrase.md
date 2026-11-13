@@ -1,10 +1,12 @@
 ---
 id: sync-passphrase
+status: dropped
 parent: "[[rgpymy]]"
 blocked_by: ["[[how-should-sync-ask]]"]
 created: 2026-11-13T18:23:28+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+closed: 2026-11-13T18:39:06+01:00
 ---
 # Sync asks the key passphrase per SSH connection
 
@@ -16,3 +18,5 @@ sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
 - fix inside cake: SSH multiplexing for its git calls
   (`ControlMaster auto`, `ControlPersist 60`): one connection, one prompt
 - done when: one passphrase prompt per sync
+
+user: leave it, no change; ssh-agent is the user's choice
