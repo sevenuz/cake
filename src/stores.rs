@@ -47,8 +47,13 @@ pub fn load() -> Result<Stores, Box<dyn Error>> {
     Ok(stores)
 }
 
+/// atomic: parallel cake runs read either the old or the new list, never
+/// a half written one
 fn save(stores: &Stores) -> Result<(), Box<dyn Error>> {
-    std::fs::write(file()?, serde_json::to_string_pretty(stores)? + "\n")?;
+    let path = file()?;
+    let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, serde_json::to_string_pretty(stores)? + "\n")?;
+    std::fs::rename(&tmp, &path)?;
     Ok(())
 }
 

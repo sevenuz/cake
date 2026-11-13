@@ -126,7 +126,8 @@ fn short_date(d: &Option<String>) -> String {
         .map_or(String::new(), |d| d.format("%d.%m.").to_string())
 }
 
-fn render(kind: Kind, rows: &[Row], cur: usize, opened: Option<usize>, width: u16, user: &str) -> Vec<Line<'static>> {
+/// the table's lines, and which line holds the cursor
+fn render(kind: Kind, rows: &[Row], cur: usize, opened: Option<usize>, width: u16, user: &str) -> (Vec<Line<'static>>, usize) {
     let t = theme::t();
     let g = style::g();
     let w = width as usize;
@@ -139,6 +140,7 @@ fn render(kind: Kind, rows: &[Row], cur: usize, opened: Option<usize>, width: u1
     let title_w = w.saturating_sub(fixed).max(10);
     out.push(Line::from(Span::styled(head.replace("{}", &cut("title", title_w)), dim())));
     let mut group = String::new();
+    let mut focus = 0;
     for (n, r) in rows.iter().enumerate() {
         if r.prefix != group {
             group = r.prefix.clone();
@@ -148,6 +150,9 @@ fn render(kind: Kind, rows: &[Row], cur: usize, opened: Option<usize>, width: u1
         }
         let indent = if group.is_empty() { "" } else { "  " };
         let here = n == cur;
+        if here {
+            focus = out.len();
+        }
         let mark = if here { g.select } else { " " };
         let action = r.action.map_or(g.note.to_string(), |a| a.to_string());
         let who = |r: &Row| r.who.as_deref().map(|w| if w == user { "me" } else { w }).unwrap_or("").to_string();
@@ -192,7 +197,7 @@ fn render(kind: Kind, rows: &[Row], cur: usize, opened: Option<usize>, width: u1
             }
         }
     }
-    out
+    (out, focus)
 }
 
 /// who `w` cycles through: you, ai, agents and people of the store config
@@ -216,10 +221,10 @@ pub(super) fn run(
     user: &str,
     store: &str,
     since: i64,
-) -> Result<(usize, bool), Box<dyn Error>> {
+) -> Result<(usize, Leave), Box<dyn Error>> {
     let mut rows = rows(cake, kind, user, since)?;
     if rows.is_empty() {
-        return Ok((0, false));
+        return Ok((0, Leave::Empty));
     }
     if kind == Kind::Sort {
         // tasks without assignee are sorted already, they need a who
@@ -244,6 +249,7 @@ pub(super) fn run(
                 (":due :deadline :move".into(), "".into()),
                 (ks(Act::Open), "open".into()),
                 (ks(Act::Confirm), "save".into()),
+                (format!("{}/{}", ks(Act::PrevModule), ks(Act::NextModule)), "module".into()),
                 (ks(Act::Help), "keys".into()),
             ],
             Kind::News => vec![
@@ -251,17 +257,18 @@ pub(super) fn run(
                 (ks(Act::Drop), "drop".into()),
                 (ks(Act::Open), "open".into()),
                 (ks(Act::Confirm), "save".into()),
-                (ks(Act::Back), "skip".into()),
+                (format!("{}/{}", ks(Act::PrevModule), ks(Act::NextModule)), "module".into()),
             ],
             Kind::Mine => vec![
                 (format!("{}/{}/{}", ks(Act::Timer), ks(Act::Complete), ks(Act::Drop)), "start done drop".into()),
                 (ks(Act::Who), "who".into()),
                 (ks(Act::Open), "open".into()),
                 (ks(Act::Confirm), "save".into()),
-                (ks(Act::Back), "skip".into()),
+                (format!("{}/{}", ks(Act::PrevModule), ks(Act::NextModule)), "module".into()),
             ],
         };
         let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+        let (lines, focus) = render(kind, &rows, cur, opened, width, user);
         let mut screen = Screen {
             card_title: format!(
                 "{} · {}",
@@ -272,7 +279,8 @@ pub(super) fn run(
                 },
                 store
             ),
-            card: render(kind, &rows, cur, opened, width, user),
+            card: lines,
+            focus: Some(focus),
             keys: keys(&parts),
             note: note.take(),
             help: if help { ui.keys.help() } else { vec![] },
@@ -296,15 +304,19 @@ pub(super) fn run(
             Act::HalfUp => cur = cur.saturating_sub(page),
             Act::Help => help = true,
             Act::Open => opened = if opened == Some(cur) { None } else { Some(cur) },
-            Act::Back if opened.is_some() => opened = None,
-            Act::Back => return Ok((0, false)),
+            Act::Back => opened = None,
+            // switching module saves, like leaving a field
+            Act::PrevModule | Act::NextModule => {
+                let n = save(ui, &mut screen, cake, kind, &rows, user)?;
+                return Ok((n, if act == Act::PrevModule { Leave::Prev } else { Leave::Next }));
+            }
             Act::Quit => {
                 if decided > 0 && !quit_armed {
                     quit_armed = true;
                     note = Some(("unsaved decisions: <cr> saves, q again quits without them".into(), true));
                     continue;
                 }
-                return Ok((0, true));
+                return Ok((0, Leave::Quit));
             }
             Act::Feedback => {
                 let place = format!("{} table, row {}", if kind == Kind::Sort { "sort" } else if kind == Kind::News { "news" } else { "mine" }, rows[cur].id);
@@ -367,14 +379,14 @@ pub(super) fn run(
                 match cmd {
                     "w" => {
                         let n = save(ui, &mut screen, cake, kind, &rows, user)?;
-                        return Ok((n, false));
+                        return Ok((n, Leave::Done));
                     }
                     "wq" | "x" => {
                         let n = save(ui, &mut screen, cake, kind, &rows, user)?;
-                        return Ok((n, true));
+                        return Ok((n, Leave::Quit));
                     }
                     "q" if decided > 0 => note = Some(("unsaved decisions: :w saves, :q! quits without them".into(), true)),
-                    "q" | "q!" => return Ok((0, true)),
+                    "q" | "q!" => return Ok((0, Leave::Quit)),
                     "due" | "deadline" if kind != Kind::News => {
                         let value = match arg {
                             "" | "-" => Ok(None),
@@ -419,7 +431,7 @@ pub(super) fn run(
             }
             Act::Confirm => {
                 let n = save(ui, &mut screen, cake, kind, &rows, user)?;
-                return Ok((n, false));
+                return Ok((n, Leave::Done));
             }
             _ => (),
         }
@@ -521,7 +533,7 @@ mod tests {
         rows[3].move_to = Some("paper".into());
         let screen = Screen {
             card_title: "inbox and tasks without assignee · cake".into(),
-            card: render(Kind::Sort, &rows, 4, Some(2), 74, "jul"),
+            card: render(Kind::Sort, &rows, 4, Some(2), 74, "jul").0,
             keys: keys(&[("n/t/x", "note task drop"), ("w", "who"), ("enter", "save")]),
             ..Default::default()
         };
@@ -576,21 +588,21 @@ mod tests {
             let inner = column_width(width, 100).saturating_sub(4);
             let screen = Screen {
                 card_title: "inbox and tasks without assignee · cake".into(),
-                card: render(Kind::Sort, &sort, 4, None, inner, "jul"),
+                card: render(Kind::Sort, &sort, 4, None, inner, "jul").0,
                 keys: keys(&[(&format!("{}/{}/{}", k(Act::Task), k(Act::Note), k(Act::Drop)), "task note drop"), (&k(Act::Who), "who"), (&k(Act::Prio), "prio"), (":due :deadline :move", ""), (&k(Act::Open), "open"), (&k(Act::Confirm), "save"), (&k(Act::Help), "keys")]),
                 ..Default::default()
             };
             super::super::screens::dump("sort", width, &screen, 1);
             let screen = Screen {
                 card_title: "what agents did since your last run · cake".into(),
-                card: render(Kind::News, &news, 0, Some(0), inner, "jul"),
+                card: render(Kind::News, &news, 0, Some(0), inner, "jul").0,
                 keys: keys(&[(&k(Act::Who), "who (hold: back to you)"), (&k(Act::Drop), "drop"), (&k(Act::Open), "open"), (&k(Act::Confirm), "save"), (&k(Act::Back), "skip")]),
                 ..Default::default()
             };
             super::super::screens::dump("news", width, &screen, 0);
             let screen = Screen {
                 card_title: "your tasks · cake".into(),
-                card: render(Kind::Mine, &mine, 1, None, inner, "jul"),
+                card: render(Kind::Mine, &mine, 1, None, inner, "jul").0,
                 keys: keys(&[(&format!("{}/{}/{}", k(Act::Timer), k(Act::Complete), k(Act::Drop)), "start done drop"), (&k(Act::Who), "who"), (&k(Act::Open), "open"), (&k(Act::Confirm), "save"), (&k(Act::Back), "skip")]),
                 ..Default::default()
             };

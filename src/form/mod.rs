@@ -199,6 +199,14 @@ struct Screen {
     note: Option<(String, bool)>,
     /// the help overlay: (keys, what), empty when closed
     help: Vec<(String, String)>,
+    /// lines pinned under the card text: options, always visible
+    choices: Vec<Line<'static>>,
+    /// lines pinned at the bottom of the card: the text being typed
+    input: Vec<Line<'static>>,
+    /// lines the card text is scrolled down (<c-d>, <c-u>)
+    scroll: u16,
+    /// a card text line to keep visible (the table cursor)
+    focus: Option<usize>,
 }
 
 struct Ui {
@@ -281,14 +289,11 @@ impl Ui {
 
     /// a line of text inside the card; None on esc
     fn input(&mut self, screen: &mut Screen, prompt: &str) -> Result<Option<String>, Box<dyn Error>> {
-        let base = screen.card.clone();
         let keys_before = std::mem::replace(&mut screen.keys, keys(&[("<cr>", "save"), ("<esc> jk", "cancel")]));
         let mut buf = String::new();
         let result = loop {
-            screen.card = base.clone();
-            screen.card.push(Line::default());
-            screen.card.push(Line::from(Span::styled(prompt.to_string(), Style::default().fg(theme::t().hint))));
-            screen.card.push(Line::from(vec![
+            screen.input = vec![Line::default(), Line::from(Span::styled(prompt.to_string(), Style::default().fg(theme::t().hint)))];
+            screen.input.push(Line::from(vec![
                 Span::styled(format!("{} ", style::g().select), Style::default().fg(theme::t().hint)),
                 Span::raw(buf.clone()),
                 Span::styled("_", dim()),
@@ -304,7 +309,7 @@ impl Ui {
                 TextKey::Char(c) => buf.push(c),
             }
         };
-        screen.card = base;
+        screen.input.clear();
         screen.keys = keys_before;
         Ok(result)
     }
@@ -316,64 +321,92 @@ fn column_width(area: u16, max: u16) -> u16 {
     if max == 0 { w } else { w.min(max) }
 }
 
-/// a screen into frame `f`: header box, tree, card, keys, note, help
+/// a screen into frame `f`: header box, tree, card (scrolling text,
+/// pinned choices and input), keys, note, help
 fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen, step: usize, max: u16) {
     let g = style::g();
-            let area = f.area();
-            let width = column_width(area.width, max);
-            let col = Rect { x: area.x + (area.width - width) / 2, y: area.y, width, height: area.height };
-            let inner = width.saturating_sub(4);
-            let tree_h = (screen.tree.len() as u16).min(col.height / 3);
-            let card_h = height(&screen.card, inner) + 2;
-            let [head, _, tree, gap, card, keys_a, note_a, _] = Layout::vertical([
-                Constraint::Length(4),
-                Constraint::Length(1),
-                Constraint::Length(tree_h),
-                Constraint::Length(if tree_h > 0 { 1 } else { 0 }),
-                Constraint::Max(card_h),
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Min(0),
-            ])
-            .areas(col);
-            let _ = gap;
-            let block = Block::default().borders(Borders::ALL).border_set(g.border).border_style(dim());
-            f.render_widget(Paragraph::new(header_lines.to_vec()).block(block.clone().padding(Padding::horizontal(1))), head);
-            f.render_widget(Paragraph::new(screen.tree.clone()), tree);
-            let title = Span::styled(format!(" {} ", screen.card_title), bold().fg(step_color(step)));
-            f.render_widget(
-                Paragraph::new(Text::from(screen.card.clone()))
-                    .wrap(Wrap { trim: false })
-                    .block(block.clone().title(title).padding(Padding::horizontal(1))),
-                card,
-            );
-            f.render_widget(Paragraph::new(screen.keys.clone()), keys_a);
-            if let Some((text, error)) = &screen.note {
-                let s = if *error { Style::default().fg(theme::t().error) } else { dim() };
-                f.render_widget(Paragraph::new(Span::styled(text.clone(), s)), note_a);
-            }
-            if !screen.help.is_empty() {
-                let lines: Vec<Line> = screen
-                    .help
-                    .iter()
-                    .map(|(k, what)| {
-                        Line::from(vec![
-                            Span::styled(format!("{:<18}", k), Style::default().fg(theme::t().hint)),
-                            Span::raw(what.to_string()),
-                        ])
-                    })
-                    .collect();
-                let h = (lines.len() as u16 + 2).min(area.height);
-                let w = width.min(area.width);
-                let pop = Rect { x: col.x, y: area.y + (area.height - h) / 2, width: w, height: h };
-                f.render_widget(Clear, pop);
-                f.render_widget(
-                    Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-                        block.title(Span::styled(" keys ", bold())).padding(Padding::horizontal(1)),
-                    ),
-                    pop,
-                );
-            }
+    let area = f.area();
+    let width = column_width(area.width, max);
+    let col = Rect { x: area.x + (area.width - width) / 2, y: area.y, width, height: area.height };
+    let inner = width.saturating_sub(4);
+    let tree_h = (screen.tree.len() as u16).min(col.height / 3);
+    let fixed = 4 + 1 + tree_h + u16::from(tree_h > 0) + 2;
+    let avail = col.height.saturating_sub(fixed).max(4);
+    let body_h = height(&screen.card, inner);
+    let choices_h = height(&screen.choices, inner);
+    let input_h = height(&screen.input, inner);
+    let sep = u16::from(!screen.choices.is_empty() && body_h > 0);
+    let card_h = (body_h + sep + choices_h + input_h + 2).min(avail);
+    let [head, _, tree, _, card, keys_a, note_a, _] = Layout::vertical([
+        Constraint::Length(4),
+        Constraint::Length(1),
+        Constraint::Length(tree_h),
+        Constraint::Length(u16::from(tree_h > 0)),
+        Constraint::Length(card_h),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Min(0),
+    ])
+    .areas(col);
+    let block = Block::default().borders(Borders::ALL).border_set(g.border).border_style(dim());
+    f.render_widget(Paragraph::new(header_lines.to_vec()).block(block.clone().padding(Padding::horizontal(1))), head);
+    f.render_widget(Paragraph::new(screen.tree.clone()), tree);
+    // the text scrolls, choices and input stay
+    let view = card_h.saturating_sub(2 + sep + choices_h + input_h);
+    let max_scroll = body_h.saturating_sub(view);
+    let scroll = match screen.focus {
+        Some(line) => {
+            let before = height(&screen.card[..line.min(screen.card.len())], inner);
+            before.saturating_sub(view.saturating_sub(2)).min(max_scroll)
+        }
+        None => screen.scroll.min(max_scroll),
+    };
+    let title = Span::styled(format!(" {} ", screen.card_title), bold().fg(step_color(step)));
+    let mut card_block = block.clone().title(title).padding(Padding::horizontal(1));
+    if max_scroll > 0 {
+        let more = match (scroll > 0, scroll < max_scroll) {
+            (true, true) => " ↑↓ more <c-u> <c-d> ",
+            (false, _) => " ↓ more <c-d> ",
+            (true, false) => " ↑ <c-u> ",
+        };
+        card_block = card_block.title_bottom(Line::from(Span::styled(more, Style::default().fg(theme::t().hint))).right_aligned());
+    }
+    let inside = card_block.inner(card);
+    f.render_widget(card_block, card);
+    let [body_a, _, choices_a, input_a] = Layout::vertical([
+        Constraint::Length(view),
+        Constraint::Length(sep),
+        Constraint::Length(choices_h),
+        Constraint::Length(input_h),
+    ])
+    .areas(inside);
+    f.render_widget(Paragraph::new(Text::from(screen.card.clone())).wrap(Wrap { trim: false }).scroll((scroll, 0)), body_a);
+    f.render_widget(Paragraph::new(Text::from(screen.choices.clone())).wrap(Wrap { trim: false }), choices_a);
+    f.render_widget(Paragraph::new(Text::from(screen.input.clone())).wrap(Wrap { trim: false }), input_a);
+    f.render_widget(Paragraph::new(screen.keys.clone()), keys_a);
+    if let Some((text, error)) = &screen.note {
+        let s = if *error { Style::default().fg(theme::t().error) } else { dim() };
+        f.render_widget(Paragraph::new(Span::styled(text.clone(), s)), note_a);
+    }
+    if !screen.help.is_empty() {
+        let lines: Vec<Line> = screen
+            .help
+            .iter()
+            .map(|(k, what)| {
+                Line::from(vec![
+                    Span::styled(format!("{:<18}", k), Style::default().fg(theme::t().hint)),
+                    Span::raw(what.to_string()),
+                ])
+            })
+            .collect();
+        let h = (lines.len() as u16 + 2).min(area.height);
+        let pop = Rect { x: col.x, y: area.y + (area.height - h) / 2, width, height: h };
+        f.render_widget(Clear, pop);
+        f.render_widget(
+            Paragraph::new(lines).wrap(Wrap { trim: false }).block(block.title(Span::styled(" keys ", bold())).padding(Padding::horizontal(1))),
+            pop,
+        );
+    }
 }
 
 /// F: a note about this screen into the inbox, tag form-feedback
@@ -388,12 +421,25 @@ fn feedback(ui: &mut Ui, screen: &mut Screen, cake: &Cake, store: &str, place: &
     Ok(())
 }
 
+/// how a module ended
+#[derive(Clone, Copy, PartialEq)]
+enum Leave {
+    /// everything seen: go on
+    Done,
+    /// nothing to show: pass it in the direction of travel
+    Empty,
+    Next,
+    Prev,
+    Quit,
+}
+
 /// what the user did with one item
 enum Outcome {
     /// short result for the tree, counted (answered, done, approved)
     Next(Option<String>, bool),
     NextGoal,
-    Quit,
+    Previous,
+    Leave(Leave),
 }
 
 /// the tree lines of a goal: the current item marked, decided ones with ✓
@@ -553,29 +599,67 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
     let mut counts = vec![0usize; o.modules.len()];
     let mut run_triage = false;
     let result = (|| -> Result<(), Box<dyn Error>> {
-        for (n, m) in o.modules.iter().enumerate() {
+        // h/l move between modules; empty modules are passed in the
+        // direction of travel
+        let mut n = 0usize;
+        let mut back = false;
+        while n < o.modules.len() {
+            let m = &o.modules[n];
             ui.step = n;
-            if m == "triage" {
-                run_triage = o.triage;
-                continue;
-            }
-            if m == "dump" {
-                counts[n] += dump(&mut ui, &Cake { root }, &stores[0].0)?;
-                continue;
-            }
-            for ((name, sroot), since) in stores.iter().zip(&since) {
-                let cake = Cake { root: sroot };
-                let (c, quit) = match m.as_str() {
-                    "news" => table::run(&mut ui, &cake, sroot, table::Kind::News, user, name, *since)?,
-                    "sort" => table::run(&mut ui, &cake, sroot, table::Kind::Sort, user, name, *since)?,
-                    "mine" => table::run(&mut ui, &cake, sroot, table::Kind::Mine, user, name, *since)?,
-                    "answer" => card::run(&mut ui, &cake, card::Kind::Answer, user, name)?,
-                    "review" => card::run(&mut ui, &cake, card::Kind::Review, user, name)?,
-                    _ => (0, false),
-                };
-                counts[n] += c;
-                if quit {
-                    return Ok(());
+            let leave = match m.as_str() {
+                "triage" => {
+                    run_triage = o.triage;
+                    Leave::Empty
+                }
+                "dump" => {
+                    counts[n] += dump(&mut ui, &Cake { root }, &stores[0].0)?;
+                    Leave::Done
+                }
+                _ => {
+                    let mut leave = Leave::Empty;
+                    for ((name, sroot), since) in stores.iter().zip(&since) {
+                        let cake = Cake { root: sroot };
+                        let (c, l) = match m.as_str() {
+                            "news" => table::run(&mut ui, &cake, sroot, table::Kind::News, user, name, *since)?,
+                            "sort" => table::run(&mut ui, &cake, sroot, table::Kind::Sort, user, name, *since)?,
+                            "mine" => table::run(&mut ui, &cake, sroot, table::Kind::Mine, user, name, *since)?,
+                            "answer" => card::run(&mut ui, &cake, card::Kind::Answer, user, name)?,
+                            "review" => card::run(&mut ui, &cake, card::Kind::Review, user, name)?,
+                            _ => (0, Leave::Done),
+                        };
+                        counts[n] += c;
+                        match l {
+                            Leave::Done | Leave::Empty => {
+                                if l == Leave::Done {
+                                    leave = Leave::Done;
+                                } else if leave != Leave::Done {
+                                    leave = Leave::Empty;
+                                }
+                            }
+                            other => {
+                                leave = other;
+                                break;
+                            }
+                        }
+                    }
+                    leave
+                }
+            };
+            match leave {
+                Leave::Quit => return Ok(()),
+                Leave::Prev => {
+                    back = true;
+                    n = n.saturating_sub(1);
+                }
+                Leave::Next => {
+                    back = false;
+                    n += 1;
+                }
+                // nothing here: keep the direction of travel
+                Leave::Empty if back && n > 0 => n -= 1,
+                Leave::Empty | Leave::Done => {
+                    back = false;
+                    n += 1;
                 }
             }
         }
@@ -722,6 +806,19 @@ mod screens {
                 ..Default::default()
             };
             dump("answer", width, &screen, 2);
+            // a long review card with a comment being typed
+            let long: String = (1..=18).map(|n| format!("- changed: part {} of the work, with enough words to wrap\n", n)).collect();
+            let mut screen = Screen {
+                tree: tree_lines(&all, &tree, &[&all[4]], "step", &Default::default(), false, None, inner),
+                card_title: "Name the failed git step · cake".into(),
+                card: markdown::render(&long, inner),
+                choices: vec![Line::from(format!("{} 1) ok, done", style::g().select)), Line::from("  2) drop"), Line::from(format!("  3) {} change something", style::g().ellipsis))],
+                keys: card_keys.clone(),
+                scroll: 4,
+                ..Default::default()
+            };
+            screen.input = vec![Line::default(), Line::from("what should change:"), Line::from(format!("{} shorter hints please_", style::g().select))];
+            dump("review", width, &screen, 3);
             // help overlay
             let screen = Screen { help: keymap.help(), ..Default::default() };
             dump("help", width, &screen, 2);

@@ -105,8 +105,14 @@ print(f"keys: {len(keys)} for 6 decisions ({len(keys) / 6:.1f} per decision)")
 # the next morning: what the agent did since, held back to the user
 time.sleep(1.1)
 cake("add", "new", "--task", "-p", "sync", "--assignee", "claude-code", "-m", "# a new subtask", agent=True)
-form(["w", "\r", "\x1b", "\x1b", "\x1b"])
+form(["w", "\r", "l", "l", "l", "l"])
 check("news: hold gives it back to the user", item("new")["assignee"] == "jul")
+
+# h and l: leave sort without deciding, come back over the empty modules
+cake("add", "zz", "-m", "# idea for later")
+cake("add", "mytask", "--task", "--assignee", "me", "-m", "# my task")
+form(["l", "h", "t", "\r", "l", "l"])
+check("h/l: back in sort, the idea became a task", item("zz")["status"] == "task")
 
 subprocess.run(["rm", "-rf", TMP])
 sys.exit(1 if failures else 0)

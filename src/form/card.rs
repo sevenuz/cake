@@ -57,18 +57,17 @@ fn decide(
     let width = column_width(ui.term.size()?.width, ui.max_width);
     // the first option (the recommended one) is preselected: enter takes it
     let (mut sel, mut hints, mut help) = (Some(0usize), false, false);
+    let mut scroll: u16 = 0;
     let mut opened: Option<String> = None;
     let mut note: Option<(String, bool)> = None;
     loop {
-        let mut card = markdown::render(&context, width.saturating_sub(4));
-        if !card.is_empty() {
-            card.push(Line::default());
-        }
+        let card = markdown::render(&context, width.saturating_sub(4));
+        let mut choices = vec![];
         for (n, (_, text)) in options.iter().enumerate() {
             let chosen = sel == Some(n);
             let mark = if chosen { g.select } else { " " };
             let s = if chosen { bold().fg(t.hint) } else { Style::default() };
-            card.push(Line::from(vec![
+            choices.push(Line::from(vec![
                 Span::styled(format!("{} {}) ", mark, n + 1), Style::default().fg(t.hint)),
                 Span::styled(text.clone(), s),
             ]));
@@ -86,7 +85,11 @@ fn decide(
             if opened.is_some() {
                 parts.push((k.keys_of(Act::Back), "close".into()));
             }
-            parts.extend([(k.keys_of(Act::Next), "skip".into()), (k.keys_of(Act::Help), "keys".into())]);
+            parts.extend([
+                (format!("{}/{}", k.keys_of(Act::Next), k.keys_of(Act::Previous)), "next prev".into()),
+                (format!("{}/{}", k.keys_of(Act::PrevModule), k.keys_of(Act::NextModule)), "module".into()),
+                (k.keys_of(Act::Help), "keys".into()),
+            ]);
             let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
             keys(&parts)
         };
@@ -94,9 +97,12 @@ fn decide(
             tree: tree_lines(all, &tree, targets, &id, decided, hints, opened.as_deref(), width),
             card_title: format!("{} · {}", str_of(item, "title"), store),
             card,
+            choices,
             keys: key_line,
             note: note.take(),
             help: if help { ui.keys.help() } else { vec![] },
+            scroll,
+            ..Default::default()
         };
         ui.draw(&screen)?;
         if help {
@@ -138,9 +144,20 @@ fn decide(
                 sel = Some(n as usize - 1);
                 continue;
             }
-            Act::Quit => return Ok(Outcome::Quit),
+            Act::Quit => return Ok(Outcome::Leave(Leave::Quit)),
+            Act::PrevModule => return Ok(Outcome::Leave(Leave::Prev)),
+            Act::NextModule => return Ok(Outcome::Leave(Leave::Next)),
             Act::SkipGoal => return Ok(Outcome::NextGoal),
             Act::Next => return Ok(Outcome::Next(None, false)),
+            Act::Previous => return Ok(Outcome::Previous),
+            Act::HalfDown => {
+                scroll = scroll.saturating_add(5);
+                continue;
+            }
+            Act::HalfUp => {
+                scroll = scroll.saturating_sub(5);
+                continue;
+            }
             Act::Help => {
                 help = true;
                 continue;
@@ -159,7 +176,7 @@ fn decide(
             Act::Complete if kind == Kind::Review => 0,
             Act::Drop if kind == Kind::Review => 1,
             Act::Command => match ui.input(&mut screen, ":")?.as_deref() {
-                Some("q") | Some("q!") => return Ok(Outcome::Quit),
+                Some("q") | Some("q!") => return Ok(Outcome::Leave(Leave::Quit)),
                 _ => continue,
             },
             Act::Confirm => match sel {
@@ -230,7 +247,7 @@ fn targets(cake: &Cake, kind: Kind, user: &str) -> Result<(Vec<Value>, Vec<Strin
 
 /// a step in one store, grouped by goal, the most urgent goal first;
 /// returns (counted, quit)
-pub(super) fn run(ui: &mut Ui, cake: &Cake, kind: Kind, user: &str, store: &str) -> Result<(usize, bool), Box<dyn Error>> {
+pub(super) fn run(ui: &mut Ui, cake: &Cake, kind: Kind, user: &str, store: &str) -> Result<(usize, Leave), Box<dyn Error>> {
     // reload after each pass: a decision can make new items due (a parent
     // goes to review when its last part is done)
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -239,7 +256,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, kind: Kind, user: &str, store: &str)
         let (all, ids) = targets(cake, kind, user)?;
         let items: Vec<&Value> = ids.iter().filter(|id| !seen.contains(*id)).filter_map(|id| find(&all, id)).collect();
         if items.is_empty() {
-            return Ok((counted, false));
+            return Ok((counted, if seen.is_empty() { Leave::Empty } else { Leave::Done }));
         }
         ui.total += items.iter().filter(|_| !seen.is_empty()).count();
         let mut goals: Vec<(&Value, Vec<&Value>)> = vec![];
@@ -253,26 +270,32 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, kind: Kind, user: &str, store: &str)
         let score = |v: &&Value| v["score"].as_i64().unwrap_or(0);
         goals.sort_by_key(|(_, list)| std::cmp::Reverse(list.iter().map(score).max().unwrap_or(0)));
         let mut decided = std::collections::HashMap::new();
-        'goals: for (goal, list) in &goals {
-            for (i, it) in list.iter().enumerate() {
-                seen.insert(str_of(it, "id").to_string());
-                match decide(ui, cake, kind, it, &all, goal, list, &decided, store)? {
-                    Outcome::Next(result, c) => {
-                        ui.handled += 1;
-                        counted += c as usize;
-                        if let Some(r) = result {
-                            decided.insert(str_of(it, "id").to_string(), r);
-                        }
+        // one flat list in goal order, so K can go back over goal borders
+        let flat: Vec<(&Value, &Vec<&Value>, &Value)> =
+            goals.iter().flat_map(|(g, list)| list.iter().map(move |it| (*g, list, *it))).collect();
+        let mut n = 0;
+        while n < flat.len() {
+            let (goal, list, it) = flat[n];
+            seen.insert(str_of(it, "id").to_string());
+            match decide(ui, cake, kind, it, &all, goal, list, &decided, store)? {
+                Outcome::Next(result, c) => {
+                    ui.handled += 1;
+                    counted += c as usize;
+                    if let Some(r) = result {
+                        decided.insert(str_of(it, "id").to_string(), r);
                     }
-                    Outcome::NextGoal => {
-                        for rest in &list[i..] {
-                            seen.insert(str_of(rest, "id").to_string());
-                        }
-                        ui.handled += list.len() - i;
-                        continue 'goals;
-                    }
-                    Outcome::Quit => return Ok((counted, true)),
+                    n += 1;
                 }
+                Outcome::Previous => n = n.saturating_sub(1),
+                Outcome::NextGoal => {
+                    let gid = str_of(goal, "id");
+                    while n < flat.len() && str_of(flat[n].0, "id") == gid {
+                        seen.insert(str_of(flat[n].2, "id").to_string());
+                        ui.handled += 1;
+                        n += 1;
+                    }
+                }
+                Outcome::Leave(l) => return Ok((counted, l)),
             }
         }
     }
