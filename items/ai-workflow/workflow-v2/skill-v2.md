@@ -1,12 +1,13 @@
 ---
 id: skill-v2
-status: review
+status: done
 tags: [plan, skill]
 parent: "[[workflow-v2]]"
 blocked_by: ["[[agent-ready-rules]]"]
 created: 2026-11-13T23:04:17+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+closed: 2026-11-13T23:50:42+01:00
 assignee: claude-code
 owner: sevenuz
 ---
