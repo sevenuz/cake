@@ -31,4 +31,6 @@ time:
 - ? help overlay; config `animations: false`; ascii style uses +-|
 - done when: a full pass in a half-width pane reads top to bottom
   without jumping, in unicode and ascii style
-
+- built as planned; review checks are in the form too (a ok, b drop, last: change)
+- commit: 6213774
+- try: `cake` in a half-width pane: f opens, ? keys, j/k + enter choose
