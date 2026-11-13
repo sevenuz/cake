@@ -1,11 +1,13 @@
 ---
 id: statuses-and-assignee
-status: todo
+status: doing
 tags: [plan]
 parent: "[[workflow-v2]]"
 created: 2026-11-13T23:04:17+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+time:
+  - 2026-11-13T23:16:48+01:00/
 ---
 # Statuses inbox/note/task/review, assignee and owner
 
