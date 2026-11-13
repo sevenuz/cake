@@ -138,9 +138,10 @@ Per store in stores.json (`cake --store <path> … --json`), `-g` first so
 moved ideas are triaged in their project:
 
 1. `cake sync --json` (only in a routine).
-2. Apply answered asks (`cake ls -t ask --status done --json`, newest)
-   and replies (`cake ls -t reply --status todo --json`): rework the
-   plan or the work, add asks if needed, then `cake done <reply>`.
+2. Apply answered asks (`cake ls -l -t ask --status done --json`, newest
+   `closed` first; the answer is at the end of the body) and replies
+   (`cake ls -l -t reply --status todo --json`): rework the plan or the
+   work, add asks if needed, then `cake done <reply>`.
 3. Triage the inbox.
 4. Work: `cake ready --by <you> -t ~ask --json` plus `-t ai`, highest
    score first. Code on a branch per item, never push to main. Stuck →
@@ -183,6 +184,9 @@ separated (`cake done a b`). `cake tag`: the last word are the tags. Selectors (
 - `score`: attention needed, higher first: deadline pressure (hard ≫ soft),
   items waiting on it, priority, age (weights in config `score`).
 - Prefer narrow selectors over a full `ls`: every listed item costs tokens.
+  List short to choose, then read what you work on: `cake show <id>` before
+  editing, answering, implementing or reviewing an item, or `-l` with a
+  narrow selector when you need the bodies of several.
 - Error: `{"v": 1, "error": {"code", "message"}}`, exit 1. Codes:
   `not_found`, `ambiguous_id` (use a longer prefix), `invalid_input`,
   `conflict` (unresolved sync merge: tell the user, stop writing),
