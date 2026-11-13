@@ -2,6 +2,7 @@
 id: i-lost-my-input
 status: task
 tags: [form-feedback]
+blocked_by: ["[[lost-input-which]]"]
 created: 2026-11-14T00:41:13+01:00
 by: sevenuz
 sessions: [09ab2c5e-817c-4232-99aa-cd89bfb2b546]
