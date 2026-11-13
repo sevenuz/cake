@@ -467,7 +467,9 @@ fn step(ui: &mut Ui, cake: &Cake, kind: Kind, user: &str, name: &str) -> Result<
         Kind::Review => {
             let ids: Vec<String> =
                 cake.call(&["ls", "-t", "review", "--status", "todo,doing"])?.iter().map(|i| str_of(i, "id").to_string()).collect();
-            all.iter().filter(|i| ids.iter().any(|id| id == str_of(i, "id"))).collect()
+            // ls also lists the children of matches: keep the tagged ones
+            let tagged = |i: &Value| i["tags"].as_array().is_some_and(|t| t.iter().any(|t| t == "review"));
+            all.iter().filter(|i| tagged(i) && ids.iter().any(|id| id == str_of(i, "id"))).collect()
         }
         Kind::Plan => {
             let side = |a: &Value| a["tags"].as_array().is_some_and(|t| t.iter().any(|t| t == "ask" || t == "reply"));
