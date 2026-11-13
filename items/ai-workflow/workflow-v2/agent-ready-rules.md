@@ -1,6 +1,6 @@
 ---
 id: agent-ready-rules
-status: task
+status: review
 tags: [plan]
 parent: "[[workflow-v2]]"
 blocked_by: ["[[statuses-and-assignee]]"]
@@ -23,3 +23,5 @@ owner: sevenuz
   nothing and `cake start` refuses with "waiting for review"
 - done when: tests for siblings continuing, a dependent waiting on a
   review, the parent going to review, max_review 8 and -1
+
+changed: ready = no open blockers and no open work children, parent to review by itself, agents see own and ai tasks, max_review brake (-1 off), people/agents in .cake/config.hjson; commit a5b04ea; try: AI_AGENT=claude-code cake ready
