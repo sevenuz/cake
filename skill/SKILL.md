@@ -29,6 +29,10 @@ your session in `sessions`, your commits are tagged `[<agent>]`.
   Aim for 3–5 bullets, but use more rather than lose details; split into
   children only when parts are worked on separately.
 - **No `cake sync`** unless asked. Cite items by id.
+- **Capture from the chat:** when the user mentions something for later
+  ("todo", "later", "idea", "we should …") or a decision worth keeping,
+  offer `cake add` in one line, or add it as your planned note under the
+  fitting item. Once per topic, not every turn; never when they said no.
 
 ## Names
 
