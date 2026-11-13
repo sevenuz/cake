@@ -1,11 +1,12 @@
 ---
 id: workflow-v2
-status: review
+status: done
 tags: [plan]
 parent: "[[ai-workflow]]"
 created: 2026-11-13T23:04:17+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+closed: 2026-11-14T00:26:53+01:00
 assignee: claude-code
 owner: sevenuz
 ---
