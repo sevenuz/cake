@@ -699,7 +699,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 Some(Commands::Form { modules }) if !modules.is_empty() => modules.clone(),
                 _ => config.form.clone(),
             };
-            let options = form::Options { modules, all: cli.global, width: config.form_width, keys: config.keys.clone(), tree_depth: config.tree_depth, sort_who: config.sort_who.clone() };
+            let options = form::Options { modules, all: cli.global, width: config.form_width, keys: config.keys.clone(), tree_depth: config.tree_depth, sort_who: config.sort_who.clone(), auto_next: config.form_auto_next };
             return form::run(&root, &config.user(&root), options);
         }
         _ => (),

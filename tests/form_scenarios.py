@@ -83,20 +83,21 @@ cake("review", "feat", agent=True)
 cake("add", "land", "--task", "--assignee", "me", "-m", "# call landlord")
 
 keys = [
-    # sort: first row a task (sort_who: ai), due friday; second row a note; go on
-    "t", ":", "due fri\r", "j", "n", "\r",
-    # answer: start typing, leave with jk (typed fast), then option 2; on
-    "i", "may", "jk", "2", "l",
-    # review: c is done; on
-    "c", "l",
+    # inbox: first row a task (sort_who: ai), due friday; second row a
+    # note; the last one done goes on by itself (form_auto_next)
+    "t", ":", "due fri\r", "j", "n",
+    # answer: start typing, leave with jk (typed fast), then option 2
+    "i", "may", "jk", "2",
+    # review: c is done
+    "c",
     # mine: hand the task to ai; the end screen stays on l
     "w", "l", "q",
 ]
 form(keys)
 first, second = item("pass"), item("blog")
 task, note = (first, second) if first["status"] == "task" else (second, first)
-check("sort: a task for ai with a due date", task["status"] == "task" and task["assignee"] == "ai" and bool(task["due"]))
-check("sort: the other one a note", note["status"] is None)
+check("inbox: a task for ai with a due date", task["status"] == "task" and task["assignee"] == "ai" and bool(task["due"]))
+check("inbox: the other one a note", note["status"] is None)
 check("answer: jk left the text, option 2 saved", item("raw")["status"] == "done" and "answer: b) with -d" in item("raw")["body"])
 check("review: c closed it", item("feat")["status"] == "done")
 check("mine: handed to ai", item("land")["assignee"] == "ai")
@@ -113,7 +114,7 @@ check("news: hold gives it back to the user", item("new")["assignee"] == "jul")
 cake("add", "zz", "-m", "# idea for later")
 cake("add", "mytask", "--task", "--assignee", "me", "-m", "# my task")
 form(["l", "h", "t", "\r"] + ["l"] * 6 + ["q"])
-check("h/l: back in sort, the idea became a task", item("zz")["status"] == "task")
+check("h/l: back in inbox, the idea became a task", item("zz")["status"] == "task")
 
 # F on a screen: feedback becomes a task for the AI, not an inbox item
 cake("add", "yy", "-m", "# another idea")
@@ -144,12 +145,12 @@ def tmux_screen(keys):
     return text
 
 
-back = tmux_screen(["t", "j", "n", "h", "l"])
-check("sticky: saved at once", item("s1")["status"] == "task" and item("s1")["assignee"] == "ai" and item("s2")["status"] is None)
+back = tmux_screen(["t", "h", "l"])
+check("sticky: saved at once", item("s1")["status"] == "task" and item("s1")["assignee"] == "ai")
 if back is None:
     print("skip sticky: both still shown (no tmux)")
 else:
-    check("sticky: both still shown after h/l", "✓ sticky one" in back and "✓ sticky two" in back)
+    check("sticky: still shown after h/l", "✓ sticky one" in back and "sticky two" in back)
 
 # config sort_who "-": a task from sort gets nobody
 os.makedirs(f"{TMP}/config/cake", exist_ok=True)

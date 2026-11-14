@@ -12,7 +12,7 @@ pub(super) struct Tree<'a> {
     /// changed this run: shown with a check and editable, even when they no
     /// longer match
     pub changed: HashSet<String>,
-    /// open rows: body under the line and every child shown
+    /// open rows: every child shown
     pub opened: HashSet<String>,
     /// parents shown above a match (config tree_depth)
     pub depth: usize,
@@ -25,8 +25,6 @@ pub(super) struct Row {
     pub id: String,
     /// tree lines before the title
     pub prefix: String,
-    /// tree lines before the lines under the title (body)
-    pub below: String,
     /// a match or changed; the rest is context
     pub editable: bool,
     /// ancestors above this row are not shown
@@ -94,7 +92,6 @@ impl<'a> Tree<'a> {
         out.push(Row {
             id: id.to_string(),
             prefix: prefix.0.to_string(),
-            below: prefix.1.to_string(),
             editable: visible.contains(id),
             cut_above: prefix.0.is_empty() && find(self.all, str_of(self.item(id).unwrap(), "parent")).is_some(),
             hidden: all_kids.len() - kids.len(),
@@ -109,21 +106,16 @@ impl<'a> Tree<'a> {
         }
     }
 
-    /// the lines of `rows` at `width`, the cursor on row `cur`; `cols` gives
-    /// the right-hand text of an item (status, who), `under` a line under
-    /// the cursor row (the edit line); returns the lines and the line of
-    /// the cursor
-    pub fn lines(&self, rows: &[Row], cur: usize, width: u16, cols: &dyn Fn(&Value) -> String, under: Option<Vec<Span<'static>>>) -> (Vec<Line<'static>>, usize) {
+    /// the lines of `rows` at `width`, the cursor on row `cur` (`dim_cursor`
+    /// while the focus is elsewhere); `cols` gives the right-hand text of
+    /// an item (status, who); returns the lines, one per row
+    pub fn lines(&self, rows: &[Row], cur: usize, width: u16, cols: &dyn Fn(&Value) -> String, dim_cursor: bool) -> Vec<Line<'static>> {
         let (t, g) = (theme::t(), style::g());
         let w = width as usize;
         let mut out = vec![];
-        let mut focus = 0;
         for (n, r) in rows.iter().enumerate() {
             let Some(item) = self.item(&r.id) else { continue };
             let here = n == cur;
-            if here {
-                focus = out.len();
-            }
             let right = cols(item);
             let mut title = String::new();
             if r.changed {
@@ -143,37 +135,23 @@ impl<'a> Tree<'a> {
             let lead = format!("{} {}", if here { g.select } else { " " }, r.prefix);
             let used = lead.chars().count() + right.chars().count() + 1;
             let title = cut(&title, w.saturating_sub(used).max(8));
-            let style = match (here, r.editable, accent) {
-                (true, _, Some((_, c))) => bold().fg(c),
-                (true, _, None) => bold().fg(t.hint),
-                (false, true, Some((_, c))) => Style::default().fg(c),
-                (false, true, None) => Style::default(),
-                (false, false, _) => dim(),
+            let base = match (r.editable, accent) {
+                (true, Some((_, c))) => Style::default().fg(c),
+                (true, None) => Style::default(),
+                (false, _) => dim(),
+            };
+            let style = match (here, dim_cursor) {
+                (true, false) => base.add_modifier(Modifier::BOLD | Modifier::REVERSED),
+                (true, true) => base.add_modifier(Modifier::BOLD),
+                _ => base,
             };
             out.push(Line::from(vec![
-                Span::styled(lead, if here { bold().fg(t.hint) } else { dim() }),
+                Span::styled(lead, if here && !dim_cursor { bold().fg(t.hint) } else { dim() }),
                 Span::styled(title, style),
                 Span::styled(format!(" {}", right), dim()),
             ]));
-            // under the title: the tree lines go on, then the text
-            let kids_below = rows.get(n + 1).is_some_and(|x| x.prefix.len() > r.prefix.len());
-            let lead = format!("  {}{}", r.below, if kids_below { g.pipe } else { g.space });
-            if let (true, Some(spans)) = (here, &under) {
-                let mut line = vec![Span::styled(lead.clone(), dim())];
-                line.extend(spans.iter().cloned());
-                out.push(Line::from(line));
-            }
-            if r.opened {
-                let body = body_of(item);
-                let body = if body.is_empty() { "(no text)".to_string() } else { body };
-                for l in markdown::render(&body, width.saturating_sub(lead.chars().count() as u16)) {
-                    let mut spans = vec![Span::styled(lead.clone(), dim())];
-                    spans.extend(l.spans.into_iter().map(|s| Span::styled(s.content.to_string(), s.style.patch(dim()))));
-                    out.push(Line::from(spans));
-                }
-            }
         }
-        (out, focus)
+        out
     }
 }
 
@@ -243,49 +221,18 @@ mod tests {
     }
 
     #[test]
-    fn lines_show_marks_and_the_open_body() {
+    fn lines_show_marks() {
         style::init("unicode");
         let all = all();
         let mut tree = Tree::new(&all, ["d".to_string(), "e".to_string()], 1);
         tree.changed.insert("e".into());
-        tree.opened.insert("d".into());
         let rows = tree.rows();
-        let (lines, focus) = tree.lines(&rows, 2, 60, &|i| str_of(i, "id").to_string(), None);
+        let lines = tree.lines(&rows, 2, 60, &|i| str_of(i, "id").to_string(), false);
         let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         println!("{}", text.join("\n"));
+        assert_eq!(text.len(), 3, "one line per row");
         assert!(text[0].contains("… › title c"), "{}", text[0]);
         assert!(text[1].contains("├─ title d") && text[1].trim_end().ends_with('d'));
-        assert!(text[2].contains("body of d"), "body under its line");
-        assert!(text[3].starts_with("› └─ ✓ title e"), "{}", text[3]);
-        assert_eq!(focus, 3);
-    }
-
-    #[test]
-    #[ignore]
-    fn dump_screens_tree() {
-        style::init(&std::env::var("CAKE_STYLE").unwrap_or("unicode".into()));
-        let mut all = vec![
-            item("form", ""),
-            item("dash", "form"),
-            item("sect", "dash"),
-            item("pie", "dash"),
-            item("gantt", "form"),
-            item("goal", "form"),
-            item("pass", ""),
-        ];
-        for (n, t) in [(0, "Form"), (1, "Dashboard: one screen for what runs"), (2, "dashboard should come after the form"), (4, "Gantt view of tasks"), (5, "Time per goal for a period"), (6, "renew passport")] {
-            all[n]["title"] = json!(t);
-            all[n]["body"] = json!(format!("# {}\n\n- why: one line of text\n- done when: it shows", t));
-        }
-        let mut tree = Tree::new(&all, ["sect", "gantt", "pass"].map(String::from), 2);
-        tree.changed.insert("goal".into());
-        tree.opened.insert("gantt".into());
-        for width in [60u16, 100] {
-            let inner = column_width(width, 100).saturating_sub(4);
-            let rows = tree.rows();
-            let (card, focus) = tree.lines(&rows, 3, inner, &|i| if str_of(i, "id") == "goal" { "task ai".into() } else { "inbox".into() }, Some(vec![Span::raw("inbox · who – · prio – · due – · deadline –")]));
-            let screen = Screen { card_title: "sort on the tree · cake".into(), card, focus: Some(focus), ..Default::default() };
-            super::super::screens::dump("tree", width, &screen, 1);
-        }
+        assert!(text[2].starts_with("› └─ ✓ title e"), "{}", text[2]);
     }
 }

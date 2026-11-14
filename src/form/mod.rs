@@ -1,5 +1,5 @@
 //! `cake` / `cake form`: a guided pass over what needs you, made of
-//! modules (news, sort, answer, review, mine, dump) run in the
+//! modules (news, inbox, answer, review, mine, dump) run in the
 //! configured order or one by one. Every change runs as its own `cake`
 //! call, so agents keep working while you think.
 
@@ -107,18 +107,6 @@ fn find<'a>(all: &'a [Value], id: &str) -> Option<&'a Value> {
     all.iter().find(|i| str_of(i, "id") == id)
 }
 
-/// the top-level item above `item`
-fn goal_of<'a>(all: &'a [Value], item: &'a Value) -> &'a Value {
-    let mut cur = item;
-    for _ in 0..crate::store::MAX_DEPTH {
-        match find(all, str_of(cur, "parent")) {
-            Some(p) => cur = p,
-            None => break,
-        }
-    }
-    cur
-}
-
 /// options `- a) …` of a question (wrapped lines joined) and the rest
 fn split_options(body: &str) -> (String, Vec<(char, String)>) {
     let mut context = vec![];
@@ -176,6 +164,8 @@ struct Screen {
     focus: Option<usize>,
     /// tree modules: the tree line of the cursor; the tree fills the screen
     tree_focus: Option<usize>,
+    /// the card has the focus: its border in the hint color
+    card_active: bool,
     /// the terminal cursor, columns into the last input line
     cursor: Option<usize>,
     /// a text box over everything: (title, text so far); the cursor follows the text
@@ -196,8 +186,10 @@ struct Ui {
     keys: Keymap,
     /// parents shown above an item (config tree_depth)
     tree_depth: usize,
-    /// who a task from sort gets (config sort_who)
+    /// who a task from the inbox module gets (config sort_who)
     sort_who: String,
+    /// go on after the last open item (config form_auto_next)
+    auto_next: bool,
     /// items changed this run per store: they stay in their module
     changed: std::collections::HashMap<PathBuf, std::collections::HashSet<String>>,
     /// how changed items were before, for undo
@@ -395,13 +387,14 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
     let (tree_h, tree_scroll, card_h) = match screen.tree_focus {
         // tree modules: the tree takes the room, a card at most half of it
         Some(focus) => {
+            // the tree takes what it needs up to half, the box the rest
             let avail = col.height.saturating_sub(4 + 1 + 2);
-            let card_h = natural.min((avail / 2).max(8)).min(avail);
-            let room = avail.saturating_sub(card_h + u16::from(has_card));
             let len = screen.tree.len() as u16;
-            let tree_h = len.min(room);
-            // the cursor row and two lines under it (edit line) stay in view
-            let scroll = (focus as u16 + 3).saturating_sub(tree_h).min(len.saturating_sub(tree_h));
+            let gap = u16::from(has_card);
+            let tree_h = len.min((avail / 2).max(avail.saturating_sub(natural + gap)));
+            let card_h = natural.min(avail.saturating_sub(tree_h + gap));
+            // the cursor row and one line under it stay in view
+            let scroll = (focus as u16 + 2).saturating_sub(tree_h).min(len.saturating_sub(tree_h));
             (tree_h, scroll, card_h)
         }
         None => {
@@ -444,6 +437,9 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
             (true, false) => " ↑ <c-u> ",
         };
         card_block = card_block.title_bottom(Line::from(Span::styled(more, Style::default().fg(theme::t().hint))).right_aligned());
+    }
+    if screen.card_active {
+        card_block = card_block.border_style(Style::default().fg(theme::t().hint));
     }
     let inside = card_block.inner(card);
     if card_h > 0 {
@@ -527,9 +523,9 @@ enum Leave {
 
 
 /// the modules a form can run, in their default order
-pub const MODULES: &[&str] = &["news", "sort", "answer", "review", "mine"];
+pub const MODULES: &[&str] = &["news", "inbox", "answer", "review", "mine"];
 /// all known modules (dump is optional)
-const KNOWN: &[&str] = &["news", "sort", "answer", "review", "mine", "dump"];
+const KNOWN: &[&str] = &["news", "inbox", "answer", "review", "mine", "dump"];
 
 /// when the form last ran in a store (for news), in the local state dir
 fn last_run_file(root: &Path) -> Option<PathBuf> {
@@ -623,8 +619,10 @@ pub struct Options {
     pub keys: std::collections::BTreeMap<String, String>,
     /// parents shown above an item
     pub tree_depth: usize,
-    /// who a task from sort gets: me, ai, a name, - nobody
+    /// who a task from the inbox module gets: me, ai, a name, - nobody
     pub sort_who: String,
+    /// after the last open item of a module, go on
+    pub auto_next: bool,
 }
 
 /// runs the modules on `root` (with `all`: every known store); dump goes
@@ -667,7 +665,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), changed: Default::default(), before: Default::default(), results: Default::default() };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), auto_next: o.auto_next, changed: Default::default(), before: Default::default(), results: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the
@@ -793,7 +791,7 @@ mod tests {
         assert!(pos("ANSWER") < pos("row 0") && pos("row 0") < pos("by hand") && pos("by hand") < pos("answer"));
         assert!(!lines[pos("row 0")].contains('│'), "the tree has no box");
         let lines = render(&Screen { tree_focus: Some(35), ..screen }, 60, 30);
-        assert!(lines.iter().any(|l| l.trim() == "row 35") && lines.iter().any(|l| l.trim() == "row 37"), "cursor and two rows under it in view");
+        assert!(lines.iter().any(|l| l.trim() == "row 35") && lines.iter().any(|l| l.trim() == "row 36"), "cursor and the row under it in view");
         // no card: the tree takes the whole height
         let lines = render(&Screen { tree, tree_focus: Some(0), ..Default::default() }, 60, 30);
         assert!(lines.iter().any(|l| l.trim() == "row 21"));

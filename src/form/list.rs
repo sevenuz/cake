@@ -1,4 +1,4 @@
-//! every module on the tree: news (what agents did), sort (inbox and
+//! every module on the tree: news (what agents did), inbox (new items and
 //! tasks without assignee), answer (questions for you), review (finished
 //! work you own), mine (your tasks). The tree fills the screen; the
 //! module's items are editable, parents give context. Every key saves at
@@ -22,7 +22,7 @@ impl Kind {
     pub fn of(name: &str) -> Option<Kind> {
         Some(match name {
             "news" => Kind::News,
-            "sort" => Kind::Sort,
+            "inbox" => Kind::Sort,
             "answer" => Kind::Answer,
             "review" => Kind::Review,
             "mine" => Kind::Mine,
@@ -33,7 +33,7 @@ impl Kind {
     fn name(self) -> &'static str {
         match self {
             Kind::News => "news",
-            Kind::Sort => "sort",
+            Kind::Sort => "inbox",
             Kind::Answer => "answer",
             Kind::Review => "review",
             Kind::Mine => "mine",
@@ -43,7 +43,7 @@ impl Kind {
     fn title(self) -> &'static str {
         match self {
             Kind::News => "what agents did since your last run",
-            Kind::Sort => "inbox and tasks without assignee",
+            Kind::Sort => "inbox: new items and tasks without assignee",
             Kind::Answer => "questions for you",
             Kind::Review => "finished work to check",
             Kind::Mine => "your tasks",
@@ -297,7 +297,6 @@ struct View<'a> {
     kind: Kind,
     user: &'a str,
     since: i64,
-    store: &'a str,
     /// results of this run per id (an answer, "sent back")
     results: &'a std::collections::HashMap<String, String>,
 }
@@ -324,10 +323,20 @@ impl View<'_> {
         .to_string()
     }
 
-    /// the card under the tree for a module item; `sel` the chosen option
-    fn card(&self, item: &Value, all: &[Value], sel: Option<usize>, width: u16) -> (String, Vec<Line<'static>>, Vec<Line<'static>>) {
+    /// the detail box of the hovered row: title, the fields, the whole
+    /// text; for an open answer or review item its options (`sel` marked)
+    fn detail(&self, item: &Value, all: &[Value], actions: bool, sel: Option<usize>, width: u16) -> (String, Vec<Line<'static>>, Vec<Line<'static>>) {
         let (t, g) = (theme::t(), style::g());
-        let (context, options) = card_of(self.kind, item, all);
+        let with_options = actions && self.kind.cards() && matches(self.kind, item, all, self.user, self.since);
+        let (text, options) = if with_options { card_of(self.kind, item, all) } else { (body_of(item), vec![]) };
+        let mut lines = vec![Line::from(edit_line(item, self.user))];
+        if let Some(what) = news_what(item, self.user, self.since).filter(|_| self.kind == Kind::News) {
+            lines.push(Line::from(vec![Span::styled("what ", dim()), Span::raw(what)]));
+        }
+        if !text.trim().is_empty() {
+            lines.push(Line::default());
+            lines.extend(markdown::render(&text, width.saturating_sub(4)));
+        }
         let choices = options
             .iter()
             .enumerate()
@@ -339,7 +348,8 @@ impl View<'_> {
                 ])
             })
             .collect();
-        (format!("{} · {}", str_of(item, "title"), self.store), markdown::render(&context, width.saturating_sub(4)), choices)
+        let title = if actions { str_of(item, "title").to_string() } else { format!("{} · context, no actions here", str_of(item, "title")) };
+        (title, lines, choices)
     }
 }
 
@@ -347,12 +357,16 @@ impl View<'_> {
 struct State {
     cur_id: String,
     opened: HashSet<String>,
-    /// card mode: the option chosen in the card (answer, review)
-    sel: Option<usize>,
-    /// the whole tree around this id, read only
-    full: Option<String>,
+    /// the detail box has the focus
+    in_box: bool,
+    /// the option marked in the box (answer, review)
+    sel: usize,
+    /// lines the box text is scrolled
+    scroll: u16,
     help: bool,
     note: Option<(String, bool)>,
+    /// something was saved since the last draw (for form_auto_next)
+    saved: bool,
 }
 
 /// runs one module in one store; returns (items changed, how it left)
@@ -364,7 +378,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
     };
     let stores: Vec<String> = crate::stores::all()?.into_iter().map(|(n, _)| n).filter(|n| n != store).collect();
     let whos = who_cycle(root, user);
-    let mut st = State { cur_id: String::new(), opened: HashSet::new(), sel: None, full: None, help: false, note: None };
+    let mut st = State { cur_id: String::new(), opened: HashSet::new(), in_box: false, sel: 0, scroll: 0, help: false, note: None, saved: false };
     let mut decided = 0;
     let page = 10usize;
     loop {
@@ -372,30 +386,22 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         let results: std::collections::HashMap<String, String> =
             ui.results.iter().filter(|((r, _), _)| r == root).map(|((_, id), v)| (id.clone(), v.clone())).collect();
         let all = load(cake, &changed)?;
-        let matched: Vec<String> = match &st.full {
-            // the whole tree from the top above the item
-            Some(id) => {
-                let top = find(&all, id).map(|i| str_of(goal_of(&all, i), "id").to_string()).unwrap_or_default();
-                all.iter()
-                    .filter(|i| str_of(goal_of(&all, i), "id") == top)
-                    .map(|i| str_of(i, "id").to_string())
-                    .collect()
-            }
-            None => all.iter().filter(|i| matches(kind, i, &all, user, since)).map(|i| str_of(i, "id").to_string()).collect(),
-        };
-        let mut tree = Tree::new(&all, matched.clone(), if st.full.is_some() { crate::store::MAX_DEPTH } else { ui.tree_depth });
-        if st.full.is_none() {
-            tree.changed = changed.clone();
-            tree.accent = match kind {
-                Kind::Answer => Some(("? ", theme::t().question)),
-                Kind::Review => Some(("", theme::t().ok)),
-                _ => None,
-            };
-        }
+        let matched: Vec<String> = all.iter().filter(|i| matches(kind, i, &all, user, since)).map(|i| str_of(i, "id").to_string()).collect();
+        let mut tree = Tree::new(&all, matched, ui.tree_depth);
+        tree.changed = changed.clone();
         tree.opened = st.opened.clone();
+        tree.accent = match kind {
+            Kind::Answer => Some(("? ", theme::t().question)),
+            Kind::Review => Some(("◈ ", theme::t().code)),
+            _ => None,
+        };
         let rows = tree.rows();
         if rows.is_empty() {
             return Ok((decided, Leave::Empty));
+        }
+        // the last open item done: on to the next module
+        if std::mem::take(&mut st.saved) && ui.auto_next && !rows.iter().any(|r| r.editable && !r.changed) {
+            return Ok((decided, Leave::Done));
         }
         // the cursor stays on its item; at first the first open module item
         let cur = rows
@@ -404,76 +410,68 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             .or_else(|| rows.iter().position(|r| r.editable && !r.changed))
             .or_else(|| rows.iter().position(|r| r.editable))
             .unwrap_or(0);
+        if rows[cur].id != st.cur_id {
+            (st.sel, st.scroll) = (0, 0);
+        }
         st.cur_id = rows[cur].id.clone();
         let item = tree.item(&st.cur_id).cloned().unwrap_or_default();
-        let full = st.full.is_some();
-        let editable = rows[cur].editable && !full;
-        let view = View { kind, user, since, store, results: &results };
+        let editable = rows[cur].editable;
+        // answer, review: options for an open item
+        let with_options = editable && kind.cards() && matches(kind, &item, &all, user, since);
+        let n_opts = if with_options { card_of(kind, &item, &all).1.len() } else { 0 };
+        let view = View { kind, user, since, results: &results };
         let width = column_width(ui.term.size()?.width, ui.max_width);
-        let under = (editable && kind.edits()).then(|| edit_line(&item, user));
-        let (lines, focus) = tree.lines(&rows, cur, width, &|i| view.cols(i), under);
-        // answer, review: the card of the item under the cursor
-        let with_card = editable && kind.cards() && !rows[cur].changed && matches(kind, &item, &all, user, since);
-        let (card_title, card, choices) = if with_card { view.card(&item, &all, st.sel, width) } else { Default::default() };
+        let lines = tree.lines(&rows, cur, width, &|i| view.cols(i), st.in_box);
+        let (card_title, card, choices) = view.detail(&item, &all, editable, (st.in_box && with_options).then_some(st.sel), width);
         let k = &ui.keys;
         let ks = |a: Act| k.keys_of(a);
-        let parts: Vec<(String, String)> = if full {
-            vec![(ks(Act::Open), "open".into()), (ks(Act::Confirm), "go to".into()), (format!("{} {}", ks(Act::Back), ks(Act::Quit)), "close".into())]
-        } else if st.sel.is_some() {
-            vec![
-                ("j/k 1-9".into(), "choose".into()),
-                (ks(Act::Confirm), "save".into()),
-                (ks(Act::Insert), "own words".into()),
-                (ks(Act::Back), "back to the tree".into()),
-            ]
+        let mut parts: Vec<(String, String)> = if st.in_box && with_options {
+            vec![("j/k 1-9".into(), "choose".into()), (ks(Act::Confirm), "save".into()), (ks(Act::Insert), "own words".into())]
+        } else if st.in_box {
+            vec![("j/k".into(), "scroll".into())]
         } else {
-            let mut p: Vec<(String, String)> = match kind {
+            match kind {
                 Kind::Sort => vec![
                     (format!("{}/{}/{}", ks(Act::Task), ks(Act::Note), ks(Act::Drop)), "task note drop".into()),
                     (ks(Act::Who), "who".into()),
                     (ks(Act::Prio), "prio".into()),
-                    (":due :deadline :move".into(), String::new()),
+                    (":due".into(), String::new()),
                 ],
-                Kind::News => vec![(ks(Act::Who), "hold (back to you)".into()), (ks(Act::Drop), "drop".into())],
+                Kind::News => vec![(ks(Act::Who), "hold".into()), (ks(Act::Drop), "drop".into())],
                 Kind::Mine => vec![
                     (format!("{}/{}/{}", ks(Act::Timer), ks(Act::Complete), ks(Act::Drop)), "start done drop".into()),
                     (ks(Act::Who), "who".into()),
                     (ks(Act::Prio), "prio".into()),
-                    (":due".into(), String::new()),
                 ],
-                Kind::Answer => vec![
-                    (format!("{}/{}", ks(Act::Note), ks(Act::Prio)), "question".into()),
-                    (ks(Act::Confirm), "answer".into()),
-                    ("1-9".into(), "pick".into()),
-                    (ks(Act::Insert), "own words".into()),
-                ],
+                Kind::Answer => vec![(format!("{}/{}", ks(Act::Note), ks(Act::Prio)), "question".into()), ("1-9".into(), "pick".into()), (ks(Act::Insert), "own words".into())],
                 Kind::Review => vec![
                     (format!("{}/{}", ks(Act::Note), ks(Act::Prio)), "next prev".into()),
                     (ks(Act::Complete), "ok".into()),
                     (ks(Act::Drop), "drop".into()),
                     (ks(Act::Insert), "change".into()),
-                    (ks(Act::Confirm), "card".into()),
                 ],
-            };
-            p.extend([
-                (ks(Act::Undo), "undo".into()),
-                (ks(Act::Open), "open".into()),
-                (ks(Act::FullTree), "tree".into()),
-                (format!("{}/{}", ks(Act::PrevModule), ks(Act::NextModule)), "module".into()),
-                (ks(Act::Help), "keys".into()),
-            ]);
-            p
+            }
         };
+        if !st.in_box {
+            parts.push((ks(Act::Open), "children".into()));
+        }
+        parts.extend([
+            (ks(Act::Focus), if st.in_box { "tree".into() } else { "details".into() }),
+            (ks(Act::Editor), "edit".into()),
+            (format!("{}/{}", ks(Act::PrevModule), ks(Act::NextModule)), "module".into()),
+            (ks(Act::Help), "keys".into()),
+        ]);
         let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
-        let tree_title = if full { "the whole tree, read only".to_string() } else { format!("{} · {}", kind.title(), store) };
-        let mut tree_lines = vec![Line::from(Span::styled(tree_title, bold().fg(step_color(ui.step))))];
+        let mut tree_lines = vec![Line::from(Span::styled(format!("{} · {}", kind.title(), store), bold().fg(step_color(ui.step))))];
         tree_lines.extend(lines);
         let mut screen = Screen {
             tree: tree_lines,
-            tree_focus: Some(focus + 1),
+            tree_focus: Some(cur + 1),
             card_title,
             card,
             choices,
+            card_active: st.in_box,
+            scroll: st.scroll,
             keys: keys(&parts),
             note: st.note.take(),
             help: if st.help { ui.keys.help() } else { vec![] },
@@ -501,58 +499,47 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         };
         let goto = |n: usize| rows[n].id.clone();
 
-        // the whole tree: read only
-        if full {
-            match act {
-                Act::Down => st.cur_id = goto((cur + 1).min(last)),
-                Act::Up => st.cur_id = goto(cur.saturating_sub(1)),
-                Act::Top => st.cur_id = goto(0),
-                Act::Bottom => st.cur_id = goto(last),
-                Act::HalfDown => st.cur_id = goto((cur + page).min(last)),
-                Act::HalfUp => st.cur_id = goto(cur.saturating_sub(page)),
-                Act::Open => toggle(&mut st.opened, &st.cur_id),
-                Act::Confirm => st.full = None,
-                Act::Back | Act::Quit | Act::FullTree => {
-                    st.cur_id = st.full.take().unwrap_or_default();
+        // keys only the box has
+        if st.in_box {
+            let handled = match act {
+                Act::Down if with_options => {
+                    st.sel = (st.sel + 1).min(n_opts - 1);
+                    true
                 }
-                _ => (),
-            }
-            continue;
-        }
-
-        // card mode (answer, review): choose an option
-        if let Some(sel) = st.sel {
-            let n_opts = card_of(kind, &item, &all).1.len();
-            let pick = match act {
+                Act::Up if with_options => {
+                    st.sel = st.sel.saturating_sub(1);
+                    true
+                }
                 Act::Down => {
-                    st.sel = Some((sel + 1).min(n_opts - 1));
-                    continue;
+                    st.scroll = st.scroll.saturating_add(1);
+                    true
                 }
                 Act::Up => {
-                    st.sel = Some(sel.saturating_sub(1));
-                    continue;
+                    st.scroll = st.scroll.saturating_sub(1);
+                    true
                 }
-                Act::Choose(n) if (n as usize) <= n_opts => n as usize - 1,
-                Act::Insert => n_opts - 1,
-                Act::Confirm => sel,
+                Act::HalfDown => {
+                    st.scroll = st.scroll.saturating_add(5);
+                    true
+                }
+                Act::HalfUp => {
+                    st.scroll = st.scroll.saturating_sub(5);
+                    true
+                }
                 Act::Back => {
-                    st.sel = None;
-                    continue;
+                    st.in_box = false;
+                    true
                 }
-                Act::Quit => return Ok((decided, Leave::Quit)),
-                _ => continue,
+                Act::Confirm if !with_options => true,
+                _ => false,
             };
-            st.sel = None;
-            if let Some(c) = choose(ui, &mut screen, kind, &item, &all, pick)? {
-                commit(ui, &mut screen, cake, root, &item, &c, user, sort_who.as_deref(), &mut decided, &mut st.note)?;
-                st.cur_id = goto(step(cur, true));
+            if handled {
+                continue;
             }
-            continue;
         }
 
         let mut change = None;
         let mut then_next = false;
-        let module_item = editable;
         match act {
             Act::Down => st.cur_id = goto((cur + 1).min(last)),
             Act::Up => st.cur_id = goto(cur.saturating_sub(1)),
@@ -568,7 +555,16 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             Act::Help => st.help = true,
             Act::Open => toggle(&mut st.opened, &st.cur_id),
             Act::Back => st.opened.clear(),
-            Act::FullTree => st.full = Some(st.cur_id.clone()),
+            Act::Focus => st.in_box = !st.in_box,
+            Act::Confirm if !st.in_box => st.in_box = true,
+            Act::Editor => {
+                ratatui::restore();
+                let status = Command::new(exe()).arg("--store").arg(root).args(["edit", &st.cur_id]).status();
+                ui.term = ratatui::init();
+                if let Err(e) = status {
+                    st.note = Some((format!("editor: {}", e), true));
+                }
+            }
             Act::PrevModule => return Ok((decided, Leave::Prev)),
             Act::NextModule => return Ok((decided, Leave::Next)),
             Act::Quit => return Ok((decided, Leave::Quit)),
@@ -576,33 +572,35 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                 feedback(ui, &mut screen, cake, store, &format!("{} tree, row {}", kind.name(), st.cur_id))?;
                 st.note = screen.note.take();
             }
-            Act::Confirm if kind.cards() && with_card => st.sel = Some(0),
-            Act::Confirm if kind.cards() => toggle(&mut st.opened, &st.cur_id),
-            Act::Confirm => return Ok((decided, Leave::Done)),
             Act::Undo => match ui.before.get(&(root.to_path_buf(), st.cur_id.clone())) {
                 Some(b) => change = Some(Change::Undo(b.clone())),
                 None => st.note = Some(("nothing to undo here".into(), false)),
             },
-            Act::Task | Act::Note | Act::Drop | Act::Who | Act::Prio | Act::Subtree | Act::Command | Act::Timer | Act::Complete | Act::Insert | Act::Choose(_)
-                if !module_item =>
+            Act::Task | Act::Note | Act::Drop | Act::Who | Act::Prio | Act::Subtree | Act::Command | Act::Timer | Act::Complete | Act::Insert | Act::Choose(_) | Act::Confirm
+                if !editable =>
             {
-                st.note = Some((format!("context: not in {} ({} opens it, {} the whole tree)", kind.name(), ui.keys.keys_of(Act::Open), ui.keys.keys_of(Act::FullTree)), true));
+                st.note = Some((format!("context: not in {}, no actions here", kind.name()), true));
             }
-            Act::Choose(n) if with_card => {
+            // the box: <cr> saves the marked option
+            Act::Confirm => {
+                if let Some(c) = choose(ui, &mut screen, kind, &item, &all, st.sel)? {
+                    change = Some(c);
+                    then_next = true;
+                }
+            }
+            Act::Choose(n) if with_options => {
                 if let Some(c) = choose(ui, &mut screen, kind, &item, &all, n as usize - 1)? {
                     change = Some(c);
                     then_next = true;
                 }
             }
-            Act::Insert if with_card => {
-                let n = card_of(kind, &item, &all).1.len() - 1;
-                if let Some(c) = choose(ui, &mut screen, kind, &item, &all, n)? {
+            Act::Insert if with_options => {
+                if let Some(c) = choose(ui, &mut screen, kind, &item, &all, n_opts - 1)? {
                     change = Some(c);
                     then_next = true;
                 }
             }
-            Act::Complete if kind == Kind::Review => (change, then_next) = (Some(Change::Status("done")), true),
-            Act::Complete if kind == Kind::Mine => (change, then_next) = (Some(Change::Status("done")), true),
+            Act::Complete if matches!(kind, Kind::Review | Kind::Mine) => (change, then_next) = (Some(Change::Status("done")), true),
             Act::Drop if kind != Kind::Answer => (change, then_next) = (Some(Change::Status("dropped")), true),
             Act::Timer if kind == Kind::Mine => change = Some(Change::Timer(str_of(&item, "status") != "doing")),
             Act::Who if kind == Kind::News => (change, then_next) = (Some(Change::Hold), true),
@@ -620,7 +618,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                 }))
             }
             Act::Subtree if kind == Kind::Sort => {
-                // this row's status and who for every sort item below it
+                // this row's status and who for every inbox item below it
                 let below: Vec<Value> = all
                     .iter()
                     .filter(|i| matches(kind, i, &all, user, since) && str_of(i, "id") != st.cur_id && has_ancestor(&all, i, &st.cur_id))
@@ -639,6 +637,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                         commit(ui, &mut screen, cake, root, b, &w, user, sort_who.as_deref(), &mut decided, &mut st.note)?;
                     }
                 }
+                st.saved = !below.is_empty();
                 if st.note.is_none() {
                     st.note = Some((format!("{} items below took this row's status", below.len()), false));
                 }
@@ -675,8 +674,10 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         }
         if let Some(c) = change {
             let ok = commit(ui, &mut screen, cake, root, &item, &c, user, sort_who.as_deref(), &mut decided, &mut st.note)?;
+            st.saved = ok;
             if ok && then_next {
                 st.cur_id = goto(step(cur, true));
+                st.in_box = false;
             }
         }
     }
@@ -832,16 +833,15 @@ mod tests {
             let tree = Tree::new(&all, all.iter().filter(|i| matches(kind, i, &all, "jul", 0)).map(|i| str_of(i, "id").to_string()), 2);
             let rows = tree.rows();
             let at = rows.iter().position(|r| r.id == cur).unwrap();
-            let view = View { kind, user: "jul", since: 0, store: "cake", results: &results };
+            let view = View { kind, user: "jul", since: 0, results: &results };
             for width in [60u16, 100] {
                 let inner = column_width(width, 100);
                 let it = tree.item(cur).unwrap();
-                let under = kind.edits().then(|| edit_line(it, "jul"));
-                let (lines, focus) = tree.lines(&rows, at, inner, &|i| view.cols(i), under);
-                let (card_title, card, choices) = if kind.cards() { view.card(it, &all, None, inner) } else { Default::default() };
+                let lines = tree.lines(&rows, at, inner, &|i| view.cols(i), false);
+                let (card_title, card, choices) = view.detail(it, &all, true, None, inner);
                 let mut tree_lines = vec![Line::from(Span::styled(format!("{} · cake", kind.title()), bold()))];
                 tree_lines.extend(lines);
-                let screen = Screen { tree: tree_lines, tree_focus: Some(focus + 1), card_title, card, choices, keys: keys(&[("o", "open"), ("O", "tree")]), ..Default::default() };
+                let screen = Screen { tree: tree_lines, tree_focus: Some(at + 1), card_title, card, choices, keys: keys(&[("<tab>", "details"), ("e", "edit")]), ..Default::default() };
                 super::super::screens::dump(kind.name(), width, &screen, 0);
             }
         }
