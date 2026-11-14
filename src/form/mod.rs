@@ -680,6 +680,19 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         }
     }
     let total = per_module.iter().sum();
+    // nothing to decide (dump always has something to do): no screen at all
+    if total == 0 && !o.modules.iter().any(|m| m == "dump") {
+        let mut others = 0;
+        for (_, r) in &stores {
+            let store = crate::store::Store::new_except(r, &[])?;
+            others += store.get().iter().filter(|(id, i)| store.is_ready(id) && i.assignee().is_some_and(|a| a != user)).count();
+        }
+        println!("Nothing waits for you.");
+        if others > 0 {
+            println!("{} ready task(s) wait for agents or others (cake ready); an agent run or `cake triage` turns them into reviews and questions.", others);
+        }
+        return Ok(());
+    }
     let keymap = Keymap::new(&o.keys)?;
     let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap };
     let mut counts = vec![0usize; o.modules.len()];
