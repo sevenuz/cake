@@ -95,11 +95,12 @@ edit takes several ids and --tag a,~b, --blocked-by x,~y, --parent,
 --comment, --assignee, --owner, --prio, --due, --deadline, -m.
 
 ## The form (`cake`, `cake form <modules>`)
-- modules (config form): news, sort, answer, review, mine, triage;
-  dump optional. h/l walk modules (tables save when left), empty ones
-  are passed unless walked to with h/l; an end screen waits for q.
-- triage runs the `triage` alias only on <cr> in its screen, after the
-  form closes. The user's alias: claude -p '<prompt>' --max-turns 40
+- modules (config form): news, sort, answer, review, mine; dump
+  optional. Triage is not part of the form (removed in f18d9f1): run
+  `cake triage` (the user's alias) by hand or from cron. h/l walk
+  modules (tables save when left), empty ones are passed unless walked
+  to with h/l; an end screen waits for q.
+- the user's triage alias: claude -p '<prompt>' --max-turns 40
   --allowedTools 'Bash(cake *)' (prompt must come before
   --allowedTools, which takes several values).
 - keys: see form-keys; options 1-9, i text, t/n/dd/x/c/s/w/p, u undo,
