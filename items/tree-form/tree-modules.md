@@ -1,12 +1,13 @@
 ---
 id: tree-modules
-status: review
+status: done
 parent: "[[tree-form]]"
 blocked_by: ["[[tree-widget]]", "[[tree-sticky]]", "[[tree-edit-line]]"]
 created: 2026-11-14T11:59:44+01:00
 by: claude-code
 sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a]
 usage: {claude-opus-5-5: {in: 2, out: 211, cache_read: 68242, cache_write: 419}}
+closed: 2026-11-14T20:32:44+01:00
 assignee: ai
 owner: sevenuz
 time:
