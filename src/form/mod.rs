@@ -233,6 +233,41 @@ fn height(lines: &[Line], width: u16) -> u16 {
     lines.iter().map(|l| l.width().max(1).div_ceil(w)).sum::<usize>() as u16
 }
 
+/// word wrap one line at `w` columns, the same way it is drawn; returns
+/// the rows and the (row, column) of char `at` (the end: after the last char)
+fn wrap_line(line: &Line<'static>, w: usize, at: usize) -> (Vec<Line<'static>>, (usize, usize)) {
+    let w = w.max(1);
+    let chars: Vec<(char, Style)> = line.spans.iter().flat_map(|s| s.content.chars().map(move |c| (c, s.style))).collect();
+    let cw = |c: char| Span::raw(c.to_string()).width();
+    let mut rows: Vec<Vec<(char, Style)>> = vec![vec![]];
+    let mut row_w = 0;
+    let mut pos = (0, 0);
+    for (i, &(c, st)) in chars.iter().enumerate() {
+        let starts_word = c != ' ' && (i == 0 || chars[i - 1].0 == ' ');
+        let word_w: usize = if starts_word { chars[i..].iter().take_while(|(c, _)| *c != ' ').map(|(c, _)| cw(*c)).sum() } else { 0 };
+        if row_w > 0 && (row_w + cw(c) > w || (starts_word && word_w <= w && row_w + word_w > w)) {
+            rows.push(vec![]);
+            row_w = 0;
+        }
+        if i == at {
+            pos = (rows.len() - 1, row_w);
+        }
+        rows.last_mut().unwrap().push((c, st));
+        row_w += cw(c);
+    }
+    if at >= chars.len() {
+        pos = if row_w >= w { (rows.len(), 0) } else { (rows.len() - 1, row_w) };
+        if row_w >= w {
+            rows.push(vec![]);
+        }
+    }
+    let lines = rows
+        .into_iter()
+        .map(|r| Line::from(r.into_iter().map(|(c, st)| Span::styled(c.to_string(), st)).collect::<Vec<_>>()))
+        .collect();
+    (lines, pos)
+}
+
 fn keys(parts: &[(&str, &str)]) -> Line<'static> {
     let mut spans = vec![];
     for (n, (k, what)) in parts.iter().enumerate() {
@@ -368,7 +403,16 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
     let avail = col.height.saturating_sub(fixed).max(4);
     let body_h = height(&screen.card, inner);
     let choices_h = height(&screen.choices, inner);
-    let input_h = height(&screen.input, inner);
+    // the input line wrapped here, so text and cursor agree
+    let mut input = screen.input.clone();
+    let mut input_cursor = None;
+    if let Some(last) = input.pop() {
+        let (rows, (r, c)) = wrap_line(&last, inner as usize, screen.cursor.unwrap_or(usize::MAX));
+        let above = height(&input, inner);
+        input.extend(rows);
+        input_cursor = screen.cursor.map(|_| (above as usize + r, c));
+    }
+    let input_h = height(&input, inner);
     let sep = u16::from(!screen.choices.is_empty() && body_h > 0);
     let card_h = (body_h + sep + choices_h + input_h + 2).min(avail);
     let [head, _, tree, _, card, keys_a, note_a, _] = Layout::vertical([
@@ -416,11 +460,8 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
     .areas(inside);
     f.render_widget(Paragraph::new(Text::from(screen.card.clone())).wrap(Wrap { trim: false }).scroll((scroll, 0)), body_a);
     f.render_widget(Paragraph::new(Text::from(screen.choices.clone())).wrap(Wrap { trim: false }), choices_a);
-    f.render_widget(Paragraph::new(Text::from(screen.input.clone())).wrap(Wrap { trim: false }), input_a);
-    if let (Some(at), Some(_)) = (screen.cursor, screen.input.last()) {
-        let w = input_a.width.max(1) as usize;
-        let above = height(&screen.input[..screen.input.len() - 1], input_a.width);
-        let (row, col) = (above as usize + at / w, at % w);
+    f.render_widget(Paragraph::new(Text::from(input)).wrap(Wrap { trim: false }), input_a);
+    if let Some((row, col)) = input_cursor {
         f.set_cursor_position((input_a.x + col as u16, (input_a.y + row as u16).min(input_a.bottom().saturating_sub(1))));
     }
     f.render_widget(Paragraph::new(screen.keys.clone()), keys_a);
@@ -431,15 +472,14 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
     if let Some((title, text)) = &screen.overlay {
         let w = width.min(64).max(20);
         let inner_w = w.saturating_sub(4).max(1) as usize;
-        let rows = (text.chars().count() / inner_w + 1) as u16;
-        let h = rows + 2;
+        let (lines, (crow, ccol)) = wrap_line(&Line::from(text.clone()), inner_w, usize::MAX);
+        let h = (lines.len() as u16 + 2).min(area.height);
         let pop = Rect { x: col.x + (width - w) / 2, y: area.y + area.height.saturating_sub(h) / 2, width: w, height: h };
         f.render_widget(Clear, pop);
         let b = block.clone().border_style(Style::default().fg(theme::t().hint)).title(Span::styled(format!(" {} ", title), bold())).padding(Padding::horizontal(1));
         let inside = b.inner(pop);
-        f.render_widget(Paragraph::new(text.clone()).wrap(Wrap { trim: false }).block(b), pop);
-        let n = text.chars().count();
-        f.set_cursor_position((inside.x + (n % inner_w) as u16, inside.y + (n / inner_w) as u16));
+        f.render_widget(Paragraph::new(lines).block(b), pop);
+        f.set_cursor_position((inside.x + ccol as u16, (inside.y + crow as u16).min(inside.bottom().saturating_sub(1))));
     }
     if !screen.help.is_empty() {
         let lines: Vec<Line> = screen
@@ -839,6 +879,23 @@ mod tests {
         let opened = render(Some("sync"));
         println!("{}", opened.join("\n"));
         assert_eq!(opened.iter().position(|l| l.contains("two machines")), Some(opened.iter().position(|l| l.contains("Sync across")).unwrap() + 1), "opened under its line");
+    }
+
+    #[test]
+    fn wrap_breaks_at_words_and_the_cursor_follows() {
+        let text = |ls: &[Line]| ls.iter().map(|l| l.to_string()).collect::<Vec<_>>();
+        let (ls, pos) = wrap_line(&Line::from("aaa bbb cc"), 8, usize::MAX);
+        assert_eq!(text(&ls), ["aaa bbb ", "cc"]);
+        assert_eq!(pos, (1, 2), "after the last char");
+        let (ls, pos) = wrap_line(&Line::from("aaa bbbb"), 8, usize::MAX);
+        assert_eq!(text(&ls), ["aaa bbbb", ""], "full row: cursor on the next");
+        assert_eq!(pos, (1, 0));
+        let (ls, pos) = wrap_line(&Line::from("x abcdefghijk"), 5, usize::MAX);
+        assert_eq!(text(&ls), ["x abc", "defgh", "ijk"], "a long word is cut");
+        assert_eq!(pos, (2, 3));
+        let (ls, pos) = wrap_line(&Line::from(vec![Span::raw("> "), Span::raw("hint text")]), 6, 2);
+        assert_eq!(text(&ls), ["> hint", " text"]);
+        assert_eq!(pos, (0, 2), "cursor before the hint");
     }
 
     #[test]
