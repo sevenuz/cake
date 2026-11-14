@@ -7,7 +7,7 @@ mod keys;
 mod list;
 mod tree;
 
-use keys::{Act, Keymap, Text as TextKey};
+use keys::{Act, Buf, Keymap, Text as TextKey};
 
 use crate::{error, markdown, style, theme};
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -171,8 +171,8 @@ struct Screen {
     card_active: bool,
     /// the terminal cursor, columns into the last input line
     cursor: Option<usize>,
-    /// a text box over everything: (title, text so far); the cursor follows the text
-    overlay: Option<(String, String)>,
+    /// a text box over everything: (title, text so far, cursor in chars)
+    overlay: Option<(String, String, usize)>,
 }
 
 struct Ui {
@@ -314,18 +314,14 @@ impl Ui {
     /// a line of text in a box over the screen (feedback); None on esc
     fn overlay(&mut self, screen: &mut Screen, title: &str) -> Result<Option<String>, Box<dyn Error>> {
         let keys_before = std::mem::replace(&mut screen.keys, keys(&[("<cr>", "save"), ("<esc> jk", "cancel")]));
-        let mut buf = String::new();
+        let mut buf = Buf::default();
         let result = loop {
-            screen.overlay = Some((title.to_string(), buf.clone()));
+            screen.overlay = Some((title.to_string(), buf.text(), buf.at));
             self.draw(screen)?;
             match self.keys.text()? {
-                TextKey::Submit => break Some(buf.trim().to_string()),
+                TextKey::Submit => break Some(buf.text().trim().to_string()),
                 TextKey::Escape => break None,
-                TextKey::Backspace => {
-                    buf.pop();
-                }
-                TextKey::Char('\0') => (),
-                TextKey::Char(c) => buf.push(c),
+                k => buf.apply(&k),
             }
         };
         screen.overlay = None;
@@ -336,25 +332,21 @@ impl Ui {
     /// a line of text inside the card, `hint` dim while it is empty; None on esc
     fn input(&mut self, screen: &mut Screen, prompt: &str, hint: &str) -> Result<Option<String>, Box<dyn Error>> {
         let keys_before = std::mem::replace(&mut screen.keys, keys(&[("<cr>", "save"), ("<esc> jk", "cancel")]));
-        let mut buf = String::new();
+        let mut buf = Buf::default();
         // one line like vim: the prompt, then the text, the real cursor after it
         let lead = if prompt == ":" { ":".to_string() } else { format!("{} ", prompt) };
         let result = loop {
-            let mut line = vec![Span::styled(lead.clone(), Style::default().fg(theme::t().hint)), Span::raw(buf.clone())];
+            let mut line = vec![Span::styled(lead.clone(), Style::default().fg(theme::t().hint)), Span::raw(buf.text())];
             if buf.is_empty() && !hint.is_empty() {
                 line.push(Span::styled(hint.to_string(), dim()));
             }
             screen.input = vec![Line::default(), Line::from(line)];
-            screen.cursor = Some(lead.chars().count() + buf.chars().count());
+            screen.cursor = Some(lead.chars().count() + buf.at);
             self.draw(screen)?;
             match self.keys.text()? {
-                TextKey::Submit => break Some(buf.trim().to_string()),
+                TextKey::Submit => break Some(buf.text().trim().to_string()),
                 TextKey::Escape => break None,
-                TextKey::Backspace => {
-                    buf.pop();
-                }
-                TextKey::Char('\0') => (),
-                TextKey::Char(c) => buf.push(c),
+                k => buf.apply(&k),
             }
         };
         screen.input.clear();
@@ -472,10 +464,10 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
         let s = if *error { Style::default().fg(theme::t().error) } else { dim() };
         f.render_widget(Paragraph::new(Span::styled(text.clone(), s)), note_a);
     }
-    if let Some((title, text)) = &screen.overlay {
+    if let Some((title, text, at)) = &screen.overlay {
         let w = width.min(64).max(20);
         let inner_w = w.saturating_sub(4).max(1) as usize;
-        let (lines, (crow, ccol)) = wrap_line(&Line::from(text.clone()), inner_w, usize::MAX);
+        let (lines, (crow, ccol)) = wrap_line(&Line::from(text.clone()), inner_w, *at);
         let h = (lines.len() as u16 + 2).min(area.height);
         let pop = Rect { x: col.x + (width - w) / 2, y: area.y + area.height.saturating_sub(h) / 2, width: w, height: h };
         f.render_widget(Clear, pop);

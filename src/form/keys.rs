@@ -150,6 +150,87 @@ pub enum Text {
     Submit,
     Escape,
     Backspace,
+    Delete,
+    Left,
+    Right,
+    WordLeft,
+    WordRight,
+    Home,
+    End,
+    /// <c-w>: delete the word before the cursor
+    DeleteWord,
+}
+
+/// a line being typed with a cursor in it (chars before the cursor: `at`)
+#[derive(Default, Debug, PartialEq)]
+pub struct Buf {
+    chars: Vec<char>,
+    pub at: usize,
+}
+
+impl Buf {
+    pub fn text(&self) -> String {
+        self.chars.iter().collect()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.chars.is_empty()
+    }
+
+    /// start of the word left of `at`: spaces first, then the word
+    fn word_left(&self) -> usize {
+        let mut n = self.at;
+        while n > 0 && self.chars[n - 1] == ' ' {
+            n -= 1;
+        }
+        while n > 0 && self.chars[n - 1] != ' ' {
+            n -= 1;
+        }
+        n
+    }
+
+    /// end of the word right of `at`: spaces first, then the word
+    fn word_right(&self) -> usize {
+        let mut n = self.at;
+        while n < self.chars.len() && self.chars[n] == ' ' {
+            n += 1;
+        }
+        while n < self.chars.len() && self.chars[n] != ' ' {
+            n += 1;
+        }
+        n
+    }
+
+    /// applies an editing key; Submit and Escape are the caller's
+    pub fn apply(&mut self, key: &Text) {
+        match key {
+            Text::Char('\0') | Text::Submit | Text::Escape => (),
+            Text::Char(c) => {
+                self.chars.insert(self.at, *c);
+                self.at += 1;
+            }
+            Text::Backspace if self.at > 0 => {
+                self.at -= 1;
+                self.chars.remove(self.at);
+            }
+            Text::Backspace => (),
+            Text::Delete if self.at < self.chars.len() => {
+                self.chars.remove(self.at);
+            }
+            Text::Delete => (),
+            Text::Left => self.at = self.at.saturating_sub(1),
+            Text::Right => self.at = (self.at + 1).min(self.chars.len()),
+            Text::WordLeft => self.at = self.word_left(),
+            Text::WordRight => self.at = self.word_right(),
+            Text::Home => self.at = 0,
+            Text::End => self.at = self.chars.len(),
+            Text::DeleteWord => {
+                let from = self.word_left();
+                self.chars.drain(from..self.at);
+                self.at = from;
+            }
+        }
+    }
 }
 
 pub struct Keymap {
@@ -299,6 +380,17 @@ impl Keymap {
             KeyCode::Enter => Text::Submit,
             KeyCode::Esc => Text::Escape,
             KeyCode::Backspace => Text::Backspace,
+            KeyCode::Delete => Text::Delete,
+            KeyCode::Left if first.ctrl => Text::WordLeft,
+            KeyCode::Right if first.ctrl => Text::WordRight,
+            KeyCode::Left => Text::Left,
+            KeyCode::Right => Text::Right,
+            KeyCode::Home => Text::Home,
+            KeyCode::End => Text::End,
+            KeyCode::Char('a') if first.ctrl => Text::Home,
+            KeyCode::Char('e') if first.ctrl => Text::End,
+            KeyCode::Char('w') if first.ctrl => Text::DeleteWord,
+            KeyCode::Char(_) if first.ctrl => Text::Char('\0'),
             KeyCode::Char(c) => Text::Char(c),
             _ => Text::Char('\0'),
         })
@@ -324,6 +416,8 @@ impl Keymap {
             .collect();
         out.insert(8, ("1-9".into(), "cards: choose option n".into()));
         out.push(("<esc> jk".into(), "text: leave without saving".into()));
+        out.push(("<left> <right>".into(), "text: move; with <c-…> a word; <home> <end> <c-a> <c-e>".into()));
+        out.push(("<del> <c-w>".into(), "text: delete the char under the cursor, the word before it".into()));
         out
     }
 }
@@ -331,6 +425,34 @@ impl Keymap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn buf_edits_at_the_cursor_and_jumps_words() {
+        let mut b = Buf::default();
+        for c in "fix teh typo".chars() {
+            b.apply(&Text::Char(c));
+        }
+        b.apply(&Text::WordLeft);
+        b.apply(&Text::WordLeft);
+        assert_eq!(b.at, 4, "start of teh");
+        b.apply(&Text::WordRight);
+        assert_eq!(b.at, 7, "end of teh");
+        b.apply(&Text::Backspace);
+        b.apply(&Text::Backspace);
+        b.apply(&Text::Char('h'));
+        b.apply(&Text::Char('e'));
+        assert_eq!(b.text(), "fix the typo");
+        b.apply(&Text::Home);
+        b.apply(&Text::Delete);
+        assert_eq!(b.text(), "ix the typo");
+        b.apply(&Text::End);
+        b.apply(&Text::DeleteWord);
+        assert_eq!(b.text(), "ix the ");
+        b.apply(&Text::Left);
+        b.apply(&Text::Right);
+        b.apply(&Text::Right);
+        assert_eq!(b.at, 7, "right stops at the end");
+    }
 
     #[test]
     fn vim_notation_parses() {
