@@ -1,11 +1,12 @@
 ---
 id: prio-column-header
-status: review
+status: done
 parent: "[[how-do-i-set]]"
 created: 2026-11-14T00:48:17+01:00
 by: claude-code
 sessions: [09ab2c5e-817c-4232-99aa-cd89bfb2b546, 81954e9f-9185-4d55-a366-5581de2aacd6]
 usage: {claude-opus-5-5: {in: 4, out: 2107, cache_read: 1681133, cache_write: 2872}}
+closed: 2026-11-14T01:33:19+01:00
 assignee: claude-code
 owner: sevenuz
 time:
