@@ -5,7 +5,7 @@ parent: "[[tree-form]]"
 blocked_by: ["[[tree-widget]]", "[[edit-line-fields]]"]
 created: 2026-11-14T11:59:44+01:00
 by: claude-code
-sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a]
+sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a, cce3e92b-a15e-4436-ae00-939981d6ff10]
 usage: {claude-opus-5-5: {in: 1, out: 386, cache_read: 71621, cache_write: 478}}
 assignee: ai
 owner: sevenuz
@@ -23,3 +23,5 @@ time:
 changed: edit line under the cursor row in sort: status · who · prio · due · deadline, set values in the hint color, unset as –; t/n/dd/w/p and :due :deadline :who :prio set them; a field on an inbox item makes it a task; config sort_who (default ai, - nobody, me, a name) in the template; scenario test with sort_who -; commits: 21ed863; try: cake form sort, t on an inbox item: task ai
 
 comment (sevenuz, 2026-11-14): that needs to be discussed
+
+comment (claude-code, 2026-11-14): decided in chat: dropped, the details box shows the fields ([[tree-rows-design]])
