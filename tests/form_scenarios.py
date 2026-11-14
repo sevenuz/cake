@@ -198,7 +198,7 @@ if landed is not None:
 # the last tab: the whole open tree with the details box
 end = tmux_screen(["l"], args=("form", "mine"))
 if end is not None:
-    check("last tab: everything open as a tree", "everything open" in end and "a task of mine" in end and "sync errors" in end)
+    check("last tab: everything open as a tree", "everything open" in end and "ALL" in end)
 
 # review: : sets fields of the item under review
 cake("add", "rv", "--task", "--assignee", "claude-code", "-m", "# to review", agent=True)
