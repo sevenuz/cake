@@ -1,9 +1,11 @@
 ---
 id: handoff
+status: dropped
 tags: [doc, handoff]
 created: 2026-11-14T01:17:36+01:00
 by: claude-code
-sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, 979940ed-e0c4-405e-b509-b734038be1bb]
+sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, 979940ed-e0c4-405e-b509-b734038be1bb, cce3e92b-a15e-4436-ae00-939981d6ff10]
+closed: 2026-11-14T22:49:48+01:00
 ---
 # Handoff: state of cake and how to continue (2026-11-14)
 
@@ -150,3 +152,4 @@ edit takes several ids and --tag a,~b, --blocked-by x,~y, --parent,
 - After a form change: run the scenario test, rebuild release when the
   user's form is closed, mention what to try.
 
+dropped by the user (2026-11-14): tickets carry the state; chat mode in the skill
