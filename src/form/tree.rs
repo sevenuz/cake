@@ -16,8 +16,8 @@ pub(super) struct Tree<'a> {
     pub opened: HashSet<String>,
     /// parents shown above a match (config tree_depth)
     pub depth: usize,
-    /// a mark and color for open module items (answer: "? ")
-    pub accent: Option<(&'static str, Color)>,
+    /// the mark (None: the status mark) and color of open module items
+    pub accent: Option<(Option<&'static str>, Color)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +27,8 @@ pub(super) struct Row {
     pub prefix: String,
     /// a match or changed; the rest is context
     pub editable: bool,
+    /// context shown because its parent is open (not a parent itself)
+    pub revealed: bool,
     /// ancestors above this row are not shown
     pub cut_above: bool,
     /// children not shown
@@ -53,6 +55,8 @@ impl<'a> Tree<'a> {
         let exists = |id: &str| !id.is_empty() && self.item(id).is_some();
         let visible: HashSet<&str> = self.matched.iter().chain(&self.changed).map(String::as_str).filter(|id| exists(id)).collect();
         let mut shown: HashSet<&str> = HashSet::new();
+        // parents (dim), the rest of shown are matches or revealed children
+        let mut parents: HashSet<&str> = HashSet::new();
         for v in &visible {
             shown.insert(v);
             let mut cur = str_of(self.item(v).unwrap(), "parent");
@@ -61,17 +65,22 @@ impl<'a> Tree<'a> {
                     break;
                 }
                 shown.insert(cur);
+                parents.insert(cur);
                 cur = str_of(self.item(cur).unwrap(), "parent");
             }
         }
-        // opened rows show all children; a shown child may be open as well
+        // opened rows show all children and one more parent; a shown row
+        // may be open as well
         loop {
-            let more: Vec<&str> = shown
-                .iter()
-                .filter(|id| self.opened.contains(**id))
-                .flat_map(|id| children.get(*id).into_iter().flatten().copied())
-                .filter(|c| !shown.contains(c))
-                .collect();
+            let mut more: Vec<&str> = vec![];
+            for id in shown.iter().filter(|id| self.opened.contains(**id)) {
+                more.extend(children.get(*id).into_iter().flatten().copied().filter(|c| !shown.contains(c)));
+                let up = str_of(self.item(id).unwrap(), "parent");
+                if exists(up) && !shown.contains(up) {
+                    more.push(up);
+                    parents.insert(up);
+                }
+            }
             if more.is_empty() {
                 break;
             }
@@ -80,12 +89,13 @@ impl<'a> Tree<'a> {
         let mut out = vec![];
         let roots: Vec<&str> = self.all.iter().map(|i| str_of(i, "id")).filter(|id| shown.contains(id) && !shown.contains(str_of(self.item(id).unwrap(), "parent"))).collect();
         for r in roots {
-            self.walk(r, ("", ""), &children, &shown, &visible, &mut out);
+            self.walk(r, ("", ""), &children, &shown, &(&visible, &parents), &mut out);
         }
         out
     }
 
-    fn walk(&self, id: &str, prefix: (&str, &str), children: &HashMap<&str, Vec<&str>>, shown: &HashSet<&str>, visible: &HashSet<&str>, out: &mut Vec<Row>) {
+    fn walk(&self, id: &str, prefix: (&str, &str), children: &HashMap<&str, Vec<&str>>, shown: &HashSet<&str>, kinds: &(&HashSet<&str>, &HashSet<&str>), out: &mut Vec<Row>) {
+        let (visible, parents) = *kinds;
         let g = style::g();
         let all_kids = children.get(id).map(Vec::as_slice).unwrap_or(&[]);
         let kids: Vec<&str> = all_kids.iter().copied().filter(|c| shown.contains(c)).collect();
@@ -93,6 +103,7 @@ impl<'a> Tree<'a> {
             id: id.to_string(),
             prefix: prefix.0.to_string(),
             editable: visible.contains(id),
+            revealed: !visible.contains(id) && !parents.contains(id),
             cut_above: prefix.0.is_empty() && find(self.all, str_of(self.item(id).unwrap(), "parent")).is_some(),
             hidden: all_kids.len() - kids.len(),
             changed: self.changed.contains(id),
@@ -102,21 +113,21 @@ impl<'a> Tree<'a> {
             let last = n + 1 == kids.len();
             let own = format!("{}{}", prefix.1, if last { g.last } else { g.branch });
             let below = format!("{}{}", prefix.1, if last { g.space } else { g.pipe });
-            self.walk(c, (&own, &below), children, shown, visible, out);
+            self.walk(c, (&own, &below), children, shown, kinds, out);
         }
     }
 
     /// the lines of `rows` at `width`, the cursor on row `cur` (`dim_cursor`
-    /// while the focus is elsewhere); `cols` gives the right-hand text of
-    /// an item (status, who); returns the lines, one per row
-    pub fn lines(&self, rows: &[Row], cur: usize, width: u16, cols: &dyn Fn(&Value) -> String, dim_cursor: bool) -> Vec<Line<'static>> {
+    /// while the focus is elsewhere); `cols` gives the right-hand columns
+    /// of an item (`right_w` wide; true: a context row); one line per row
+    pub fn lines(&self, rows: &[Row], cur: usize, width: u16, cols: &dyn Fn(&Value, bool) -> Vec<Span<'static>>, right_w: usize, dim_cursor: bool) -> Vec<Line<'static>> {
         let (t, g) = (theme::t(), style::g());
         let w = width as usize;
         let mut out = vec![];
         for (n, r) in rows.iter().enumerate() {
             let Some(item) = self.item(&r.id) else { continue };
             let here = n == cur;
-            let right = cols(item);
+            let open = r.editable && !r.changed;
             let mut title = String::new();
             if r.changed {
                 title.push_str(&format!("{} ", g.check));
@@ -124,34 +135,51 @@ impl<'a> Tree<'a> {
             if r.cut_above {
                 title.push_str(&format!("{} {} ", g.ellipsis, g.select));
             }
-            let accent = self.accent.filter(|_| r.editable && !r.changed);
-            if let Some((mark, _)) = accent {
-                title.push_str(mark);
+            if let (true, Some((mark, _))) = (open, self.accent) {
+                title.push_str(mark.unwrap_or_else(|| status_glyph(item)));
+                title.push(' ');
             }
             title.push_str(str_of(item, "title"));
             if r.hidden > 0 && !r.opened {
                 title.push_str(&format!(" +{}", r.hidden));
             }
             let lead = format!("{} {}", if here { g.select } else { " " }, r.prefix);
-            let used = lead.chars().count() + right.chars().count() + 1;
-            let title = cut(&title, w.saturating_sub(used).max(8));
-            let base = match (r.editable, accent) {
-                (true, Some((_, c))) => Style::default().fg(c),
-                (true, None) => Style::default(),
-                (false, _) => dim(),
+            let title = cut(&title, w.saturating_sub(lead.chars().count() + right_w + 1).max(8));
+            // module items in the module's color, done ones green, parents
+            // dim, revealed children dim and slanted
+            let base = if open {
+                self.accent.map_or(Style::default(), |(_, c)| Style::default().fg(c))
+            } else if r.editable {
+                Style::default().fg(t.ok)
+            } else if r.revealed {
+                dim().add_modifier(Modifier::ITALIC)
+            } else {
+                dim()
             };
             let style = match (here, dim_cursor) {
                 (true, false) => base.add_modifier(Modifier::BOLD | Modifier::REVERSED),
                 (true, true) => base.add_modifier(Modifier::BOLD),
                 _ => base,
             };
-            out.push(Line::from(vec![
-                Span::styled(lead, if here && !dim_cursor { bold().fg(t.hint) } else { dim() }),
-                Span::styled(title, style),
-                Span::styled(format!(" {}", right), dim()),
-            ]));
+            let mut spans = vec![Span::styled(lead, if here && !dim_cursor { bold().fg(t.hint) } else { dim() }), Span::styled(title, style), Span::raw(" ")];
+            spans.extend(cols(item, !r.editable));
+            out.push(Line::from(spans));
         }
         out
+    }
+}
+
+/// the status mark of an item (inbox ◇, task ○, doing ◐, review ◈, …)
+pub(super) fn status_glyph(i: &Value) -> &'static str {
+    let g = style::g();
+    match str_of(i, "status") {
+        "inbox" => g.inbox,
+        "task" => g.todo,
+        "doing" => g.doing,
+        "review" => g.review,
+        "done" => g.done,
+        "dropped" => g.dropped,
+        _ => g.note,
     }
 }
 
@@ -200,13 +228,15 @@ mod tests {
         assert_eq!(rows[0].hidden, 1, "e is not shown");
         tree.opened.insert("c".into());
         let rows = tree.rows();
-        assert_eq!(ids(&rows), ["c", "d", "e"]);
-        assert_eq!(rows[0].hidden, 0);
-        assert!(!rows[2].editable, "a revealed sibling is context");
+        assert_eq!(ids(&rows), ["b", "c", "d", "e"], "children and one more parent");
+        assert!(rows[0].cut_above && !rows[0].revealed, "b is a parent, a is still cut");
+        assert_eq!(rows[1].hidden, 0);
+        assert!(!rows[3].editable && rows[3].revealed, "a revealed sibling is context, marked");
+        assert!(!rows[1].revealed, "c is a parent");
         // opening a revealed row reveals its children too
         let mut tree = Tree::new(&all, ["c".to_string()], 0);
         tree.opened.extend(["c".to_string(), "d".to_string()]);
-        assert_eq!(ids(&tree.rows()), ["c", "d", "e"]);
+        assert_eq!(ids(&tree.rows()), ["b", "c", "d", "e"]);
     }
 
     #[test]
@@ -227,12 +257,12 @@ mod tests {
         let mut tree = Tree::new(&all, ["d".to_string(), "e".to_string()], 1);
         tree.changed.insert("e".into());
         let rows = tree.rows();
-        let lines = tree.lines(&rows, 2, 60, &|i| str_of(i, "id").to_string(), false);
+        let lines = tree.lines(&rows, 2, 60, &|i, _| vec![Span::raw(str_of(i, "id").to_string())], 1, false);
         let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         println!("{}", text.join("\n"));
         assert_eq!(text.len(), 3, "one line per row");
         assert!(text[0].contains("… › title c"), "{}", text[0]);
-        assert!(text[1].contains("├─ title d") && text[1].trim_end().ends_with('d'));
+        assert!(text[1].contains("├─ title d") && text[1].trim_end().ends_with(" d"));
         assert!(text[2].starts_with("› └─ ✓ title e"), "{}", text[2]);
     }
 }
