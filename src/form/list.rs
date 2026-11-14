@@ -608,7 +608,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             (ks(Act::Help), "keys".into()),
         ]);
         if kind == Kind::All {
-            parts.push((":q".into(), "quit".into()));
+            parts.push(("q".into(), "quit".into()));
         }
         let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
         let mut head = vec![Span::styled(format!("{} · {}", kind.title(), store), bold().fg(kind.accent().1))];
@@ -736,9 +736,11 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                 }
             }
             Act::PrevModule => return Ok((decided, Leave::Prev)),
-            Act::NextModule if kind == Kind::All => st.note = Some(("the last tab: :q closes the form".into(), false)),
+            Act::NextModule if kind == Kind::All => st.note = Some(("the last tab: q closes the form".into(), false)),
             Act::NextModule => return Ok((decided, Leave::Next)),
             Act::Quit => return Ok((decided, Leave::Quit)),
+            // the last tab: nothing left to lose, q quits
+            Act::QuitHint if kind == Kind::All => return Ok((decided, Leave::Quit)),
             Act::QuitHint => st.note = Some((QUIT_HINT.into(), false)),
             Act::Feedback => {
                 feedback(ui, &mut screen, cake, store, &format!("{} tree, row {}", kind.name(), st.cur_id))?;

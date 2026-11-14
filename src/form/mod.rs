@@ -610,7 +610,6 @@ fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str))
 /// the last tab: every open item of `root` as one tree, details below;
 /// h goes back, :q quits
 fn last_tab(ui: &mut Ui, root: &Path, user: &str, store: &str) -> Result<Leave, Box<dyn Error>> {
-    ui.names.push("all".into());
     ui.step = ui.names.len() - 1;
     let cake = Cake { root };
     let leave = loop {
@@ -624,7 +623,6 @@ fn last_tab(ui: &mut Ui, root: &Path, user: &str, store: &str) -> Result<Leave, 
             _ => (),
         }
     };
-    ui.names.pop();
     Ok(leave)
 }
 
@@ -720,7 +718,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), auto_next: o.auto_next, changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.iter().cloned().chain(["all".to_string()]).collect(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), auto_next: o.auto_next, changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the

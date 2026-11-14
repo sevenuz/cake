@@ -199,12 +199,18 @@ if landed is not None:
 end = tmux_screen(["l"], args=("form", "mine"))
 if end is not None:
     check("last tab: everything open as a tree", "everything open" in end and "ALL" in end)
+start = tmux_screen([], args=("form", "mine"))
+if start is not None:
+    check("header: all listed from the start", " · all" in start)
 
 # review: : sets fields of the item under review
 cake("add", "rv", "--task", "--assignee", "claude-code", "-m", "# to review", agent=True)
 cake("edit", "rv", "--owner", "jul")
 cake("review", "rv", agent=True)
 form([":", "prio 2\r", ":q\r"], args=("form", "review"))
+# q on the last tab quits (form() fails if the form hangs)
+form(["l", "q"], args=("form", "review"))
+check("last tab: q quits", True)
 check("review: :prio 2 set the priority", item("rv")["priority"] == 2)
 
 subprocess.run(["rm", "-rf", TMP])
