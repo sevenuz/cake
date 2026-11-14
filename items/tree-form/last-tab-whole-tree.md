@@ -20,3 +20,5 @@ time:
 - done when: a tree longer than the pane scrolls with the box fixed; scenario test
 
 changed: after the last module the form opens the tab ALL instead of the end card: every open item of the store as one tree, details box below; long trees scroll with the box fixed at the bottom; c/dd/w/p and :due etc. work there; the title line says what this run decided; l there says it is the last tab, h goes back, :q quits; empty store: the old end card; scenario test; commits: 9350db8; try: cake form, l past the last module
+
+comment (claude-code, 2026-11-14): q quits on the last tab (no :q needed there); ALL shows in the header from the start, not only once you are on it
