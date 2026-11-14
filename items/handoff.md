@@ -3,7 +3,7 @@ id: handoff
 tags: [doc, handoff]
 created: 2026-11-14T01:17:36+01:00
 by: claude-code
-sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, 979940ed-e0c4-405e-b509-b734038be1bb]
 ---
 # Handoff: state of cake and how to continue (2026-11-14)
 
@@ -99,7 +99,9 @@ edit takes several ids and --tag a,~b, --blocked-by x,~y, --parent,
   optional. Triage is not part of the form (removed in f18d9f1): run
   `cake triage` (the user's alias) by hand or from cron. h/l walk
   modules (tables save when left), empty ones are passed unless walked
-  to with h/l; an end screen waits for q.
+  to with h/l; an end screen waits for q. Nothing for the user at
+  all (no dump module): no screen, a message how many ready tasks
+  wait for agents (bd335c7).
 - the user's triage alias: claude -p '<prompt>' --max-turns 40
   --allowedTools 'Bash(cake *)' (prompt must come before
   --allowedTools, which takes several values).
@@ -147,3 +149,4 @@ edit takes several ids and --tag a,~b, --blocked-by x,~y, --parent,
   try: …"`.
 - After a form change: run the scenario test, rebuild release when the
   user's form is closed, mention what to try.
+
