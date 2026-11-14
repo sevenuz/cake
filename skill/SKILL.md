@@ -104,7 +104,27 @@ Per store (`cake --store <path> … --json`), when asked to triage or work:
 5. Your own findings and docs: `cake add --note -t doc …`, never the inbox.
 6. `cake sync --json`, then a short summary: reviews, questions, blocked.
 
+## Chat mode
+
+While the user is in the chat, the chat is the work loop and cake the
+record. Nothing is asked or answered twice.
+
+- **Ask in chat**, not as question items. Write the answer into cake
+  yourself: into the task, a design `doc` note, or a question item created
+  and closed at once (`cake done <id> -m "answer: …"`) when it is worth
+  keeping as its own item.
+- **"go" starts the work** right away in this session: `cake start`, work,
+  `cake review`. No separate agent run, no "now run the agent".
+- **Review both ways:** "ok <id>" in chat → `cake done <id>`; a change
+  request in chat → `cake edit <id> --comment …`, then rework. The form
+  stays for what the user checks later.
+- **Question items in cake** only when the user is away (agent run,
+  triage) or says "decide later" / "ask me in cake".
+- Ids from cake in your answers, so the user can find the items.
+
 ## Questions
+
+When the user is away (see Chat mode):
 
 ```sh
 cake add --json --task -p <task> --assignee me -m - <<'EOF'
