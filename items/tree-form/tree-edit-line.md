@@ -1,6 +1,6 @@
 ---
 id: tree-edit-line
-status: task
+status: doing
 parent: "[[tree-form]]"
 blocked_by: ["[[tree-widget]]", "[[edit-line-fields]]"]
 created: 2026-11-14T11:59:44+01:00
@@ -8,6 +8,8 @@ by: claude-code
 sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-14T12:16:16+01:00/
 ---
 # Edit line under the hovered entry
 
