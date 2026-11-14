@@ -20,3 +20,5 @@ time:
 - done when: every command in a table's hint works there; test per table
 
 changed: each module has its own : commands; review, mine, news: due, deadline, who, prio; inbox also move; answer only w and q; the dim hint after : lists exactly those; unknown commands say which ones work here; :q now also works on context rows; tests: hint per module, scenario :prio 2 in review; commits: bdbfc6b; try: cake form review, then :prio 2
+
+comment (claude-code, 2026-11-14): the : line goes to the very bottom of the screen like vim, not into the detail box
