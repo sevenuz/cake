@@ -673,6 +673,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             Act::PrevModule => return Ok((decided, Leave::Prev)),
             Act::NextModule => return Ok((decided, Leave::Next)),
             Act::Quit => return Ok((decided, Leave::Quit)),
+            Act::QuitHint => st.note = Some((QUIT_HINT.into(), false)),
             Act::Feedback => {
                 feedback(ui, &mut screen, cake, store, &format!("{} tree, row {}", kind.name(), st.cur_id))?;
                 st.note = screen.note.take();

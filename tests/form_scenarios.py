@@ -91,7 +91,7 @@ keys = [
     # review: c is done
     "c",
     # mine: hand the task to ai; the end screen stays on l
-    "w", "l", "q",
+    "w", "l", ":q\r",
 ]
 form(keys)
 first, second = item("pass"), item("blog")
@@ -107,18 +107,18 @@ print(f"keys: {decisions} for 6 decisions ({decisions / 6:.1f} per decision)")
 # the next day: what the agent did since, held back to the user
 time.sleep(1.1)
 cake("add", "new", "--task", "-p", "sync", "--assignee", "claude-code", "-m", "# a new subtask", agent=True)
-form(["w", "\r"] + ["l"] * 7 + ["q"])
+form(["w", "\r"] + ["l"] * 7 + [":q\r"])
 check("news: hold gives it back to the user", item("new")["assignee"] == "jul")
 
 # h and l: leave sort without deciding, come back over the empty modules
 cake("add", "zz", "-m", "# idea for later")
 cake("add", "mytask", "--task", "--assignee", "me", "-m", "# my task")
-form(["l", "h", "t", "\r"] + ["l"] * 6 + ["q"])
+form(["l", "h", "t", "\r"] + ["l"] * 6 + [":q\r"])
 check("h/l: back in inbox, the idea became a task", item("zz")["status"] == "task")
 
 # F on a screen: feedback becomes a task for the AI, not an inbox item
 cake("add", "yy", "-m", "# another idea")
-form(["F", "too many columns\r", "q", "q"])
+form(["F", "too many columns\r", ":q\r"])
 fb = [i for i in cake("ls", "-t", "form-feedback")["items"]]
 check("F: feedback is a task for ai", len(fb) == 1 and fb[0]["status"] == "task" and fb[0]["assignee"] == "ai")
 
@@ -152,13 +152,18 @@ if back is None:
 else:
     check("sticky: still shown after h/l", "✓ sticky one" in back and "sticky two" in back)
 
+# a stray q does not close the form, it says how
+stray = tmux_screen(["q"])
+if stray is not None:
+    check("q: form stays open with the :q hint", "type :q to close" in stray)
+
 # config sort_who "-": a task from sort gets nobody
 os.makedirs(f"{TMP}/config/cake", exist_ok=True)
 with open(f"{TMP}/config/cake/config.hjson", "w") as f:
     f.write('{ sort_who: "-" }\n')
 cake("set", "dropped", "s2")
 cake("add", "s3", "-m", "# nobody's task")
-form(["t", "q"])
+form(["t", ":q\r"])
 check("sort_who -: task without assignee", item("s3")["status"] == "task" and item("s3")["assignee"] is None)
 
 # answer on the tree: n to the second question, <cr> card, j option 2,
@@ -173,7 +178,7 @@ if pid == 0:
     os.execve(CAKE, [CAKE, "form", "answer"], ENV)
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
 time.sleep(1.5)
-for k in ["n", "\r", "j", "\r", "p", "1", "k", "o", "q"]:
+for k in ["n", "\r", "j", "\r", "p", "1", "k", "o", ":q\r"]:
     os.write(fd, k.encode())
     time.sleep(0.5)
 os.waitpid(pid, 0)

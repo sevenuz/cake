@@ -20,6 +20,9 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// what a plain q says: only :q quits, so a stray q keeps the form open
+const QUIT_HINT: &str = "q does not quit: type :q to close the form";
+
 /// set for the form's own cake calls: built-ins without alias overrides
 pub const PLAIN_ENV: &str = "CAKE_PLAIN";
 
@@ -547,7 +550,7 @@ fn last_run(root: &Path) -> i64 {
 /// module move or quit
 fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str)) -> Result<Leave, Box<dyn Error>> {
     let k = |a: Act| ui.keys.keys_of(a);
-    let parts = [(format!("{}/{}", k(Act::PrevModule), k(Act::NextModule)), "module".to_string()), (k(Act::Quit), "quit".to_string())];
+    let parts = [(format!("{}/{}", k(Act::PrevModule), k(Act::NextModule)), "module".to_string()), (":q".to_string(), "quit".to_string())];
     let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
     let mut help = false;
     let mut note = None;
@@ -570,6 +573,12 @@ fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str))
             Act::PrevModule => return Ok(Leave::Prev),
             Act::NextModule => return Ok(Leave::Next),
             Act::Quit => return Ok(Leave::Quit),
+            Act::QuitHint => note = Some((QUIT_HINT.to_string(), false)),
+            Act::Command => match ui.input(&mut screen, ":")?.as_deref() {
+                None | Some("") => (),
+                Some("q" | "q!" | "wq" | "x") => return Ok(Leave::Quit),
+                Some(other) => note = Some((format!("unknown command :{}, here only :q", other), true)),
+            },
             Act::Help => help = true,
             _ => (),
         }
@@ -721,7 +730,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
             let leave = if n + 1 == o.modules.len() && matches!(leave, Leave::Next | Leave::Done | Leave::Empty) {
                 let summary: Vec<String> = o.modules.iter().zip(&counts).filter(|(_, c)| **c > 0).map(|(m, c)| format!("{} {}", m, c)).collect();
                 let text = if summary.is_empty() { "Nothing decided this time.".to_string() } else { format!("Decided: {}.", summary.join(", ")) };
-                match still(&mut ui, "end of the form", vec![Line::from(text), Line::from(Span::styled("q closes the form, h goes back.", dim()))], (&Cake { root }, &stores[0].0))? {
+                match still(&mut ui, "end of the form", vec![Line::from(text), Line::from(Span::styled(":q closes the form, h goes back.", dim()))], (&Cake { root }, &stores[0].0))? {
                     Leave::Prev => Leave::Prev,
                     Leave::Quit => Leave::Quit,
                     _ => continue,
