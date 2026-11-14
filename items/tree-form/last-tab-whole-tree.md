@@ -1,6 +1,6 @@
 ---
 id: last-tab-whole-tree
-status: done
+status: doing
 parent: "[[tree-form]]"
 created: 2026-11-14T20:51:28+01:00
 by: claude-code
@@ -11,6 +11,7 @@ assignee: ai
 owner: sevenuz
 time:
   - 2026-11-14T21:13:31+01:00/2026-11-14T21:15:01+01:00
+  - 2026-11-14T22:45:08+01:00/
 ---
 # Last tab: whole tree with details box at the bottom
 
