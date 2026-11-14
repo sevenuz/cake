@@ -27,12 +27,12 @@ def item(id_):
     return cake("show", id_)["items"][0]
 
 
-def form(keys, timeout=30):
-    """runs `cake` and types `keys` (each a write, 0.4 s apart); returns the screen text"""
+def form(keys, timeout=30, args=()):
+    """runs `cake` (with `args`) and types `keys` (each a write, 0.4 s apart); returns the screen text"""
     pid, fd = pty.fork()
     if pid == 0:
         os.chdir(STORE)
-        os.execve(CAKE, [CAKE], ENV)
+        os.execve(CAKE, [CAKE, *args], ENV)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
     out = b""
 
@@ -184,6 +184,13 @@ for k in ["n", "\r", "j", "\r", "p", "1", "k", "o", ":q\r"]:
 os.waitpid(pid, 0)
 check("answer tree: <cr> j <cr> gave option 2", "answer: b) two" in item("qb")["body"])
 check("answer tree: p and 1 answered the first", "answer: a) one" in item("qa")["body"])
+
+# review: : sets fields of the item under review
+cake("add", "rv", "--task", "--assignee", "claude-code", "-m", "# to review", agent=True)
+cake("edit", "rv", "--owner", "jul")
+cake("review", "rv", agent=True)
+form([":", "prio 2\r", ":q\r"], args=("form", "review"))
+check("review: :prio 2 set the priority", item("rv")["priority"] == 2)
 
 subprocess.run(["rm", "-rf", TMP])
 sys.exit(1 if failures else 0)

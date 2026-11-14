@@ -55,6 +55,31 @@ impl Kind {
         matches!(self, Kind::Sort | Kind::Mine | Kind::News)
     }
 
+    /// the `:` commands of the module besides w and q: the item's fields
+    /// (and move in the inbox); answer has none
+    fn commands(self) -> &'static [&'static str] {
+        match self {
+            Kind::Sort => &["due", "deadline", "who", "prio", "move"],
+            Kind::Mine | Kind::News | Kind::Review => &["due", "deadline", "who", "prio"],
+            Kind::Answer => &[],
+        }
+    }
+
+    /// the dim hint of the `:` line: an example per command
+    fn command_hint(self) -> String {
+        let example = |c: &str| match c {
+            "due" => "due fri",
+            "deadline" => "deadline 30.11.",
+            "who" => "who ai",
+            "prio" => "prio 1",
+            "move" => "move <store>",
+            _ => "",
+        };
+        let mut parts: Vec<&str> = self.commands().iter().map(|c| example(c)).collect();
+        parts.extend(["w", "q"]);
+        parts.join(" · ")
+    }
+
     /// the mark (None: status mark) and color of the module's open items
     fn accent(self) -> (Option<&'static str>, Color) {
         let t = theme::t();
@@ -682,7 +707,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                 Some(b) => change = Some(Change::Undo(b.clone())),
                 None => st.note = Some(("nothing to undo here".into(), false)),
             },
-            Act::Task | Act::Note | Act::Drop | Act::Who | Act::Prio | Act::Subtree | Act::Command | Act::Timer | Act::Complete | Act::Insert | Act::Choose(_) | Act::Confirm
+            Act::Task | Act::Note | Act::Drop | Act::Who | Act::Prio | Act::Subtree | Act::Timer | Act::Complete | Act::Insert | Act::Choose(_) | Act::Confirm
                 if !editable =>
             {
                 st.note = Some((format!("context: not in {}, no actions here", kind.name()), true));
@@ -749,31 +774,34 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                 }
             }
             Act::Command => {
-                let Some(line) = ui.input(&mut screen, ":")? else { continue };
+                let Some(line) = ui.input(&mut screen, ":", &kind.command_hint())? else { continue };
                 let (cmd, arg) = line.split_once(' ').map_or((line.as_str(), ""), |(c, a)| (c, a.trim()));
                 let date = |a: &str| match a {
                     "" | "-" => Ok(None),
                     a => crate::util::parse_date(a).map(Some),
                 };
+                let ours = kind.commands().contains(&cmd);
                 match cmd {
+                    "" => (),
                     "q" | "q!" | "wq" | "x" => return Ok((decided, Leave::Quit)),
                     "w" => return Ok((decided, Leave::Done)),
-                    "due" | "deadline" if kind.edits() => match date(arg) {
+                    _ if ours && !editable => st.note = Some((format!("context: not in {}, no actions here", kind.name()), true)),
+                    "due" | "deadline" if ours => match date(arg) {
                         Ok(v) => change = Some(if cmd == "due" { Change::Due(v) } else { Change::Deadline(v) }),
                         Err(e) => st.note = Some((e, true)),
                     },
-                    "who" if kind.edits() => match crate::config::Config::default().who(root, if arg.is_empty() { "-" } else { arg }) {
+                    "who" if ours => match crate::config::Config::default().who(root, if arg.is_empty() { "-" } else { arg }) {
                         Ok(w) => change = Some(Change::Who(if arg == "me" { Some(user.to_string()) } else { w })),
                         Err(e) => st.note = Some((e.to_string(), true)),
                     },
-                    "prio" if kind.edits() => match arg.parse::<u64>() {
+                    "prio" if ours => match arg.parse::<u64>() {
                         Ok(p) if (1..=3).contains(&p) => change = Some(Change::Prio(Some(p))),
                         _ if arg.is_empty() || arg == "-" || arg == "0" => change = Some(Change::Prio(None)),
                         _ => st.note = Some(("prio is 1, 2, 3 or - for none".into(), true)),
                     },
-                    "move" if kind == Kind::Sort && stores.iter().any(|s| s == arg) => change = Some(Change::Move(arg.to_string())),
-                    "move" if kind == Kind::Sort => st.note = Some((format!("no store '{}': {}", arg, stores.join(", ")), true)),
-                    other => st.note = Some((format!("unknown command :{}", other), true)),
+                    "move" if ours && stores.iter().any(|s| s == arg) => change = Some(Change::Move(arg.to_string())),
+                    "move" if ours => st.note = Some((format!("no store '{}': {}", arg, stores.join(", ")), true)),
+                    other => st.note = Some((format!("unknown command :{} in {}; here: {}", other, kind.name(), kind.command_hint()), true)),
                 }
             }
             _ => (),
@@ -825,7 +853,7 @@ fn choose(ui: &mut Ui, screen: &mut Screen, kind: Kind, item: &Value, all: &[Val
     }
     if pick == options.len() - 1 {
         let prompt = if kind == Kind::Answer { "your answer:" } else { "what should change:" };
-        let Some(text) = ui.input(screen, prompt)?.filter(|t| !t.is_empty()) else { return Ok(None) };
+        let Some(text) = ui.input(screen, prompt, "")?.filter(|t| !t.is_empty()) else { return Ok(None) };
         return Ok(Some(if kind == Kind::Answer { Change::Answer(text) } else { Change::Comment(text) }));
     }
     Ok(Some(match kind {
@@ -911,6 +939,13 @@ mod tests {
         assert_eq!(ids(Kind::Mine), ["m"]);
         assert_eq!(ids(Kind::Review), ["r"]);
         assert_eq!(ids(Kind::News), ["n"]);
+    }
+
+    #[test]
+    fn command_hints_list_only_what_works() {
+        assert_eq!(Kind::Review.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · w · q");
+        assert_eq!(Kind::Sort.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · move <store> · w · q");
+        assert_eq!(Kind::Answer.command_hint(), "w · q");
     }
 
     #[test]

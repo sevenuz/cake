@@ -329,17 +329,16 @@ impl Ui {
         Ok(result)
     }
 
-    /// a line of text inside the card; None on esc
-    fn input(&mut self, screen: &mut Screen, prompt: &str) -> Result<Option<String>, Box<dyn Error>> {
+    /// a line of text inside the card, `hint` dim while it is empty; None on esc
+    fn input(&mut self, screen: &mut Screen, prompt: &str, hint: &str) -> Result<Option<String>, Box<dyn Error>> {
         let keys_before = std::mem::replace(&mut screen.keys, keys(&[("<cr>", "save"), ("<esc> jk", "cancel")]));
         let mut buf = String::new();
         // one line like vim: the prompt, then the text, the real cursor after it
         let lead = if prompt == ":" { ":".to_string() } else { format!("{} ", prompt) };
-        let hint = if prompt == ":" { "due fri · deadline 30.11. · who ai · prio 1 · move <store> · w · q" } else { "" };
         let result = loop {
             let mut line = vec![Span::styled(lead.clone(), Style::default().fg(theme::t().hint)), Span::raw(buf.clone())];
             if buf.is_empty() && !hint.is_empty() {
-                line.push(Span::styled(hint, dim()));
+                line.push(Span::styled(hint.to_string(), dim()));
             }
             screen.input = vec![Line::default(), Line::from(line)];
             screen.cursor = Some(lead.chars().count() + buf.chars().count());
@@ -574,7 +573,7 @@ fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str))
             Act::NextModule => return Ok(Leave::Next),
             Act::Quit => return Ok(Leave::Quit),
             Act::QuitHint => note = Some((QUIT_HINT.to_string(), false)),
-            Act::Command => match ui.input(&mut screen, ":")?.as_deref() {
+            Act::Command => match ui.input(&mut screen, ":", "q")?.as_deref() {
                 None | Some("") => (),
                 Some("q" | "q!" | "wq" | "x") => return Ok(Leave::Quit),
                 Some(other) => note = Some((format!("unknown command :{}, here only :q", other), true)),
@@ -610,7 +609,7 @@ fn dump(ui: &mut Ui, here: &Cake, store: &str) -> Result<usize, Box<dyn Error>> 
             note: note.take(),
             ..Default::default()
         };
-        match ui.input(&mut screen, "idea:")? {
+        match ui.input(&mut screen, "idea:", "")? {
             Some(text) if !text.is_empty() => match ui.save(&mut screen, || here.call(&["add", "-m", &text]))? {
                 Ok(_) => added.push(text),
                 Err(e) => note = Some((e.to_string(), true)),
