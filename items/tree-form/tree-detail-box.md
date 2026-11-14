@@ -1,6 +1,6 @@
 ---
 id: tree-detail-box
-status: review
+status: task
 parent: "[[tree-form]]"
 created: 2026-11-14T12:56:54+01:00
 by: claude-code
@@ -18,3 +18,5 @@ time:
 - done when: scenario tests pass with the new keys, user tried it in the terminal
 
 changed: tree on top (navigation, o = hidden children only), box below with the full hovered row (fields, text, options); <tab>/<cr> focus into the box, <esc>/<tab> back; actions also from the tree; e opens the editor; auto next module after the last open item (config form_auto_next); sort renamed inbox (your config updated); review ◈ in its own color; O removed; commits: 6314e30; try: cake
+
+comment (claude-code, 2026-11-14): user (chat): o also one more parent; color per row kind like review; right columns with titles, colored, dimmer, with deadline — done in 35de9a9
