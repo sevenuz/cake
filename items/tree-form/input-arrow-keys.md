@@ -1,11 +1,12 @@
 ---
 id: input-arrow-keys
-status: review
+status: done
 parent: "[[tree-form]]"
 created: 2026-11-14T20:51:28+01:00
 by: claude-code
 sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10]
 usage: {claude-opus-5-5: {in: 4, out: 1544, cache_read: 319185, cache_write: 4677}}
+closed: 2026-11-14T21:28:59+01:00
 assignee: ai
 owner: sevenuz
 time:
