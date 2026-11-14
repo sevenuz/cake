@@ -1,6 +1,6 @@
 ---
 id: tree-detail-box
-status: task
+status: doing
 parent: "[[tree-form]]"
 created: 2026-11-14T12:56:54+01:00
 by: claude-code
@@ -10,6 +10,7 @@ assignee: ai
 owner: sevenuz
 time:
   - 2026-11-14T12:56:54+01:00/2026-11-14T13:01:26+01:00
+  - 2026-11-14T13:09:11+01:00/
 ---
 # Detail box under the tree, focus with tab
 
