@@ -1,17 +1,16 @@
 ---
 id: last-tab-whole-tree
-status: doing
+status: review
 parent: "[[tree-form]]"
 created: 2026-11-14T20:51:28+01:00
 by: claude-code
 sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10]
 usage: {claude-opus-5-5: {in: 10, out: 4917, cache_read: 764562, cache_write: 8756}}
-closed: 2026-11-14T21:29:07+01:00
 assignee: ai
 owner: sevenuz
 time:
   - 2026-11-14T21:13:31+01:00/2026-11-14T21:15:01+01:00
-  - 2026-11-14T22:45:08+01:00/
+  - 2026-11-14T22:45:08+01:00/2026-11-14T22:46:13+01:00
 ---
 # Last tab: whole tree with details box at the bottom
 
@@ -23,3 +22,5 @@ time:
 changed: after the last module the form opens the tab ALL instead of the end card: every open item of the store as one tree, details box below; long trees scroll with the box fixed at the bottom; c/dd/w/p and :due etc. work there; the title line says what this run decided; l there says it is the last tab, h goes back, :q quits; empty store: the old end card; scenario test; commits: 9350db8; try: cake form, l past the last module
 
 comment (claude-code, 2026-11-14): q quits on the last tab (no :q needed there); ALL shows in the header from the start, not only once you are on it
+
+changed (comment): the header lists all after the modules from the start; on the last tab plain q quits (elsewhere still :q); scenario tests for both; commits: 60f0177; try: cake form, see all in the header, l to it, q
