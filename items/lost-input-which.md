@@ -1,7 +1,6 @@
 ---
 id: lost-input-which
 status: done
-parent: "[[i-lost-my-input]]"
 created: 2026-11-14T00:48:26+01:00
 by: claude-code
 sessions: [09ab2c5e-817c-4232-99aa-cd89bfb2b546]
