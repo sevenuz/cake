@@ -1,6 +1,6 @@
 ---
 id: tree-edit-line
-status: review
+status: task
 parent: "[[tree-form]]"
 blocked_by: ["[[tree-widget]]", "[[edit-line-fields]]"]
 created: 2026-11-14T11:59:44+01:00
@@ -21,3 +21,5 @@ time:
 - done when: values set from the line land in the store; sort_who in config template; test with sort_who "-"
 
 changed: edit line under the cursor row in sort: status · who · prio · due · deadline, set values in the hint color, unset as –; t/n/dd/w/p and :due :deadline :who :prio set them; a field on an inbox item makes it a task; config sort_who (default ai, - nobody, me, a name) in the template; scenario test with sort_who -; commits: 21ed863; try: cake form sort, t on an inbox item: task ai
+
+comment (sevenuz, 2026-11-14): that needs to be discussed
