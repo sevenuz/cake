@@ -6,6 +6,7 @@ blocked_by: ["[[tree-widget]]", "[[tree-sticky]]"]
 created: 2026-11-14T11:59:44+01:00
 by: claude-code
 sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a]
+usage: {claude-opus-5-5: {in: 0, out: 210, cache_read: 68242, cache_write: 419}}
 assignee: ai
 owner: sevenuz
 time:
