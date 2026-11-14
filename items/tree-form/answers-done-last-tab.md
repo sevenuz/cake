@@ -1,11 +1,12 @@
 ---
 id: answers-done-last-tab
-status: review
+status: done
 parent: "[[tree-form]]"
 created: 2026-11-14T20:51:27+01:00
 by: claude-code
 sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10]
 usage: {claude-opus-5-5: {in: 16, out: 3859, cache_read: 1026552, cache_write: 6338}}
+closed: 2026-11-14T21:27:19+01:00
 assignee: ai
 owner: sevenuz
 time:
