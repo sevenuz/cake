@@ -352,7 +352,7 @@ pub enum Commands {
         message: Option<String>,
     },
     /// the form (also plain `cake`): config `form` modules, or only these:
-    /// news sort answer review mine triage dump; -g: all stores
+    /// news sort answer review mine dump; -g: all stores
     Form {
         modules: Vec<String>,
     },
@@ -699,8 +699,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 Some(Commands::Form { modules }) if !modules.is_empty() => modules.clone(),
                 _ => config.form.clone(),
             };
-            let triage = aliases.contains_key("triage");
-            let options = form::Options { modules, all: cli.global, width: config.form_width, triage, keys: config.keys.clone() };
+            let options = form::Options { modules, all: cli.global, width: config.form_width, keys: config.keys.clone() };
             return form::run(&root, &config.user(&root), options);
         }
         _ => (),

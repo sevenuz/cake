@@ -1,5 +1,5 @@
 //! `cake` / `cake form`: a guided pass over what needs you, made of
-//! modules (news, sort, answer, review, mine, triage, dump) run in the
+//! modules (news, sort, answer, review, mine, dump) run in the
 //! configured order or one by one. Every change runs as its own `cake`
 //! call, so agents keep working while you think.
 
@@ -255,11 +255,11 @@ fn header(names: &[String], counts: &[usize], step: usize, handled: usize, total
             if n > 0 {
                 steps.push(Span::styled(" · ", dim()));
             }
-            // the count says where something waits; triage and dump have none
-            let count = counts.get(n).filter(|_| !matches!(name.as_str(), "triage" | "dump")).map_or(String::new(), |c| format!(" {}", c));
+            // the count says where something waits; dump has none
+            let count = counts.get(n).filter(|_| name != "dump").map_or(String::new(), |c| format!(" {}", c));
             steps.push(if n == step {
                 Span::styled(format!("{}{}", name.to_uppercase(), count), bold().fg(step_color(n)))
-            } else if counts.get(n) == Some(&0) && !matches!(name.as_str(), "triage" | "dump") {
+            } else if counts.get(n) == Some(&0) && name != "dump" {
                 Span::styled(format!("{}{}", name, count), dim())
             } else {
                 Span::styled(format!("{}{}", name, count), Style::default().fg(step_color(n)))
@@ -554,9 +554,9 @@ fn tree_lines(
 }
 
 /// the modules a form can run, in their default order
-pub const MODULES: &[&str] = &["news", "sort", "answer", "review", "mine", "triage"];
+pub const MODULES: &[&str] = &["news", "sort", "answer", "review", "mine"];
 /// all known modules (dump is optional)
-const KNOWN: &[&str] = &["news", "sort", "answer", "review", "mine", "triage", "dump"];
+const KNOWN: &[&str] = &["news", "sort", "answer", "review", "mine", "dump"];
 
 /// when the form last ran in a store (for news), in the local state dir
 fn last_run_file(root: &Path) -> Option<PathBuf> {
@@ -571,16 +571,11 @@ fn last_run(root: &Path) -> i64 {
     last_run_file(root).and_then(|f| std::fs::read_to_string(f).ok()).and_then(|s| s.trim().parse().ok()).unwrap_or(0)
 }
 
-/// a screen without items (empty module, triage, the end): waits for a
-/// module move or quit; <cr> counts as `go` when `go` is given
-fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, go: Option<&str>, fb: (&Cake, &str)) -> Result<Leave, Box<dyn Error>> {
+/// a screen without items (empty module, the end): waits for a
+/// module move or quit
+fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str)) -> Result<Leave, Box<dyn Error>> {
     let k = |a: Act| ui.keys.keys_of(a);
-    let mut parts = vec![];
-    if let Some(go) = go {
-        parts.push((k(Act::Confirm), go.to_string()));
-    }
-    parts.push((format!("{}/{}", k(Act::PrevModule), k(Act::NextModule)), "module".into()));
-    parts.push((k(Act::Quit), "quit".into()));
+    let parts = [(format!("{}/{}", k(Act::PrevModule), k(Act::NextModule)), "module".to_string()), (k(Act::Quit), "quit".to_string())];
     let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
     let mut help = false;
     let mut note = None;
@@ -603,7 +598,6 @@ fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, go: Option<&str>, 
             Act::PrevModule => return Ok(Leave::Prev),
             Act::NextModule => return Ok(Leave::Next),
             Act::Quit => return Ok(Leave::Quit),
-            Act::Confirm if go.is_some() => return Ok(Leave::Done),
             Act::Help => help = true,
             _ => (),
         }
@@ -652,14 +646,12 @@ pub struct Options {
     pub all: bool,
     /// widest column, 0 none
     pub width: u16,
-    /// the triage alias exists
-    pub triage: bool,
     /// config `keys`: action -> keys in vim notation
     pub keys: std::collections::BTreeMap<String, String>,
 }
 
 /// runs the modules on `root` (with `all`: every known store); dump goes
-/// to `root`; triage runs `cake triage` after the form
+/// to `root`
 pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
     if let Some(bad) = o.modules.iter().find(|m| !KNOWN.contains(&m.as_str())) {
         return Err(error::invalid(format!("unknown form module '{}', use {}", bad, KNOWN.join(", "))));
@@ -691,7 +683,6 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
     let keymap = Keymap::new(&o.keys)?;
     let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap };
     let mut counts = vec![0usize; o.modules.len()];
-    let mut run_triage = false;
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the
         // direction of travel
@@ -702,29 +693,6 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
             let m = &o.modules[n];
             ui.step = n;
             let leave = match m.as_str() {
-                // never on its own: only <cr> here starts it
-                "triage" if o.triage => {
-                    let lines = vec![
-                        Line::from("Runs your triage alias (claude -p ...) for this store once the form closes."),
-                        Line::from(Span::styled("It can take a few minutes; its answer is printed here in the terminal.", dim())),
-                    ];
-                    let l = still(&mut ui, "triage", lines, Some("run triage, close the form"), (&Cake { root }, &stores[0].0))?;
-                    if l == Leave::Done {
-                        run_triage = true;
-                        return Ok(());
-                    }
-                    l
-                }
-                "triage" => still(
-                    &mut ui,
-                    "triage",
-                    vec![
-                        Line::from("No triage alias configured."),
-                        Line::from(Span::styled("config.default.hjson shows an example under aliases.", dim())),
-                    ],
-                    None,
-                    (&Cake { root }, &stores[0].0),
-                )?,
                 "dump" => {
                     counts[n] += dump(&mut ui, &Cake { root }, &stores[0].0)?;
                     Leave::Done
@@ -762,7 +730,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
             // an empty module is passed when the flow gets there by itself,
             // but shows when the user walks there with h/l
             let leave = if leave == Leave::Empty && walked {
-                still(&mut ui, &format!("{} · nothing here", m), vec![Line::from(Span::styled("Nothing waits here right now.", dim()))], None, (&Cake { root }, &stores[0].0))?
+                still(&mut ui, &format!("{} · nothing here", m), vec![Line::from(Span::styled("Nothing waits here right now.", dim()))], (&Cake { root }, &stores[0].0))?
             } else {
                 leave
             };
@@ -770,7 +738,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
             let leave = if n + 1 == o.modules.len() && matches!(leave, Leave::Next | Leave::Done | Leave::Empty) {
                 let summary: Vec<String> = o.modules.iter().zip(&counts).filter(|(_, c)| **c > 0).map(|(m, c)| format!("{} {}", m, c)).collect();
                 let text = if summary.is_empty() { "Nothing decided this time.".to_string() } else { format!("Decided: {}.", summary.join(", ")) };
-                match still(&mut ui, "end of the form", vec![Line::from(text), Line::from(Span::styled("q closes the form, h goes back.", dim()))], None, (&Cake { root }, &stores[0].0))? {
+                match still(&mut ui, "end of the form", vec![Line::from(text), Line::from(Span::styled("q closes the form, h goes back.", dim()))], (&Cake { root }, &stores[0].0))? {
                     Leave::Prev => Leave::Prev,
                     Leave::Quit => Leave::Quit,
                     _ => continue,
@@ -809,13 +777,6 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
     }
     result?;
     println!("{}", summary);
-    if run_triage {
-        println!("running cake triage ...");
-        let status = Command::new(exe()).arg("--store").arg(root).arg("triage").status()?;
-        if !status.success() {
-            return Err(error::invalid("cake triage failed"));
-        }
-    }
     Ok(())
 }
 

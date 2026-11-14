@@ -76,8 +76,8 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   status: ["mine", "others", "ready", "today", "review"]
   // own commands, may override built-ins for you (not for agents):
   // check: "ls --status review", ls: "ls --mine".
-  // A line starting with ! is a shell command, like in git. The form's
-  // triage step runs the `triage` alias; examples for Claude Code:
+  // A line starting with ! is a shell command, like in git, e.g. for
+  // Claude Code (run them yourself, `cake triage`, or from cron):
   //   triage: plans only, the AI may use nothing but cake:
   //     "!claude -p 'Triage this cake store with the cake skill: for tasks assigned to ai without subtasks, split them into subtasks or ask questions; apply answers and comments; do not implement anything; end with a short summary.' --max-turns 40 --allowedTools 'Bash(cake *)'"
   //   work: the full agent run; it edits code, so it needs Read, Edit,
@@ -94,10 +94,9 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   scrollview_threshold: 30
   // modules of `cake` in order: news (what agents did), sort (inbox and
   // tasks without assignee), answer (questions for you), review (your
-  // finished work), mine (your tasks), triage (runs the triage alias,
-  // only when you press enter there),
+  // finished work), mine (your tasks),
   // dump (type ideas into the inbox); `cake form review` runs one
-  form: ["news", "sort", "answer", "review", "mine", "triage"]
+  form: ["news", "sort", "answer", "review", "mine"]
   // widest column of the form, 0 the whole terminal
   form_width: 100
   // form keys, vim notation, several per action; defaults:

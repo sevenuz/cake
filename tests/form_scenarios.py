@@ -89,8 +89,8 @@ keys = [
     "i", "may", "jk", "2", "\r",
     # review: c is done
     "c",
-    # mine: hand the task to ai, save; triage (no alias) and the end screen
-    "w", "\r", "l", "l", "q",
+    # mine: hand the task to ai, save; the end screen stays on l
+    "w", "\r", "l", "q",
 ]
 form(keys)
 first, second = item("pass"), item("blog")
@@ -100,7 +100,7 @@ check("sort: the other one a note", note["status"] is None)
 check("answer: jk left the text, option 2 saved", item("raw")["status"] == "done" and "answer: b) with -d" in item("raw")["body"])
 check("review: c closed it", item("feat")["status"] == "done")
 check("mine: handed to ai", item("land")["assignee"] == "ai")
-decisions = len(keys) - 3  # the last three only walk to the end
+decisions = len(keys) - 2  # the last two only stay on the end screen
 print(f"keys: {decisions} for 6 decisions ({decisions / 6:.1f} per decision)")
 
 # the next day: what the agent did since, held back to the user
