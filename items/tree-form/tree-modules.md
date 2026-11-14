@@ -1,6 +1,6 @@
 ---
 id: tree-modules
-status: doing
+status: review
 parent: "[[tree-form]]"
 blocked_by: ["[[tree-widget]]", "[[tree-sticky]]", "[[tree-edit-line]]"]
 created: 2026-11-14T11:59:44+01:00
@@ -9,7 +9,7 @@ sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a]
 assignee: ai
 owner: sevenuz
 time:
-  - 2026-11-14T12:32:04+01:00/
+  - 2026-11-14T12:32:04+01:00/2026-11-14T12:32:04+01:00
 ---
 # News, review, mine on the tree
 
@@ -18,3 +18,5 @@ time:
 - what: news = new since last run; review = review items; mine = tasks assigned to the user; each with the edit line, save at once, ✓ sticky, u undo
 - remove the table code (src/form/table.rs) once nothing uses it; also closes here-parent-description-useful
 - done when: scenario test passes on all modules, screen dumps reviewed by the user
+
+changed: news, sort, review, mine on the tree too, no box: tree fills the screen and scrolls; edit line in news/sort/mine; review c/dd/i and <cr> card; news w hold, dd drop; mine s/c/dd/w/p/:due; table and card code, overview, f hints and } removed; commits: 0b0a56d; try: cake
