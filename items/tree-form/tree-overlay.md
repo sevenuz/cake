@@ -12,7 +12,7 @@ owner: sevenuz
 # Subtree overlay on A
 
 - why: the module only shows a slice; to read parents, siblings and their bodies the user needs the whole tree
-- what: `A` opens an overlay with the full tree from the root above the hovered item, same widget, all rows readable
-- keys: j/k, o fold, `<space>` body, `<cr>` close and jump to the item if the module has it, `<esc>`/`q` close
+- what: `O` opens an overlay with the full tree from the root above the hovered item, same widget, all rows readable
+- keys: j/k, open (`o <space>`) body and children, `<cr>` close and jump to the item if the module has it, `<esc>`/`q` close; `A` stays sort's decision for the rows below
 - read only
-- done when: scenario test opens A, reads a sibling's body, closes
+- done when: scenario test opens O, reads a sibling's body, closes
