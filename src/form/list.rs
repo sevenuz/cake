@@ -535,11 +535,12 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
     };
     let stores: Vec<String> = crate::stores::all()?.into_iter().map(|(n, _)| n).filter(|n| n != store).collect();
     let whos = who_cycle(root, user);
+    ui.module = kind.name();
     let mut st = State { cur_id: String::new(), opened: HashSet::new(), in_box: false, sel: 0, scroll: 0, help: false, note: None, saved: false };
     let mut decided = 0;
     let page = 10usize;
     loop {
-        let changed = ui.changed.entry(root.to_path_buf()).or_default().clone();
+        let changed = ui.changed.entry((root.to_path_buf(), kind.name())).or_default().clone();
         let results: std::collections::HashMap<String, String> =
             ui.results.iter().filter(|((r, _), _)| r == root).map(|((_, id), v)| (id.clone(), v.clone())).collect();
         let mut all = load(cake, &changed)?;
@@ -912,7 +913,7 @@ fn commit(
             return Ok(false);
         }
     };
-    let changed = ui.changed.entry(root.to_path_buf()).or_default();
+    let changed = ui.changed.entry((root.to_path_buf(), ui.module)).or_default();
     if let Change::Undo(_) = change {
         changed.remove(&id);
         ui.before.remove(&key);

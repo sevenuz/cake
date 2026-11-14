@@ -193,8 +193,10 @@ struct Ui {
     sort_who: String,
     /// go on after the last open item (config form_auto_next)
     auto_next: bool,
-    /// items changed this run per store: they stay in their module
-    changed: std::collections::HashMap<PathBuf, std::collections::HashSet<String>>,
+    /// items changed this run per store and module: they stay in that module
+    changed: std::collections::HashMap<(PathBuf, &'static str), std::collections::HashSet<String>>,
+    /// the module running now, the second key of `changed`
+    module: &'static str,
     /// how changed items were before, for undo
     before: std::collections::HashMap<(PathBuf, String), list::Before>,
     /// what a change gave per item (an answer, "sent back"), shown in the tree
@@ -676,7 +678,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), auto_next: o.auto_next, changed: Default::default(), before: Default::default(), results: Default::default(), order: Default::default() };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), auto_next: o.auto_next, changed: Default::default(), module: "", before: Default::default(), results: Default::default(), order: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the

@@ -128,14 +128,14 @@ cake("add", "s1", "-m", "# sticky one")
 cake("add", "s2", "-m", "# sticky two")
 
 
-def tmux_screen(keys):
+def tmux_screen(keys, args=()):
     """runs `cake` in a detached tmux session, types `keys`, returns the
     screen as text (the real screen: ratatui sends only changed cells)"""
     if not shutil.which("tmux"):
         return None
     name = f"cake-test-{os.getpid()}"
     env = " ".join(f"{k}={shlex.quote(v)}" for k, v in ENV.items() if k.startswith(("XDG_", "CAKE_")))
-    subprocess.run(["tmux", "new-session", "-d", "-s", name, "-x", "100", "-y", "30", "-c", STORE, f"env {env} {CAKE}"], check=True)
+    subprocess.run(["tmux", "new-session", "-d", "-s", name, "-x", "100", "-y", "30", "-c", STORE, f"env {env} {CAKE} {' '.join(args)}"], check=True)
     time.sleep(1.5)
     for k in keys:
         subprocess.run(["tmux", "send-keys", "-t", name, "-l", k])
@@ -184,6 +184,16 @@ for k in ["n", "\r", "j", "\r", "p", "1", "k", "o", ":q\r"]:
 os.waitpid(pid, 0)
 check("answer tree: <cr> j <cr> gave option 2", "answer: b) two" in item("qb")["body"])
 check("answer tree: p and 1 answered the first", "answer: a) one" in item("qa")["body"])
+
+# after the last answer: answered items stay in answer only, the form
+# passes the empty review and lands in mine
+cake("add", "w2", "--task", "--assignee", "claude-code", "-m", "# more work", agent=True)
+cake("add", "qc", "--task", "-p", "w2", "--assignee", "jul", "-m", "# third?\n\n- a) one\n- b) two", agent=True)
+cake("edit", "w2", "--blocked-by", "qc", agent=True)
+cake("add", "mine2", "--task", "--assignee", "me", "-m", "# a task of mine")
+landed = tmux_screen(["1"], args=("form", "answer", "review", "mine"))
+if landed is not None:
+    check("answer done: on to mine, not review with the answers", "your tasks" in landed and "third?" not in landed)
 
 # review: : sets fields of the item under review
 cake("add", "rv", "--task", "--assignee", "claude-code", "-m", "# to review", agent=True)
