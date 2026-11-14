@@ -1,6 +1,6 @@
 ---
 id: command-surface
-status: doing
+status: review
 tags: [cli]
 parent: "[[zcgwhr]]"
 created: 2026-11-14T01:11:22+01:00
@@ -23,3 +23,5 @@ time:
   form); usage and migrate hidden from help
 - remove the word morning and all German from the code
 - done when: 14 visible commands, tests and skill adapted
+
+changed: 14 commands (set, edit --tag/--blocked-by/--parent/--comment, aliases done/drop/do/note/review/ready), morning and German removed, usage/migrate hidden; commit 4e7ee97; try: cake --help
