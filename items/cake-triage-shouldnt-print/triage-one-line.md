@@ -1,0 +1,17 @@
+---
+id: triage-one-line
+status: task
+parent: "[[cake-triage-shouldnt-print]]"
+created: 2026-11-14T22:57:07+01:00
+by: claude-code
+sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10]
+assignee: ai
+owner: sevenuz
+---
+# Triage: one line out, usage on a triage note
+
+- why: `cake triage` prints the agent's whole output, which is already in the store; its cost is nowhere
+- decided (user, 2026-11-14): print one line: questions and tasks created, tokens, time; store the usage on one note per store tagged `triage` (created on first run), so stats show it
+- how: the alias runs `claude -p … --output-format json`; cake reads the result (usage, duration, last summary line) when the alias output is JSON
+- items created: count by agent and time window of the run
+- done when: `cake triage` prints one line; the triage note's usage grows per run
