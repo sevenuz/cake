@@ -253,11 +253,10 @@ pub(super) fn run(
                 (ks(Act::Help), "keys".into()),
             ],
             Kind::News => vec![
-                (ks(Act::Who), "who (hold: back to you)".into()),
-                (ks(Act::Drop), "drop".into()),
+                (ks(Act::NextModule), "go on".into()),
                 (ks(Act::Open), "open".into()),
-                (ks(Act::Confirm), "save".into()),
-                (format!("{}/{}", ks(Act::PrevModule), ks(Act::NextModule)), "module".into()),
+                (ks(Act::Who), "only if needed: hold (back to you)".into()),
+                (ks(Act::Drop), "stop it".into()),
             ],
             Kind::Mine => vec![
                 (format!("{}/{}/{}", ks(Act::Timer), ks(Act::Complete), ks(Act::Drop)), "start done drop".into()),
@@ -275,7 +274,7 @@ pub(super) fn run(
                 "{} · {}",
                 match kind {
                     Kind::Sort => "inbox and tasks without assignee",
-                    Kind::News => "what agents did since your last run",
+                    Kind::News => "what agents did since your last run, nothing to decide",
                     Kind::Mine => "your tasks",
                 },
                 store

@@ -209,6 +209,8 @@ struct Screen {
     focus: Option<usize>,
     /// the terminal cursor, columns into the last input line
     cursor: Option<usize>,
+    /// a text box over everything: (title, text so far); the cursor follows the text
+    overlay: Option<(String, String)>,
 }
 
 struct Ui {
@@ -290,6 +292,28 @@ impl Ui {
         self.draw(screen)?;
         let result = call();
         screen.note = None;
+        Ok(result)
+    }
+
+    /// a line of text in a box over the screen (feedback); None on esc
+    fn overlay(&mut self, screen: &mut Screen, title: &str) -> Result<Option<String>, Box<dyn Error>> {
+        let keys_before = std::mem::replace(&mut screen.keys, keys(&[("<cr>", "save"), ("<esc> jk", "cancel")]));
+        let mut buf = String::new();
+        let result = loop {
+            screen.overlay = Some((title.to_string(), buf.clone()));
+            self.draw(screen)?;
+            match self.keys.text()? {
+                TextKey::Submit => break Some(buf.trim().to_string()),
+                TextKey::Escape => break None,
+                TextKey::Backspace => {
+                    buf.pop();
+                }
+                TextKey::Char('\0') => (),
+                TextKey::Char(c) => buf.push(c),
+            }
+        };
+        screen.overlay = None;
+        screen.keys = keys_before;
         Ok(result)
     }
 
@@ -404,6 +428,19 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
         let s = if *error { Style::default().fg(theme::t().error) } else { dim() };
         f.render_widget(Paragraph::new(Span::styled(text.clone(), s)), note_a);
     }
+    if let Some((title, text)) = &screen.overlay {
+        let w = width.min(64).max(20);
+        let inner_w = w.saturating_sub(4).max(1) as usize;
+        let rows = (text.chars().count() / inner_w + 1) as u16;
+        let h = rows + 2;
+        let pop = Rect { x: col.x + (width - w) / 2, y: area.y + area.height.saturating_sub(h) / 2, width: w, height: h };
+        f.render_widget(Clear, pop);
+        let b = block.clone().border_style(Style::default().fg(theme::t().hint)).title(Span::styled(format!(" {} ", title), bold())).padding(Padding::horizontal(1));
+        let inside = b.inner(pop);
+        f.render_widget(Paragraph::new(text.clone()).wrap(Wrap { trim: false }).block(b), pop);
+        let n = text.chars().count();
+        f.set_cursor_position((inside.x + (n % inner_w) as u16, inside.y + (n / inner_w) as u16));
+    }
     if !screen.help.is_empty() {
         let lines: Vec<Line> = screen
             .help
@@ -428,7 +465,7 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
 /// F: feedback on this screen as a task for the AI (tag form-feedback),
 /// so it does not wait in the user's own inbox
 fn feedback(ui: &mut Ui, screen: &mut Screen, cake: &Cake, store: &str, place: &str) -> Result<(), Box<dyn Error>> {
-    if let Some(text) = ui.input(screen, "feedback on this screen:")?.filter(|t| !t.is_empty()) {
+    if let Some(text) = ui.overlay(screen, "feedback on this screen")?.filter(|t| !t.is_empty()) {
         let body = format!("# {}\n\n- where: {} ({})", text, place, store);
         match ui.save(screen, || cake.call(&["add", "--task", "--assignee", "ai", "-t", "form-feedback", "-m", &body]))? {
             Ok(_) => screen.note = Some(("feedback saved as a task for the AI".into(), false)),
@@ -536,7 +573,7 @@ fn last_run(root: &Path) -> i64 {
 
 /// a screen without items (empty module, triage, the end): waits for a
 /// module move or quit; <cr> counts as `go` when `go` is given
-fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, go: Option<&str>) -> Result<Leave, Box<dyn Error>> {
+fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, go: Option<&str>, fb: (&Cake, &str)) -> Result<Leave, Box<dyn Error>> {
     let k = |a: Act| ui.keys.keys_of(a);
     let mut parts = vec![];
     if let Some(go) = go {
@@ -546,17 +583,23 @@ fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, go: Option<&str>) 
     parts.push((k(Act::Quit), "quit".into()));
     let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
     let mut help = false;
+    let mut note = None;
     loop {
-        let screen = Screen {
+        let mut screen = Screen {
             card_title: title.to_string(),
             card: lines.clone(),
             keys: keys(&parts),
             help: if help { ui.keys.help() } else { vec![] },
+            note: note.take(),
             ..Default::default()
         };
         ui.draw(&screen)?;
         help = false;
         match ui.keys.act()? {
+            Act::Feedback => {
+                feedback(ui, &mut screen, fb.0, fb.1, title)?;
+                note = screen.note.take();
+            }
             Act::PrevModule => return Ok(Leave::Prev),
             Act::NextModule => return Ok(Leave::Next),
             Act::Quit => return Ok(Leave::Quit),
@@ -665,7 +708,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
                         Line::from("Runs your triage alias (claude -p ...) for this store once the form closes."),
                         Line::from(Span::styled("It can take a few minutes; its answer is printed here in the terminal.", dim())),
                     ];
-                    let l = still(&mut ui, "triage", lines, Some("run triage, close the form"))?;
+                    let l = still(&mut ui, "triage", lines, Some("run triage, close the form"), (&Cake { root }, &stores[0].0))?;
                     if l == Leave::Done {
                         run_triage = true;
                         return Ok(());
@@ -680,6 +723,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
                         Line::from(Span::styled("config.default.hjson shows an example under aliases.", dim())),
                     ],
                     None,
+                    (&Cake { root }, &stores[0].0),
                 )?,
                 "dump" => {
                     counts[n] += dump(&mut ui, &Cake { root }, &stores[0].0)?;
@@ -718,7 +762,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
             // an empty module is passed when the flow gets there by itself,
             // but shows when the user walks there with h/l
             let leave = if leave == Leave::Empty && walked {
-                still(&mut ui, &format!("{} · nothing here", m), vec![Line::from(Span::styled("Nothing waits here right now.", dim()))], None)?
+                still(&mut ui, &format!("{} · nothing here", m), vec![Line::from(Span::styled("Nothing waits here right now.", dim()))], None, (&Cake { root }, &stores[0].0))?
             } else {
                 leave
             };
@@ -726,7 +770,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
             let leave = if n + 1 == o.modules.len() && matches!(leave, Leave::Next | Leave::Done | Leave::Empty) {
                 let summary: Vec<String> = o.modules.iter().zip(&counts).filter(|(_, c)| **c > 0).map(|(m, c)| format!("{} {}", m, c)).collect();
                 let text = if summary.is_empty() { "Nothing decided this time.".to_string() } else { format!("Decided: {}.", summary.join(", ")) };
-                match still(&mut ui, "end of the form", vec![Line::from(text), Line::from(Span::styled("q closes the form, h goes back.", dim()))], None)? {
+                match still(&mut ui, "end of the form", vec![Line::from(text), Line::from(Span::styled("q closes the form, h goes back.", dim()))], None, (&Cake { root }, &stores[0].0))? {
                     Leave::Prev => Leave::Prev,
                     Leave::Quit => Leave::Quit,
                     _ => continue,
