@@ -1,6 +1,6 @@
 ---
 id: tree-answer
-status: task
+status: doing
 parent: "[[tree-form]]"
 blocked_by: ["[[tree-widget]]", "[[tree-sticky]]"]
 created: 2026-11-14T11:59:44+01:00
@@ -8,6 +8,8 @@ by: claude-code
 sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-14T12:32:04+01:00/
 ---
 # Answer module on the tree
 
