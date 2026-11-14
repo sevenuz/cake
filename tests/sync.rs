@@ -57,9 +57,9 @@ fn conflict_blocks_writes_until_resolved() {
     let b = env.repo("b");
     env.cake_ok(&b, &["init"]);
 
-    env.cake_ok(&a, &["tag", "one", "from-a"]);
+    env.cake_ok(&a, &["edit", "one", "--tag", "from-a"]);
     env.cake_ok(&a, &["sync"]);
-    env.cake_ok(&b, &["tag", "one", "from-b"]);
+    env.cake_ok(&b, &["edit", "one", "--tag", "from-b"]);
 
     assert!(env.cake_err(&b, &["sync"]).contains("items/one.md"));
     assert!(env.cake_err(&b, &["add", "-m", "# new"]).contains("items/one.md"));

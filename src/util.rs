@@ -38,12 +38,6 @@ mod tests {
 
 
     #[test]
-    fn test_vec_to_str() {
-        assert_eq!(vec_to_str(&vec!["1", "2", "3"]), "1, 2, 3");
-        assert_eq!(vec_to_str(&vec![1, 2, 3]), "1, 2, 3");
-    }
-
-    #[test]
     fn test_timestamp_round_trip() {
         assert_eq!(parse_timestamp(&format_timestamp(1678197184)).unwrap(), 1678197184);
         assert_eq!(parse_timestamp("2023-03-07T14:53:04+01:00").unwrap(), 1678197184);
@@ -114,7 +108,7 @@ mod tests {
         let fmt = |d: chrono::NaiveDate| d.format("%Y-%m-%d").to_string();
         assert_eq!(parse_date("2026-11-30").unwrap(), "2026-11-30");
         assert_eq!(parse_date("today").unwrap(), fmt(today));
-        assert_eq!(parse_date("Morgen").unwrap(), fmt(today + Duration::days(1)));
+        assert_eq!(parse_date("Tomorrow").unwrap(), fmt(today + Duration::days(1)));
         assert_eq!(parse_date("+3d").unwrap(), fmt(today + Duration::days(3)));
         assert_eq!(parse_date("2w").unwrap(), fmt(today + Duration::days(14)));
         assert_eq!(parse_date("1w2d").unwrap(), fmt(today + Duration::days(9)));
@@ -134,7 +128,7 @@ mod tests {
     #[test]
     fn slug_id_takes_the_first_words_without_stop_words() {
         assert_eq!(slug_id("Fix the merge driver for sync conflicts", |_| false), "fix-merge-driver-sync");
-        assert_eq!(slug_id("Größe prüfen!", |_| false), "größe-prüfen");
+        assert_eq!(slug_id("Café menu!", |_| false), "café-menu");
         assert_eq!(slug_id("the a", |_| false), "the-a");
         assert_eq!(slug_id("supercalifragilisticexpialidocious-and-more words", |_| false).chars().count(), 30);
     }
@@ -175,8 +169,7 @@ mod tests {
 const SLUG_WORDS: usize = 4;
 const SLUG_MAX: usize = 30;
 const STOP_WORDS: &[&str] = &[
-    "a", "an", "the", "to", "of", "in", "on", "for", "and", "or", "with", "is", "der", "die", "das", "und",
-    "oder", "mit", "zu", "von", "ein", "eine", "im", "am",
+    "a", "an", "the", "to", "of", "in", "on", "for", "and", "or", "with", "is",
 ];
 
 /// kebab-case id from the first words of `title`, `-2`, `-3` .. if `taken`;
@@ -277,8 +270,8 @@ pub fn parse_date(s: &str) -> Result<String, String> {
     let today = Local::now().date_naive();
     let lower = s.to_lowercase();
     let day = match lower.as_str() {
-        "today" | "heute" => Some(today),
-        "tomorrow" | "morgen" => Some(today + Duration::days(1)),
+        "today" => Some(today),
+        "tomorrow" => Some(today + Duration::days(1)),
         _ => None,
     };
     let weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -522,20 +515,3 @@ where
     true
 }
 
-/// joins vector with comma
-pub fn vec_to_str<T>(v: &Vec<T>) -> String
-where
-    T: std::fmt::Display,
-{
-    let mut res: String = "".to_string();
-    for s in v {
-        res += &s.to_string();
-        res += ", ";
-    }
-    if v.is_empty() {
-        "".to_string()
-    } else {
-        // remove last comma
-        res.strip_suffix(", ").unwrap().to_string()
-    }
-}

@@ -21,7 +21,7 @@ changed items record your session in `sessions`, commits are tagged
 - **Only through `cake`:** never edit `.cake/` files or run git in it.
 - **Plans and docs go into the store**, never as files in the repo.
 - **The user's text is theirs:** never edit the body of their items; add a
-  child or a comment (`cake comment`).
+  child or a comment (`cake edit <id> --comment …`).
 - **Work only on ready tasks assigned to you or to `ai`** (`cake ready`
   shows exactly those). Never sort the inbox: that is the user's.
 - **Short but complete:** titles ≤ 60 chars, bodies as bullets, no prose.
@@ -115,7 +115,7 @@ Context in 1–3 lines, only if needed.
 - a) in the task (recommended)
 - b) in a note
 EOF
-cake block <task> --by <question> --json
+cake edit <task> --blocked-by <question> --json
 ```
 
 - One question per item, title is the question (≤ 60 chars, ends with `?`).
@@ -126,31 +126,26 @@ cake block <task> --by <question> --json
 
 ```sh
 cake ls --json [selectors]              # tree: matches with children; -l adds bodies
-cake ready --json                       # ready tasks for you (agents: yours and ai)
+cake ready --json                       # = ls --ready: ready tasks (agents: yours and ai)
 cake show <id> --json                   # one item with body
 cake add [ID] --json [--task|--note] [-p ID] [--assignee WHO] [-t TAGS] [--blocked-by IDS] [--prio N] [--due D] [--deadline D] -m TEXT
-cake edit <id> --json -m -              # replace the body (your items only)
-cake edit <id> --json --prio 1 --due fri --deadline 30.11. --assignee ai   # 0 / - clear
+cake set <status> <ids> [-m TEXT] --json   # inbox note task doing review done dropped; -m appends
+# aliases: done, drop, do (task), note, review: `cake review <id> -m "changed …"`
+cake edit <ids> --json [-m BODY] [--prio N] [--due D] [--deadline D] [--assignee WHO] [--owner WHO]
+          [--tag a,~b] [--blocked-by x,~y] [--parent ID|-] [--comment TEXT]
+# -m replaces the body (your items only); --comment appends and gives it back to the assignee
 # dates: 2026-11-30, 30.11., today, tomorrow, mon..sun, +3d, 2w; stored as YYYY-MM-DD
 # who: me (the user), ai (any agent), an agent or person name, - nobody
 cake start|stop <id> --json             # timer; start sets doing
-cake review <id> -m "changed …" --json  # finished: the owner checks it
-cake comment <id> -m TEXT --json        # append, back to the assignee
-cake do|note <ids> --json               # task / plain note
-cake assign <ids> WHO --json
-cake done|drop <ids> [-m NOTE] --json   # -m appends (answer, reason)
-cake tag <ids> a,~b --json              # labels: add a, remove b
-cake mv <id> <parent|-> --json
-cake mv <id> --to-store <name|global|path> --json
-cake block <id> --by <ids> --json       # unblock removes
+cake mv <id> --to-store <name|global|path> --json   # with subtree, top-level there
 cake rm <ids> --json
 ```
 
 Ids: any unique prefix (≥ 2 chars); several ids space or comma separated.
-`cake tag` / `cake assign`: the last word are the tags / who. Selectors (and;
-`--or`): `-s TEXT`, `--status inbox,note,task,doing,review,done,dropped`,
-`-t tag,~not`, `-p PARENT`, `--assignee WHO`, `--mine`, `--by NAME`,
-`--ready`, `--blocked`, `--childless`, `-A` (with done/dropped).
+Selectors (and; `--or`): `-s TEXT`,
+`--status inbox,note,task,doing,review,done,dropped`, `-t tag,~not`,
+`-p PARENT`, `--assignee WHO`, `--mine`, `--by NAME`, `--ready`,
+`--blocked`, `--childless`, `-A` (with done/dropped).
 
 ## Output
 

@@ -199,18 +199,18 @@ fn decide(
                 let Some(text) = ui.input(&mut screen, prompt)?.filter(|t| !t.is_empty()) else { continue };
                 ui.save(&mut screen, || match kind {
                     Kind::Answer => {
-                        cake.call(&["done", &id, "-m", &format!("answer: {}", text)]).map(|_| (text.clone(), true))
+                        cake.call(&["set", "done", &id, "-m", &format!("answer: {}", text)]).map(|_| (text.clone(), true))
                     }
-                    Kind::Review => cake.call(&["comment", &id, "-m", &text]).map(|_| ("sent back".to_string(), false)),
+                    Kind::Review => cake.call(&["edit", &id, "--comment", &text]).map(|_| ("sent back".to_string(), false)),
                 })?
             }
             (Kind::Answer, n) => {
                 let answer = answer_text(&body, &options[n].0.to_string());
                 let note = format!("answer: {}", answer);
-                ui.save(&mut screen, || cake.call(&["done", &id, "-m", &note]).map(|_| (answer.clone(), true)))?
+                ui.save(&mut screen, || cake.call(&["set", "done", &id, "-m", &note]).map(|_| (answer.clone(), true)))?
             }
-            (Kind::Review, 0) => ui.save(&mut screen, || cake.call(&["done", &id]).map(|_| ("done".to_string(), true)))?,
-            (Kind::Review, _) => ui.save(&mut screen, || cake.call(&["drop", &id]).map(|_| ("dropped".to_string(), false)))?,
+            (Kind::Review, 0) => ui.save(&mut screen, || cake.call(&["set", "done", &id]).map(|_| ("done".to_string(), true)))?,
+            (Kind::Review, _) => ui.save(&mut screen, || cake.call(&["set", "dropped", &id]).map(|_| ("dropped".to_string(), false)))?,
         };
         match result {
             Ok((text, counted)) => {

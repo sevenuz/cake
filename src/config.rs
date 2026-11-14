@@ -113,7 +113,7 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   // tokens per item from agents (cake usage); false: the Claude hook does nothing
   usage_tracking: true
 
-  // order of ls/ready and the morning form: higher first
+  // order of ls, ready and the form: higher first
   score: {
     // hard deadline: deadline_today points on the day, +/- per day, capped
     deadline_today: 100
@@ -233,6 +233,15 @@ impl Config {
         let mut aliases: BTreeMap<String, String> = [
             ("inbox", "ls --status inbox"),
             ("check", "ls --status review"),
+            ("ready", "ls --ready"),
+            ("done", "set done"),
+            ("drop", "set dropped"),
+            ("do", "set task"),
+            ("task", "set task"),
+            ("todo", "set task"),
+            ("reopen", "set task"),
+            ("note", "set note"),
+            ("review", "set review"),
         ]
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))

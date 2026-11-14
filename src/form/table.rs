@@ -451,13 +451,13 @@ fn save(ui: &mut Ui, screen: &mut Screen, cake: &Cake, kind: Kind, rows: &[Row],
         let result = ui.save(screen, || -> Result<(), Box<dyn Error>> {
             match (kind, r.action) {
                 (Kind::Sort, Some("note")) => {
-                    cake.call(&["note", id])?;
+                    cake.call(&["set", "note", id])?;
                 }
                 (Kind::Sort, Some("drop")) | (Kind::News, Some("drop")) | (Kind::Mine, Some("drop")) => {
-                    cake.call(&["drop", id])?;
+                    cake.call(&["set", "dropped", id])?;
                 }
                 (Kind::Sort, Some("task")) => {
-                    cake.call(&["do", id])?;
+                    cake.call(&["set", "task", id])?;
                     let who = r.who.clone().unwrap_or_else(|| user.to_string());
                     let mut args = vec!["edit", id, "--assignee", who.as_str()];
                     let (due, deadline, prio) = (
@@ -475,7 +475,7 @@ fn save(ui: &mut Ui, screen: &mut Screen, cake: &Cake, kind: Kind, rows: &[Row],
                     cake.call(&["stop", id])?;
                 }
                 (Kind::Mine, Some("done")) => {
-                    cake.call(&["done", id])?;
+                    cake.call(&["set", "done", id])?;
                 }
                 (Kind::Mine, Some("assign")) => (),
                 _ => (),
@@ -483,10 +483,10 @@ fn save(ui: &mut Ui, screen: &mut Screen, cake: &Cake, kind: Kind, rows: &[Row],
             // a new who (news, mine; sort sets it with the task)
             if kind != Kind::Sort && r.who != r.orig_who {
                 if let Some(w) = &r.who {
-                    cake.call(&["assign", id, w])?;
+                    cake.call(&["edit", id, "--assignee", w])?;
                     // held back: a started item waits as a task
                     if kind == Kind::News && r.status == "doing" {
-                        cake.call(&["do", id])?;
+                        cake.call(&["set", "task", id])?;
                     }
                 }
             }

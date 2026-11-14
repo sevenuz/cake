@@ -77,7 +77,7 @@ cake("add", "blog", "-m", "# blog idea")
 cake("add", "sync", "--task", "--assignee", "ai", "-m", "# sync errors")
 cake("add", "hint", "--task", "-p", "sync", "--assignee", "claude-code", "-m", "# hint per error", agent=True)
 cake("add", "raw", "--task", "-p", "hint", "--assignee", "jul", "-m", "# raw message too?\n\n- a) always\n- b) with -d", agent=True)
-cake("block", "hint", "--by", "raw", agent=True)
+cake("edit", "hint", "--blocked-by", "raw", agent=True)
 cake("add", "feat", "--task", "-p", "sync", "--assignee", "claude-code", "-m", "# name the step\n\n- try: x", agent=True)
 cake("review", "feat", agent=True)
 cake("add", "land", "--task", "--assignee", "me", "-m", "# call landlord")
@@ -103,7 +103,7 @@ check("mine: handed to ai", item("land")["assignee"] == "ai")
 decisions = len(keys) - 3  # the last three only walk to the end
 print(f"keys: {decisions} for 6 decisions ({decisions / 6:.1f} per decision)")
 
-# the next morning: what the agent did since, held back to the user
+# the next day: what the agent did since, held back to the user
 time.sleep(1.1)
 cake("add", "new", "--task", "-p", "sync", "--assignee", "claude-code", "-m", "# a new subtask", agent=True)
 form(["w", "\r"] + ["l"] * 7 + ["q"])

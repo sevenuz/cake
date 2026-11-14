@@ -104,9 +104,9 @@ fn sync_reports_and_git_errors_are_coded() {
 
     let b = env.repo("b");
     ok(&env, &b, &["init"]);
-    ok(&env, &a, &["tag", "one", "from-a"]);
+    ok(&env, &a, &["edit", "one", "--tag", "from-a"]);
     assert_eq!(ok(&env, &a, &["sync"])["synced"], true);
-    ok(&env, &b, &["tag", "one", "from-b"]);
+    ok(&env, &b, &["edit", "one", "--tag", "from-b"]);
 
     assert_eq!(err_code(&env, &b, &["sync"]), "conflict");
     assert_eq!(err_code(&env, &b, &["add", "x", "-m", "x"]), "conflict");

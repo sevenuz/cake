@@ -149,7 +149,7 @@ fn asks_block_work_until_answered_with_done_m() {
     let d = env.plain_store();
     env.cake_ok(&d, &["add", "work", "--todo", "-m", "# Work"]);
     env.cake_ok(&d, &["add", "ask-db", "--todo", "-p", "work", "-t", "ask", "-m", "# Which db?\n\n- a) sqlite\n- b) files"]);
-    env.cake_ok(&d, &["block", "work", "--by", "ask-db"]);
+    env.cake_ok(&d, &["edit", "work", "--blocked-by", "ask-db"]);
     assert_eq!(json_ids(&env, &d, &["ready", "-t", "~ask"]), Vec::<String>::new());
     assert_eq!(json_ids(&env, &d, &["ready", "-t", "ask"]), vec!["ask-db"]);
 
@@ -277,7 +277,7 @@ fn workflow_v2_inbox_task_question_review_and_parent() {
     env.cake_ok(&d, &["add", "sync", "-m", "# Sync errors unclear"]);
     assert_eq!(ids(&["ls", "--status", "inbox"]), vec!["sync"]);
     env.cake_ok(&d, &["do", "sync"]);
-    env.cake_ok(&d, &["assign", "sync", "ai"]);
+    env.cake_ok(&d, &["edit", "sync", "--assignee", "ai"]);
     let item = read_item(&d, "sync");
     assert!(item.contains("status: task\n") && item.contains("assignee: ai\n") && item.contains("owner: "), "{}", item);
 
@@ -285,16 +285,16 @@ fn workflow_v2_inbox_task_question_review_and_parent() {
     env.cake_env(&d, &["add", "step", "--task", "-p", "sync", "--assignee", "claude-code", "-m", "# Name the step"], &ai);
     env.cake_env(&d, &["add", "hint", "--task", "-p", "sync", "--assignee", "claude-code", "-m", "# Hint per error"], &ai);
     env.cake_env(&d, &["add", "raw", "--task", "-p", "hint", "--assignee", "me", "-m", "# Raw message too?\n\n- a) yes\n- b) with -d"], &ai);
-    env.cake_env(&d, &["block", "hint", "--by", "raw"], &ai);
+    env.cake_env(&d, &["edit", "hint", "--blocked-by", "raw"], &ai);
     assert!(read_item(&d, "step").contains("owner: "), "owner inherited");
     assert_eq!(ids(&["ready", "--assignee", "claude-code"]), vec!["step"], "parent waits, hint blocked");
-    assert!(env.cake_err(&d, &["block", "step", "--by", "sync"]).contains("deadlock") || env.cake_err(&d, &["block", "step", "--by", "sync"]).contains("waits for it"));
+    assert!(env.cake_err(&d, &["edit", "step", "--blocked-by", "sync"]).contains("deadlock") || env.cake_err(&d, &["edit", "step", "--blocked-by", "sync"]).contains("waits for it"));
 
     // step goes to review, its sibling continues once the question is answered
     env.cake_env(&d, &["review", "step", "-m", "named"], &ai);
     env.cake_ok(&d, &["done", "raw", "-m", "b) with -d"]);
     assert_eq!(ids(&["ready", "--assignee", "claude-code"]), vec!["hint"], "the answered question is no part of hint's work");
-    env.cake_ok(&d, &["comment", "step", "-m", "shorter please"]);
+    env.cake_ok(&d, &["edit", "step", "--comment", "shorter please"]);
     let step = read_item(&d, "step");
     assert!(step.contains("status: task\n") && step.contains("comment (") && step.contains("): shorter please\n"), "{}", step);
 
@@ -365,11 +365,11 @@ fn assignees_are_checked_against_the_store_config() {
     let env = Env::new();
     let d = env.plain_store();
     env.cake_ok(&d, &["add", "t", "--task", "-m", "# t"]);
-    env.cake_ok(&d, &["assign", "t", "anyone"]);
+    env.cake_ok(&d, &["edit", "t", "--assignee", "anyone"]);
     std::fs::write(d.join(".cake/config.hjson"), "{ people: [\"bob\"], agents: [\"local\"] }").unwrap();
-    assert!(env.cake_err(&d, &["assign", "t", "anyone"]).contains("unknown assignee 'anyone'"));
-    env.cake_ok(&d, &["assign", "t", "local"]);
-    env.cake_ok(&d, &["assign", "t", "-"]);
+    assert!(env.cake_err(&d, &["edit", "t", "--assignee", "anyone"]).contains("unknown assignee 'anyone'"));
+    env.cake_ok(&d, &["edit", "t", "--assignee", "local"]);
+    env.cake_ok(&d, &["edit", "t", "--assignee", "-"]);
     assert!(!read_item(&d, "t").contains("assignee:"));
 }
 
@@ -401,14 +401,14 @@ fn block_unblock_and_ready() {
     env.cake_ok(&d, &["add", "ccc", "--todo", "-m", "# c"]);
     env.cake_ok(&d, &["add", "nnn", "-m", "# a note"]);
 
-    env.cake_ok(&d, &["block", "ccc", "--by", "aaa,bbb"]);
+    env.cake_ok(&d, &["edit", "ccc", "--blocked-by", "aaa,bbb"]);
     assert!(read_item(&d, "ccc").contains("blocked_by: [\"[[aaa]]\", \"[[bbb]]\"]\n"));
-    assert!(env.cake_err(&d, &["block", "aaa", "--by", "ccc"]).contains("cycle"));
+    assert!(env.cake_err(&d, &["edit", "aaa", "--blocked-by", "ccc"]).contains("cycle"));
 
     assert_eq!(json_ids(&env, &d, &["ready"]), vec!["bbb", "aaa"], "prio 1 first, no blocked, no notes");
 
     env.cake_ok(&d, &["done", "aaa"]);
-    env.cake_ok(&d, &["unblock", "ccc", "--by", "bbb"]);
+    env.cake_ok(&d, &["edit", "ccc", "--blocked-by", "~bbb"]);
     assert!(json_ids(&env, &d, &["ready"]).contains(&"ccc".to_string()));
 }
 
@@ -493,7 +493,7 @@ fn parallel_commands_wait_for_the_lock_and_all_commit() {
         let (x, y) = (format!("a{}", i), format!("b{}", i));
         std::thread::scope(|s| {
             let t1 = s.spawn(|| env.cake(&a, &["add", &x, "--todo", "-m", "# x"]));
-            let t2 = s.spawn(|| env.cake(&a, &["tag", "a0", &format!("t{}", i)]));
+            let t2 = s.spawn(|| env.cake(&a, &["edit", "a0", "--tag", &format!("t{}", i)]));
             let t3 = s.spawn(|| env.cake(&a, &["add", &y, "--todo", "-m", "# y"]));
             for out in [t1.join().unwrap(), t3.join().unwrap()] {
                 assert!(out.status.success(), "{}", stderr(&out));
@@ -518,9 +518,9 @@ fn agent_sessions_are_recorded_on_changed_items() {
         assert!(out.status.success(), "{}", stderr(&out));
     };
     run(&["add", "x", "--todo", "-m", "# x"], "s1");
-    run(&["tag", "x", "a"], "s1");
+    run(&["edit", "x", "--tag", "a"], "s1");
     run(&["done", "x"], "s2");
-    env.cake_ok(&d, &["tag", "x", "b"]);
+    env.cake_ok(&d, &["edit", "x", "--tag", "b"]);
     assert!(read_item(&d, "x").contains("\nsessions: [s1, s2]\n"), "{}", read_item(&d, "x"));
 }
 
@@ -668,7 +668,7 @@ fn id_prefixes_work_everywhere_and_ls_shows_short_ids() {
 
     env.cake_ok(&d, &["done", "abc"]);
     env.cake_ok(&d, &["mv", "abx", "km"]);
-    env.cake_ok(&d, &["block", "km", "--by", "abx"]);
+    env.cake_ok(&d, &["edit", "km", "--blocked-by", "abx"]);
     assert!(read_item(&d, "abcdef").contains("status: done"));
     assert!(read_item(&d, "abxyzq").contains("parent: \"[[kmnpqr]]\""));
     assert!(read_item(&d, "kmnpqr").contains("blocked_by: [\"[[abxyzq]]\"]"));

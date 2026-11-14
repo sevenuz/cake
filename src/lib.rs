@@ -259,9 +259,12 @@ pub enum Commands {
         #[arg(long, value_name = "IDS")]
         blocked_by: Option<String>,
     },
-    /// edit the item file in the editor, or change body/priority/dates directly
+    /// change items: body, dates, priority, who, tags, blockers, parent,
+    /// comments; without options one item opens in the editor
     Edit {
-        id: String,
+        /// item ids, space or comma separated
+        #[arg(required = true, num_args = 1..)]
+        ids: Vec<String>,
 
         /// replace the body, - reads stdin; frontmatter stays
         #[arg(short, long)]
@@ -286,6 +289,22 @@ pub enum Commands {
         /// who reviews it, - clears
         #[arg(long, value_name = "WHO")]
         owner: Option<String>,
+
+        /// labels: a,b adds, ~a removes
+        #[arg(short, long, value_name = "TAGS")]
+        tag: Option<String>,
+
+        /// order: x,y must be closed first, ~x removes x
+        #[arg(long, value_name = "IDS")]
+        blocked_by: Option<String>,
+
+        /// move under this item, - to the top level
+        #[arg(short, long, value_name = "ID")]
+        parent: Option<String>,
+
+        /// append a comment, back to the assignee; - reads stdin
+        #[arg(short, long, value_name = "TEXT")]
+        comment: Option<String>,
     },
     /// show an item, or any markdown file
     Show {
@@ -308,15 +327,6 @@ pub enum Commands {
     },
     /// one line for prompts and tmux: your timers, others' timers, ready, today
     Status {},
-    /// list open items without open blockers, by priority and due
-    Ready {
-        #[command(flatten)]
-        selector: SelectorArgs,
-
-        /// all fields and the body, also in json
-        #[arg(short, long)]
-        long: bool,
-    },
     /// start the timer, sets status doing
     Start {
         #[command(flatten)]
@@ -327,8 +337,13 @@ pub enum Commands {
         #[command(flatten)]
         selector: SelectorArgs,
     },
-    /// set status done, stops the timer; -m appends a closing note (e.g. an answer)
-    Done {
+    /// set the status: inbox, note, task, doing, review, done, dropped;
+    /// -m appends (an answer, a reason, what changed); aliases: done, drop,
+    /// do, note, review
+    Set {
+        #[arg(value_name = "STATUS")]
+        to: String,
+
         #[command(flatten)]
         selector: SelectorArgs,
 
@@ -336,74 +351,20 @@ pub enum Commands {
         #[arg(short, long)]
         message: Option<String>,
     },
-    /// set status dropped, stops the timer; -m appends the reason
-    Drop {
-        #[command(flatten)]
-        selector: SelectorArgs,
-
-        /// appended to the body, - reads stdin
-        #[arg(short, long)]
-        message: Option<String>,
-    },
-    /// make it a task (you become its owner); also reopens
-    #[command(name = "do", visible_aliases(["task", "todo", "reopen"]))]
-    Todo {
-        #[command(flatten)]
-        selector: SelectorArgs,
-    },
-    /// keep it as a note: knowledge, idea, rule, nothing to do
-    Note {
-        #[command(flatten)]
-        selector: SelectorArgs,
-    },
-    /// finished: the owner checks it; -m appends what changed and how to try it
-    Review {
-        #[command(flatten)]
-        selector: SelectorArgs,
-
-        /// appended to the body, - reads stdin
-        #[arg(short, long)]
-        message: Option<String>,
-    },
-    /// who does it: cake assign [IDS] WHO (me, ai, an agent, a person, -)
-    Assign {
-        #[command(flatten)]
-        selector: SelectorArgs,
-
-        /// the last positional word
-        #[arg(skip)]
-        who: Option<String>,
-    },
-    /// append a comment and give the item back to its assignee
-    Comment {
-        id: String,
-
-        /// the comment, - reads stdin
-        #[arg(short, long)]
-        message: Option<String>,
-    },
-    /// add tags, ~tag removes: cake tag [IDS] TAGS (the last word are the tags)
-    Tag {
-        #[command(flatten)]
-        selector: SelectorArgs,
-
-        /// tags to add, ~tag to remove: the last positional word
-        #[arg(skip)]
-        new_tags: Option<String>,
-    },
-    /// the form: config `form` modules in order; -g: all stores
-    Morning {},
-    /// run only these form modules: news sort answer review mine triage dump
+    /// the form (also plain `cake`): config `form` modules, or only these:
+    /// news sort answer review mine triage dump; -g: all stores
     Form {
         modules: Vec<String>,
     },
     /// move a store from the tag based workflow to inbox/task/review with
     /// assignees; shows the changes, --apply makes them
+    #[command(hide = true)]
     Migrate {
         #[arg(long)]
         apply: bool,
     },
     /// tokens per item, with an energy, CO2e and water estimate in show
+    #[command(hide = true)]
     Usage {
         #[command(subcommand)]
         action: UsageAction,
@@ -417,18 +378,6 @@ pub enum Commands {
         /// store name from stores.json, `global`, or a path; top-level there
         #[arg(long, value_name = "STORE")]
         to_store: Option<String>,
-    },
-    /// add items that must be closed first
-    Block {
-        id: String,
-        #[arg(long, value_name = "IDS")]
-        by: String,
-    },
-    /// remove blockers
-    Unblock {
-        id: String,
-        #[arg(long, value_name = "IDS")]
-        by: String,
     },
     /// remove items
     #[command(visible_alias("rm"))]
@@ -464,13 +413,37 @@ impl Commands {
             *id = store.resolve(id)?;
             Ok(())
         };
+        // "a,~b": resolve the ids, keep the ~
+        let marked = |list: &mut String| -> Result<(), Box<dyn Error>> {
+            let parts: Result<Vec<String>, Box<dyn Error>> = list
+                .split(',')
+                .map(|p| p.trim())
+                .filter(|p| !p.is_empty())
+                .map(|p| match p.strip_prefix('~') {
+                    Some(r) => Ok(format!("~{}", store.resolve(r)?)),
+                    None => store.resolve(p),
+                })
+                .collect();
+            *list = parts?.join(",");
+            Ok(())
+        };
         match self {
             Commands::Add { children, parents, blocked_by, .. } => {
                 resolve_opt(store, children)?;
                 resolve_opt(store, parents)?;
                 resolve_opt(store, blocked_by)?;
             }
-            Commands::Edit { id, .. } => one(id)?,
+            Commands::Edit { ids, blocked_by, parent, .. } => {
+                for id in ids.iter_mut() {
+                    one(id)?;
+                }
+                if let Some(b) = blocked_by {
+                    marked(b)?;
+                }
+                if let Some(p) = parent.as_mut().filter(|p| *p != "-") {
+                    one(p)?;
+                }
+            }
             Commands::Show { target } if store.resolve(target).map_or(false, |t| store.get_item(&t).is_some()) => {
                 one(target)?
             }
@@ -481,61 +454,28 @@ impl Commands {
                     one(p)?;
                 }
             }
-            Commands::Block { id, by } | Commands::Unblock { id, by } => {
-                one(id)?;
-                *by = store.resolve_list(by)?;
-            }
-            // with one positional only, `tag` treats it as the tags
-            Commands::Tag { selector, new_tags } if new_tags.is_none() => {
-                resolve_opt(store, &mut selector.children)?;
-                resolve_opt(store, &mut selector.parents)?;
-            }
             Commands::Remove { selector }
-            | Commands::Tag { selector, .. }
             | Commands::Start { selector }
             | Commands::Stop { selector }
-            | Commands::Done { selector, .. }
-            | Commands::Drop { selector, .. }
-            | Commands::Todo { selector }
-            | Commands::Note { selector }
-            | Commands::Review { selector, .. }
-            | Commands::Assign { selector, .. }
-            | Commands::List { selector, .. }
-            | Commands::Ready { selector, .. } => selector.resolve(store, user)?,
-            Commands::Comment { id, .. } => one(id)?,
+            | Commands::Set { selector, .. }
+            | Commands::List { selector, .. } => selector.resolve(store, user)?,
             _ => (),
         }
         Ok(())
     }
 
-    /// joins positional ids; for tag the last word holds the tags
+    /// joins positional ids (space or comma separated)
     fn normalize(&mut self) {
         let join = |w: &[String]| (!w.is_empty()).then(|| w.join(","));
         match self {
-            Commands::Tag { selector, new_tags } => {
-                let w = std::mem::take(&mut selector.words);
-                if w.len() >= 2 {
-                    *new_tags = Some(w[w.len() - 1].clone());
-                    selector.ids = join(&w[..w.len() - 1]);
-                } else {
-                    selector.ids = join(&w);
-                }
-            }
-            Commands::Assign { selector, who } => {
-                let mut w = std::mem::take(&mut selector.words);
-                *who = w.pop();
-                selector.ids = join(&w);
+            Commands::Edit { ids, .. } => {
+                *ids = ids.iter().flat_map(|i| i.split(',')).map(|i| i.trim().to_string()).filter(|i| !i.is_empty()).collect();
             }
             Commands::Remove { selector }
             | Commands::Start { selector }
             | Commands::Stop { selector }
-            | Commands::Done { selector, .. }
-            | Commands::Drop { selector, .. }
-            | Commands::Todo { selector }
-            | Commands::Note { selector }
-            | Commands::Review { selector, .. }
-            | Commands::List { selector, .. }
-            | Commands::Ready { selector, .. } => {
+            | Commands::Set { selector, .. }
+            | Commands::List { selector, .. } => {
                 let w = std::mem::take(&mut selector.words);
                 selector.ids = join(&w);
             }
@@ -550,20 +490,11 @@ impl Commands {
             Commands::Add { .. }
                 | Commands::Edit { .. }
                 | Commands::Remove { .. }
-                | Commands::Tag { .. }
+                | Commands::Set { .. }
                 | Commands::Start { .. }
                 | Commands::Stop { .. }
                 | Commands::Mv { .. }
                 | Commands::Usage { .. }
-                | Commands::Block { .. }
-                | Commands::Unblock { .. }
-                | Commands::Done { .. }
-                | Commands::Drop { .. }
-                | Commands::Todo { .. }
-                | Commands::Note { .. }
-                | Commands::Review { .. }
-                | Commands::Assign { .. }
-                | Commands::Comment { .. }
                 | Commands::Migrate { apply: true }
         )
     }
@@ -696,7 +627,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     footprint::init(config.footprint.clone());
     store::init_weights(config.score.clone());
     let mut aliases = config.aliases(&guess_root(&args)?)?;
-    // agents and the morning form get the documented built-ins
+    // agents and the form get the documented built-ins
     if config.agent().is_some() || std::env::var_os(form::PLAIN_ENV).is_some() {
         let builtin: Vec<String> = Cli::command()
             .get_subcommands()
@@ -760,10 +691,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     // the form runs every change as its own cake call: no lock while waiting
     let interactive = std::io::stdin().is_terminal() && std::io::stdout().is_terminal() && !out::json();
     match &cli.command {
-        Some(Commands::Morning {}) | Some(Commands::Form { .. }) if !interactive => {
+        Some(Commands::Form { .. }) if !interactive => {
             return Err(error::invalid("the form needs a terminal and no --json."))
         }
-        Some(Commands::Morning {}) | Some(Commands::Form { .. }) | None if interactive => {
+        Some(Commands::Form { .. }) | None if interactive => {
             let modules = match &cli.command {
                 Some(Commands::Form { modules }) if !modules.is_empty() => modules.clone(),
                 _ => config.form.clone(),
@@ -778,6 +709,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     // editors and stdin are read before taking the lock, so other commands are
     // not blocked meanwhile and `cake show x --json | … | cake edit x -m -` works
     let mut message = None;
+    let mut comment = None;
     let mut edited = None;
     match &cli.command {
         Some(Commands::Add { message: m, .. }) => {
@@ -787,20 +719,24 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(Commands::Edit {
-            id,
+            ids,
             message: None,
             prio: None,
             due: None,
             deadline: None,
             assignee: None,
             owner: None,
-        }) => edited = Some(commands::edit_in_editor(&config, &root, id)?),
+            tag: None,
+            blocked_by: None,
+            parent: None,
+            comment: None,
+        }) if ids.len() == 1 => edited = Some(commands::edit_in_editor(&config, &root, &ids[0])?),
         // stdin may come from another cake command that needs the lock
-        Some(Commands::Edit { message: m, .. })
-        | Some(Commands::Done { message: m, .. })
-        | Some(Commands::Drop { message: m, .. })
-        | Some(Commands::Review { message: m, .. })
-        | Some(Commands::Comment { message: m, .. }) => message = read_message(m)?,
+        Some(Commands::Edit { message: m, comment: c, .. }) => {
+            message = read_message(m)?;
+            comment = read_message(c)?;
+        }
+        Some(Commands::Set { message: m, .. }) => message = read_message(m)?,
         _ => (),
     }
 
@@ -885,35 +821,64 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 blocked_by: util::split_comma_cleanup(blocked_by.to_owned().unwrap_or_default()),
             },
         )?,
-        Some(Commands::Edit { id, prio, due, deadline, assignee, owner, .. }) => commands::edit(
-            &debug,
-            &config,
-            &mut store,
-            id,
-            commands::EditOptions {
-                edited,
-                body: message,
-                priority: *prio,
-                due: due.to_owned(),
-                deadline: deadline.to_owned(),
-                assignee: assignee.as_deref().map(|w| config.who(&root, w)).transpose()?,
-                owner: owner.as_deref().map(|w| config.who(&root, w)).transpose()?,
-            },
-        )?,
+        Some(Commands::Edit { ids, prio, due, deadline, assignee, owner, tag, blocked_by, parent, .. }) => {
+            let fields = edited.is_some()
+                || message.is_some()
+                || prio.is_some()
+                || due.is_some()
+                || deadline.is_some()
+                || assignee.is_some()
+                || owner.is_some();
+            let assignee = assignee.as_deref().map(|w| config.who(&root, w)).transpose()?;
+            let owner = owner.as_deref().map(|w| config.who(&root, w)).transpose()?;
+            for id in ids {
+                store.get_item(id).ok_or_else(|| error::not_found(id))?;
+                if fields {
+                    commands::edit(
+                        &debug,
+                        &config,
+                        &mut store,
+                        id,
+                        commands::EditOptions {
+                            edited: edited.clone(),
+                            body: message.clone(),
+                            priority: *prio,
+                            due: due.to_owned(),
+                            deadline: deadline.to_owned(),
+                            assignee: assignee.clone(),
+                            owner: owner.clone(),
+                        },
+                    )?;
+                }
+                if let Some(t) = tag {
+                    store
+                        .get_item_mut(id)
+                        .unwrap()
+                        .append_tags(util::split_comma_tags(t.clone()))
+                        .remove_tags(util::split_comma_exclude_tags(t.clone()));
+                }
+                if let Some(b) = blocked_by {
+                    let (rm, add): (Vec<&str>, Vec<&str>) = b.split(',').filter(|x| !x.is_empty()).partition(|x| x.starts_with('~'));
+                    let rm: Vec<String> = rm.iter().map(|x| x[1..].to_string()).collect();
+                    let add: Vec<String> = add.iter().map(|x| x.to_string()).collect();
+                    if !add.is_empty() {
+                        store.block(id, &add)?;
+                    }
+                    if !rm.is_empty() {
+                        store.unblock(id, &rm)?;
+                    }
+                }
+                if let Some(p) = parent {
+                    store.move_item(id, (p != "-").then_some(p.as_str()))?;
+                }
+                if let Some(c) = &comment {
+                    commands::comment(&mut store, id, &config.author(&root), c)?;
+                }
+            }
+            commands::Report::Items(ids.clone())
+        }
         Some(Commands::Remove { selector }) => {
             commands::remove(debug, &mut &mut store, selector.selector(&selector.ids)?)?
-        }
-        Some(Commands::Tag { selector, new_tags }) => {
-            let mut i = &selector.ids;
-            let mut nt = new_tags;
-            // use ids for tags if only one option is set.
-            if i.is_none() && nt.is_none() {
-                return Err(error::invalid("You have to specify tags: cake tag [IDS] TAGS"));
-            } else if nt.is_none() {
-                nt = i;
-                i = new_tags;
-            }
-            commands::tag(debug, &mut &mut store, selector.selector(i)?, nt)?
         }
         Some(Commands::Start { selector }) => {
             if config.agent().is_some() {
@@ -936,52 +901,37 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             &commit_message(&args[1..], config.agent()),
         )?,
         Some(Commands::Mv { .. }) => unreachable!("clap requires a parent or --to-store"),
-        Some(Commands::Block { id, by }) => commands::block(debug, &mut store, id, by, false)?,
-        Some(Commands::Unblock { id, by }) => commands::block(debug, &mut store, id, by, true)?,
-        Some(Commands::Ready { selector, long }) => {
-            let mut selector = selector.selector(&selector.ids)?;
-            selector.ready = true;
-            // an agent sees its own tasks and those for any agent, and none
-            // while the reviews are full
-            if let Some(agent) = config.agent() {
-                if selector.assignee.is_empty() {
-                    selector.assignee = vec![agent, "ai".into()];
+        Some(Commands::Set { to, selector, .. }) => {
+            let selector = selector.selector(&selector.ids)?;
+            let name = if to == "drop" { "dropped" } else { to.as_str() };
+            match Status::parse(name).map_err(error::invalid)? {
+                None => commands::to_note(&mut store, selector)?,
+                Some(Status::Task) => {
+                    let report = commands::set_status(debug, &mut store, selector, Status::Task, message)?;
+                    commands::default_owner(&mut store, &report, &config.user(&root));
+                    report
                 }
+                Some(st) => commands::set_status(debug, &mut store, selector, st, message)?,
             }
-            match config.agent().and(commands::reviews_full(&store, &Config::store(&root)?)) {
-                Some(msg) => {
-                    say!("{}", msg);
-                    commands::Report::Brief(vec![])
-                }
-                None => commands::list(debug, &config, &mut store, selector, *long, false)?,
-            }
-        }
-        Some(Commands::Done { selector, .. }) => {
-            commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Done, message)?
-        }
-        Some(Commands::Drop { selector, .. }) => {
-            commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Dropped, message)?
-        }
-        Some(Commands::Todo { selector }) => {
-            let report = commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Task, None)?;
-            commands::default_owner(&mut store, &report, &config.user(&root));
-            report
-        }
-        Some(Commands::Note { selector }) => commands::to_note(&mut store, selector.selector(&selector.ids)?)?,
-        Some(Commands::Review { selector, .. }) => {
-            commands::set_status(debug, &mut store, selector.selector(&selector.ids)?, Status::Review, message)?
-        }
-        Some(Commands::Assign { selector, who }) => {
-            let who = who.as_deref().ok_or_else(|| error::invalid("Who? cake assign [IDS] WHO"))?;
-            commands::assign(&mut store, selector.selector(&selector.ids)?, config.who(&root, who)?)?
-        }
-        Some(Commands::Comment { id, .. }) => {
-            let text = message.ok_or_else(|| error::invalid("No comment, use -m TEXT (- for stdin)."))?;
-            commands::comment(&mut store, id, &config.author(&root), &text)?
         }
         Some(Commands::List { selector, long, all }) => {
             let mut selector = selector.selector(&selector.ids)?;
-            selector.rchildren = true;
+            if selector.ready {
+                // an agent sees its own tasks and those for any agent, and
+                // none while the reviews are full
+                if let Some(agent) = config.agent() {
+                    if selector.assignee.is_empty() {
+                        selector.assignee = vec![agent, "ai".into()];
+                    }
+                }
+                if let Some(msg) = config.agent().and(commands::reviews_full(&store, &Config::store(&root)?)) {
+                    say!("{}", msg);
+                    print_report(&store, commands::Report::Brief(vec![]));
+                    return Ok(());
+                }
+            } else {
+                selector.rchildren = true;
+            }
             commands::list(debug, &config, &mut store, selector, *long, *all)?
         }
         Some(Commands::Status {}) => commands::status(&config, &store)?,
@@ -989,7 +939,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Init {}) => commands::init(debug, &config, cli.global, cli.store.as_deref())?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
-        Some(Commands::Morning {}) | Some(Commands::Form { .. }) => unreachable!("handled before the lock"),
+        Some(Commands::Form { .. }) => unreachable!("handled before the lock"),
         Some(Commands::Migrate { apply }) => crate::migrate::run(&mut store, &config.user(&root), *apply)?,
         Some(Commands::Usage { action: UsageAction::Add { id, model, input, out, cache_read, cache_write } }) => {
             let u = item::Usage { input: *input, output: *out, cache_read: *cache_read, cache_write: *cache_write };
@@ -1106,41 +1056,28 @@ mod tests {
     }
 
     #[test]
-    fn ids_may_be_space_separated_and_tag_takes_the_last_word() {
+    fn set_takes_the_status_first_and_ids_space_or_comma_separated() {
         let parse = |args: &[&str]| {
             let mut cli = Cli::try_parse_from(args).unwrap();
             cli.command.as_mut().unwrap().normalize();
             cli.command.unwrap()
         };
-        match parse(&["cake", "done", "a", "b,c", "-m", "x"]) {
-            Commands::Done { selector, .. } => assert_eq!(selector.ids.as_deref(), Some("a,b,c")),
-            _ => panic!("expected done"),
-        }
-        match parse(&["cake", "tag", "a", "b", "x,~y"]) {
-            Commands::Tag { selector, new_tags } => {
-                assert_eq!(selector.ids.as_deref(), Some("a,b"));
-                assert_eq!(new_tags.as_deref(), Some("x,~y"));
-            }
-            _ => panic!("expected tag"),
-        }
-        assert!(matches!(parse(&["cake", "do", "a"]), Commands::Todo { .. }));
-        assert!(matches!(parse(&["cake", "todo", "a"]), Commands::Todo { .. }));
-    }
-
-    #[test]
-    fn tag_parses_ids_before_new_tags_and_flattened_selector_flags() {
-        let mut cli =
-            Cli::try_parse_from(["cake", "tag", "a,b", "x,y", "-t", "~z", "-rr", "--or"]).unwrap();
-        cli.command.as_mut().unwrap().normalize();
-        match cli.command {
-            Some(Commands::Tag { selector, new_tags }) => {
-                assert_eq!(selector.ids.as_deref(), Some("a,b"));
-                assert_eq!(new_tags.as_deref(), Some("x,y"));
+        match parse(&["cake", "set", "done", "a", "b,c", "-m", "x", "-t", "~z", "--or"]) {
+            Commands::Set { to, selector, message } => {
+                assert_eq!(to, "done");
+                assert_eq!(selector.ids.as_deref(), Some("a,b,c"));
                 assert_eq!(selector.tags.as_deref(), Some("~z"));
-                assert_eq!(selector.recursive, 2);
                 assert!(selector.or);
+                assert_eq!(message.as_deref(), Some("x"));
             }
-            _ => panic!("expected tag command"),
+            _ => panic!("expected set"),
+        }
+        match parse(&["cake", "edit", "a", "b,c", "--tag", "x,~y", "--blocked-by", "q", "--comment", "hi"]) {
+            Commands::Edit { ids, tag, blocked_by, comment, .. } => {
+                assert_eq!(ids, vec!["a", "b", "c"]);
+                assert_eq!((tag.as_deref(), blocked_by.as_deref(), comment.as_deref()), (Some("x,~y"), Some("q"), Some("hi")));
+            }
+            _ => panic!("expected edit"),
         }
     }
 }

@@ -209,31 +209,6 @@ where
     Ok(Report::Removed(ids))
 }
 
-pub fn tag<F>(
-    debug: F,
-    store: &mut Store,
-    selector: Selector,
-    tags: &Option<String>,
-) -> Result<Report, Box<dyn Error>>
-where
-    F: Fn(&str),
-{
-    debug(&format!("tag {:?} new_tags {:?}", selector, tags));
-    let ids = select(store, &selector)?;
-    for id in &ids {
-        store
-            .get_item_mut(id)
-            .unwrap()
-            .append_tags(util::split_comma_tags(
-                tags.to_owned().unwrap_or("".to_string()),
-            ))
-            .remove_tags(util::split_comma_exclude_tags(
-                tags.to_owned().unwrap_or("".to_string()),
-            ));
-    }
-    say!("{} tagged.", ids.len());
-    Ok(Report::Items(ids))
-}
 
 pub fn start<F>(debug: F, store: &mut Store, selector: Selector) -> Result<Report, Box<dyn Error>>
 where
@@ -359,28 +334,6 @@ where
     Ok(Report::Value(serde_json::json!({ "moved": ids, "store": target })))
 }
 
-/// adds or removes blockers of `id`
-pub fn block<F>(
-    debug: F,
-    store: &mut Store,
-    id: &str,
-    by: &str,
-    remove: bool,
-) -> Result<Report, Box<dyn Error>>
-where
-    F: Fn(&str),
-{
-    debug(&format!("block {:?} by {:?}, remove: {:?}", id, by, remove));
-    let blockers = util::split_comma_cleanup(by.to_owned());
-    if remove {
-        store.unblock(id, &blockers)?;
-    } else {
-        store.block(id, &blockers)?;
-    }
-    let left = store.get_item(id).unwrap().blocked_by();
-    say!("{} blocked by: {}", id, util::vec_to_str(left));
-    Ok(Report::Items(vec![id.to_owned()]))
-}
 
 pub fn set_status<F>(
     debug: F,
@@ -434,15 +387,6 @@ pub fn to_note(store: &mut Store, selector: Selector) -> Result<Report, Box<dyn 
     Ok(Report::Items(ids))
 }
 
-/// sets the assignee of the selected items
-pub fn assign(store: &mut Store, selector: Selector, who: Option<String>) -> Result<Report, Box<dyn Error>> {
-    let ids = select(store, &selector)?;
-    for id in &ids {
-        store.get_item_mut(id).unwrap().set_assignee(who.clone());
-    }
-    say!("{} assigned to {}.", ids.len(), who.as_deref().unwrap_or("nobody"));
-    Ok(Report::Items(ids))
-}
 
 /// appends "comment (user, date): text"; work in review or doing goes back
 /// to its assignee as a task
