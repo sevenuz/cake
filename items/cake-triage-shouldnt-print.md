@@ -3,6 +3,7 @@ id: cake-triage-shouldnt-print
 status: task
 created: 2026-11-14T11:22:41+01:00
 by: sevenuz
+assignee: ai
 owner: sevenuz
 ---
 cake triage shouldnt print all the output from the ai because this is in the store now. maybe just report how many tokens and how long it took, maybe a one liner from the ai. should we also report our triage usage somewhere?
