@@ -6,6 +6,7 @@ parent: "[[zcgwhr]]"
 created: 2026-11-14T01:11:22+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+usage: {claude-opus-5-5: {in: 48, out: 19181, cache_read: 20867867, cache_write: 36740}}
 assignee: claude-code
 owner: sevenuz
 time:
