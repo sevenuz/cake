@@ -1,0 +1,17 @@
+---
+id: time-per-goal
+status: task
+parent: "[[dashboard-we-should-have]]"
+created: 2026-11-14T11:18:51+01:00
+by: claude-code
+sessions: [4fa59fcd-dfb0-420a-8037-705b420d66a2]
+assignee: ai
+owner: sevenuz
+---
+# Time per goal for a period
+
+- why: the dashboard's pie needs tracked time summed per goal for the last day, week, month or year
+- sum each item's timer entries into its top-level goal (note tagged goal up the tree; items without one go to "other")
+- clip entries to the period (an entry crossing the start counts only its part inside); a running timer counts up to now
+- available as data for the dashboard, no new dependency
+- done when: tests for clipping, running timer, items without goal
