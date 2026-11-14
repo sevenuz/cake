@@ -171,6 +171,8 @@ struct Screen {
     card_active: bool,
     /// the terminal cursor, columns into the last input line
     cursor: Option<usize>,
+    /// the `:` line on the last row like vim: the line and the cursor column
+    cmdline: Option<(Line<'static>, usize)>,
     /// a text box over everything: (title, text so far, cursor in chars)
     overlay: Option<(String, String, usize)>,
 }
@@ -346,8 +348,12 @@ impl Ui {
             if buf.is_empty() && !hint.is_empty() {
                 line.push(Span::styled(hint.to_string(), dim()));
             }
-            screen.input = vec![Line::default(), Line::from(line)];
-            screen.cursor = Some(lead.chars().count() + buf.at);
+            if prompt == ":" {
+                screen.cmdline = Some((Line::from(line), lead.chars().count() + buf.at));
+            } else {
+                screen.input = vec![Line::default(), Line::from(line)];
+                screen.cursor = Some(lead.chars().count() + buf.at);
+            }
             self.draw(screen)?;
             match self.keys.text()? {
                 TextKey::Submit => break Some(buf.text().trim().to_string()),
@@ -357,6 +363,7 @@ impl Ui {
         };
         screen.input.clear();
         screen.cursor = None;
+        screen.cmdline = None;
         screen.keys = keys_before;
         Ok(result)
     }
@@ -473,7 +480,13 @@ fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Sc
         f.set_cursor_position((input_a.x + col as u16, (input_a.y + row as u16).min(input_a.bottom().saturating_sub(1))));
     }
     f.render_widget(Paragraph::new(screen.keys.clone()), keys_a);
-    if let Some((text, error)) = &screen.note {
+    if let Some((line, at)) = &screen.cmdline {
+        // the terminal's last row, whatever the layout above
+        let last = Rect { x: col.x, y: area.bottom().saturating_sub(1), width: col.width, height: 1 };
+        f.render_widget(Clear, last);
+        f.render_widget(Paragraph::new(line.clone()), last);
+        f.set_cursor_position((last.x + *at as u16, last.y));
+    } else if let Some((text, error)) = &screen.note {
         let s = if *error { Style::default().fg(theme::t().error) } else { dim() };
         f.render_widget(Paragraph::new(Span::styled(text.clone(), s)), note_a);
     }
@@ -879,8 +892,7 @@ mod tests {
         let screen = Screen {
             card_title: "sort".into(),
             card: vec![Line::from("a row")],
-            input: vec![Line::default(), Line::from(vec![Span::raw(":"), Span::raw("prio 2")])],
-            cursor: Some(":prio 2".len()),
+            cmdline: Some((Line::from(vec![Span::raw(":"), Span::raw("prio 2")]), ":prio 2".len())),
             ..Default::default()
         };
         let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 20)).unwrap();
@@ -894,6 +906,7 @@ mod tests {
         let start = line[..line.find(":prio 2").unwrap()].chars().count() as u16;
         let pos = term.get_cursor_position().unwrap();
         assert_eq!((pos.x, pos.y), (start + 7, row), "cursor right after the text");
+        assert_eq!(row, 19, "on the last row like vim");
     }
 
     #[test]
