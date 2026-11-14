@@ -1,12 +1,14 @@
 ---
 id: tree-widget
-status: task
+status: doing
 parent: "[[tree-form]]"
 created: 2026-11-14T11:59:44+01:00
 by: claude-code
 sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-14T12:06:00+01:00/
 ---
 # Tree widget shared by all modules
 
