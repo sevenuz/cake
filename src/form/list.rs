@@ -329,115 +329,62 @@ fn apply(cake: &Cake, item: &Value, change: &Change, user: &str, sort_who: Optio
     })
 }
 
-/// a column right of the tree
-#[derive(Clone, Copy, PartialEq, Debug)]
-enum Col {
-    What,
-    Status,
-    Who,
-    Prio,
-    Due,
-    Deadline,
-}
-
-impl Col {
-    fn title(self) -> &'static str {
-        match self {
-            Col::What => "what",
-            Col::Status => "status",
-            Col::Who => "who",
-            Col::Prio => "prio",
-            Col::Due => "due",
-            Col::Deadline => "deadline",
-        }
-    }
-
-    fn width(self) -> usize {
-        match self {
-            Col::What => 8,
-            Col::Status => 7,
-            Col::Who => 11,
-            Col::Prio => 4,
-            Col::Due => 6,
-            Col::Deadline => 8,
-        }
-    }
-}
-
-/// the columns of a module at `width`; narrow: no prio and deadline
-fn columns(kind: Kind, width: u16) -> Vec<Col> {
-    let mut c = vec![];
-    if kind == Kind::News {
-        c.push(Col::What);
-    }
-    c.extend([Col::Status, Col::Who]);
-    if width >= 80 {
-        c.extend([Col::Prio, Col::Due, Col::Deadline]);
-    } else {
-        c.push(Col::Due);
-    }
-    c
-}
-
-fn cols_width(cols: &[Col]) -> usize {
-    cols.iter().map(|c| c.width() + 1).sum()
-}
-
-/// the column titles, right-aligned over the columns of `width`
-fn cols_header(cols: &[Col], width: u16) -> Line<'static> {
-    let mut spans = vec![Span::raw(" ".repeat((width as usize).saturating_sub(cols_width(cols))))];
-    for c in cols {
-        spans.push(Span::styled(format!("{} ", cut(c.title(), c.width())), dim().add_modifier(Modifier::UNDERLINED)));
-    }
-    Line::from(spans)
-}
-
-/// the cells of an item: muted colors, red when late, all dim for context
-fn col_spans(cols: &[Col], i: &Value, user: &str, since: i64, context: bool) -> Vec<Span<'static>> {
+/// the set values of an item after its title, ` · ` between them, in the
+/// colors of the `:` hint: what (news), status when the mark does not say
+/// enough, who, prio, due, deadline; late dates red, near ones yellow;
+/// context rows all dim
+fn fields(i: &Value, user: &str, since: i64, news: bool, context: bool) -> Vec<Span<'static>> {
     let t = theme::t();
     let today = chrono::Local::now().date_naive();
-    let date = |d: Option<&str>| -> (String, Style) {
-        let Some(d) = d else { return ("–".into(), dim()) };
+    let date = |name: &str, d: &str| -> (String, Style) {
         let style = match chrono::NaiveDate::parse_from_str(&d[..d.len().min(10)], "%Y-%m-%d") {
             Ok(x) if x < today => Style::default().fg(t.error),
             Ok(x) if (x - today).num_days() <= 2 => Style::default().fg(t.doing),
             _ => Style::default(),
         };
-        (short_date(d), style)
+        (format!("{}{}", name, short_date(d)), style)
     };
+    let mut parts: Vec<(String, Style)> = vec![];
+    if news {
+        if let Some(w) = news_what(i, user, since) {
+            parts.push((w.to_string(), Style::default().fg(t.hint)));
+        }
+    }
+    let status = match (str_of(i, "status"), i["running"].as_bool() == Some(true)) {
+        (_, true) => Some(("running", t.doing)),
+        ("doing", _) => Some(("doing", t.doing)),
+        ("review", _) => Some(("review", t.code)),
+        ("done", _) => Some(("done", t.ok)),
+        ("dropped", _) => Some(("dropped", t.dim)),
+        _ => None,
+    };
+    if let Some((s, c)) = status {
+        parts.push((s.to_string(), Style::default().fg(c)));
+    }
+    match who_of(i, user) {
+        Some(w) if w == "me" => parts.push((w, Style::default())),
+        Some(w) => parts.push((w, Style::default().fg(t.hint))),
+        None => (),
+    }
+    match i["priority"].as_u64() {
+        Some(1) => parts.push(("p1".into(), Style::default().fg(t.error))),
+        Some(2) => parts.push(("p2".into(), Style::default().fg(t.doing))),
+        Some(p) => parts.push((format!("p{}", p), Style::default())),
+        None => (),
+    }
+    if let Some(d) = i["due"].as_str() {
+        parts.push(date("due ", d));
+    }
+    if let Some(d) = i["deadline"].as_str() {
+        parts.push(date("deadline ", d));
+    }
     let mut out = vec![];
-    for c in cols {
-        let (text, style) = match c {
-            Col::What => (news_what(i, user, since).unwrap_or("").to_string(), Style::default().fg(t.hint)),
-            Col::Status => {
-                let s = i["status"].as_str().unwrap_or("note");
-                let style = match s {
-                    "inbox" => Style::default().fg(t.hint),
-                    "doing" => Style::default().fg(t.doing),
-                    "review" => Style::default().fg(t.code),
-                    "done" => Style::default().fg(t.ok),
-                    "task" => Style::default(),
-                    _ => dim(),
-                };
-                (if i["running"].as_bool() == Some(true) { "running".to_string() } else { s.to_string() }, style)
-            }
-            Col::Who => match who_of(i, user) {
-                Some(w) if w == "me" => (w, Style::default()),
-                Some(w) => (w, Style::default().fg(t.hint)),
-                None => ("–".into(), dim()),
-            },
-            Col::Prio => match i["priority"].as_u64() {
-                Some(1) => ("1".into(), Style::default().fg(t.error)),
-                Some(2) => ("2".into(), Style::default().fg(t.doing)),
-                Some(p) => (p.to_string(), Style::default()),
-                None => ("–".into(), dim()),
-            },
-            Col::Due => date(i["due"].as_str()),
-            Col::Deadline => date(i["deadline"].as_str()),
-        };
+    for (n, (text, style)) in parts.into_iter().enumerate() {
+        if n > 0 {
+            out.push(Span::styled(style::g().sep, dim()));
+        }
         // muted: never bold; context rows all dim
-        let style = if context { dim() } else { style.add_modifier(Modifier::DIM) };
-        out.push(Span::styled(format!("{} ", cut(&text, c.width())), style));
+        out.push(Span::styled(text, if context { dim() } else { style.add_modifier(Modifier::DIM) }));
     }
     out
 }
@@ -576,8 +523,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         let n_opts = if with_options { card_of(kind, &item, &all).1.len() } else { 0 };
         let view = View { kind, user, since, results: &results };
         let width = column_width(ui.term.size()?.width, ui.max_width);
-        let cols = columns(kind, width);
-        let lines = tree.lines(&rows, cur, width, &|i, context| col_spans(&cols, i, user, since, context), cols_width(&cols), st.in_box);
+        let lines = tree.lines(&rows, cur, width, &|i, context| fields(i, user, since, kind == Kind::News, context), st.in_box);
         let (card_title, card, choices) = view.detail(&item, &all, editable, (st.in_box && with_options).then_some(st.sel), width);
         let k = &ui.keys;
         let ks = |a: Act| k.keys_of(a);
@@ -618,11 +564,11 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             (ks(Act::Help), "keys".into()),
         ]);
         let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
-        let mut tree_lines = vec![Line::from(Span::styled(format!("{} · {}", kind.title(), store), bold().fg(kind.accent().1))), cols_header(&cols, width)];
+        let mut tree_lines = vec![Line::from(Span::styled(format!("{} · {}", kind.title(), store), bold().fg(kind.accent().1)))];
         tree_lines.extend(lines);
         let mut screen = Screen {
             tree: tree_lines,
-            tree_focus: Some(cur + 2),
+            tree_focus: Some(cur + 1),
             card_title,
             card,
             choices,
@@ -982,6 +928,16 @@ mod tests {
     }
 
     #[test]
+    fn tree_fields_show_only_set_values() {
+        style::init("unicode");
+        let text = |i: &Value| Line::from(fields(i, "jul", 0, false, false)).to_string();
+        let i = json!({"id": "a", "status": "task", "assignee": "jul", "priority": 1, "due": "2026-11-20"});
+        assert_eq!(text(&i), "me · p1 · due 20.11.");
+        assert_eq!(text(&json!({"id": "a", "status": "inbox"})), "");
+        assert_eq!(text(&json!({"id": "a", "status": "review", "assignee": "claude-code"})), "review · claude-code");
+    }
+
+    #[test]
     fn rows_keep_the_first_seen_order() {
         let mut seen = std::collections::HashMap::new();
         let mut all = vec![json!({"id": "a"}), json!({"id": "b"}), json!({"id": "c"})];
@@ -1033,14 +989,13 @@ mod tests {
             for width in [60u16, 100] {
                 let inner = column_width(width, 100);
                 let it = tree.item(cur).unwrap();
-                let cols = columns(kind, inner);
                 let mut tree = Tree::new(&all, tree.matched.iter().cloned(), 2);
                 tree.accent = Some(kind.accent());
-                let lines = tree.lines(&rows, at, inner, &|i, c| col_spans(&cols, i, "jul", 0, c), cols_width(&cols), false);
+                let lines = tree.lines(&rows, at, inner, &|i, c| fields(i, "jul", 0, kind == Kind::News, c), false);
                 let (card_title, card, choices) = view.detail(it, &all, true, None, inner);
-                let mut tree_lines = vec![Line::from(Span::styled(format!("{} · cake", kind.title()), bold())), cols_header(&cols, inner)];
+                let mut tree_lines = vec![Line::from(Span::styled(format!("{} · cake", kind.title()), bold()))];
                 tree_lines.extend(lines);
-                let screen = Screen { tree: tree_lines, tree_focus: Some(at + 2), card_title, card, choices, keys: keys(&[("<tab>", "details"), ("e", "edit")]), ..Default::default() };
+                let screen = Screen { tree: tree_lines, tree_focus: Some(at + 1), card_title, card, choices, keys: keys(&[("<tab>", "details"), ("e", "edit")]), ..Default::default() };
                 super::super::screens::dump(kind.name(), width, &screen, 0);
             }
         }

@@ -118,9 +118,9 @@ impl<'a> Tree<'a> {
     }
 
     /// the lines of `rows` at `width`, the cursor on row `cur` (`dim_cursor`
-    /// while the focus is elsewhere); `cols` gives the right-hand columns
-    /// of an item (`right_w` wide; true: a context row); one line per row
-    pub fn lines(&self, rows: &[Row], cur: usize, width: u16, cols: &dyn Fn(&Value, bool) -> Vec<Span<'static>>, right_w: usize, dim_cursor: bool) -> Vec<Line<'static>> {
+    /// while the focus is elsewhere); `fields` gives what follows the title
+    /// (true: a context row); the title is cut so both fit; one line per row
+    pub fn lines(&self, rows: &[Row], cur: usize, width: u16, fields: &dyn Fn(&Value, bool) -> Vec<Span<'static>>, dim_cursor: bool) -> Vec<Line<'static>> {
         let (t, g) = (theme::t(), style::g());
         let w = width as usize;
         let mut out = vec![];
@@ -144,7 +144,10 @@ impl<'a> Tree<'a> {
                 title.push_str(&format!(" +{}", r.hidden));
             }
             let lead = format!("{} {}", if here { g.select } else { " " }, r.prefix);
-            let title = cut(&title, w.saturating_sub(lead.chars().count() + right_w + 1).max(8));
+            let after = fields(item, !r.editable);
+            let after_w: usize = after.iter().map(Span::width).sum();
+            let room = w.saturating_sub(lead.chars().count() + if after_w > 0 { after_w + 2 } else { 0 }).max(12);
+            let title = if title.chars().count() > room { cut(&title, room) } else { title };
             // module items in the module's color, done ones green, parents
             // dim, revealed children dim and slanted
             let base = if open {
@@ -161,8 +164,11 @@ impl<'a> Tree<'a> {
                 (true, true) => base.add_modifier(Modifier::BOLD),
                 _ => base,
             };
-            let mut spans = vec![Span::styled(lead, if here && !dim_cursor { bold().fg(t.hint) } else { dim() }), Span::styled(title, style), Span::raw(" ")];
-            spans.extend(cols(item, !r.editable));
+            let mut spans = vec![Span::styled(lead, if here && !dim_cursor { bold().fg(t.hint) } else { dim() }), Span::styled(title, style)];
+            if after_w > 0 {
+                spans.push(Span::raw("  "));
+                spans.extend(after);
+            }
             out.push(Line::from(spans));
         }
         out
@@ -257,7 +263,7 @@ mod tests {
         let mut tree = Tree::new(&all, ["d".to_string(), "e".to_string()], 1);
         tree.changed.insert("e".into());
         let rows = tree.rows();
-        let lines = tree.lines(&rows, 2, 60, &|i, _| vec![Span::raw(str_of(i, "id").to_string())], 1, false);
+        let lines = tree.lines(&rows, 2, 60, &|i, _| vec![Span::raw(str_of(i, "id").to_string())], false);
         let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         println!("{}", text.join("\n"));
         assert_eq!(text.len(), 3, "one line per row");
