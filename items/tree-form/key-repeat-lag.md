@@ -1,0 +1,16 @@
+---
+id: key-repeat-lag
+status: task
+parent: "[[tree-form]]"
+created: 2026-11-14T21:34:43+01:00
+by: claude-code
+sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10]
+assignee: ai
+owner: sevenuz
+---
+# Holding j lags and jumps a random amount
+
+- why: holding j moves late and by a random amount; movement feels out of control
+- likely cause: every key reloads all items with a `cake ls` subprocess before drawing; key repeat queues up behind it
+- fix: reload only after a change (save, undo, editor, timer), moves only redraw
+- done when: holding j moves one row per repeat, stops when released
