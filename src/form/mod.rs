@@ -3,16 +3,13 @@
 //! configured order or one by one. Every change runs as its own `cake`
 //! call, so agents keep working while you think.
 
-mod card;
 mod keys;
 mod list;
-mod table;
 mod tree;
 
 use keys::{Act, Keymap, Text as TextKey};
 
 use crate::{error, markdown, style, theme};
-use ratatui::crossterm::event::{self, Event, KeyEvent, KeyEventKind};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
@@ -143,38 +140,6 @@ fn split_options(body: &str) -> (String, Vec<(char, String)>) {
     (context.join("\n").trim().to_string(), options)
 }
 
-/// keys for hints on the overview, like vimium
-const HINTS: &str = "123456789abcdeghijklmoprtuvwxyz";
-
-/// the goal's tree, only branches that lead to `targets`: (prefix, id)
-fn overview(all: &[Value], goal: &Value, targets: &[&Value]) -> Vec<(String, String)> {
-    let mut keep: Vec<&str> = vec![];
-    for t in targets {
-        let mut cur = Some(*t);
-        while let Some(c) = cur {
-            if !keep.contains(&str_of(c, "id")) {
-                keep.push(str_of(c, "id"));
-            }
-            cur = find(all, str_of(c, "parent"));
-        }
-    }
-    fn walk(all: &[Value], keep: &[&str], id: &str, prefix: (&str, &str), out: &mut Vec<(String, String)>) {
-        let g = style::g();
-        out.push((prefix.0.to_string(), id.to_string()));
-        let children: Vec<&str> =
-            all.iter().filter(|i| str_of(i, "parent") == id && keep.contains(&str_of(i, "id"))).map(|i| str_of(i, "id")).collect();
-        for (n, c) in children.iter().enumerate() {
-            let last = n + 1 == children.len();
-            let own = format!("{}{}", prefix.1, if last { g.last } else { g.branch });
-            let below = format!("{}{}", prefix.1, if last { g.space } else { g.pipe });
-            walk(all, keep, c, (&own, &below), out);
-        }
-    }
-    let mut out = vec![];
-    walk(all, &keep, str_of(goal, "id"), ("", ""), &mut out);
-    out
-}
-
 fn step_color(step: usize) -> Color {
     let t = theme::t();
     let colors = [t.hint, t.heading, t.question, t.ok, t.doing, t.code];
@@ -187,16 +152,6 @@ fn dim() -> Style {
 
 fn bold() -> Style {
     Style::default().add_modifier(Modifier::BOLD)
-}
-
-fn key() -> Result<KeyEvent, Box<dyn Error>> {
-    loop {
-        if let Event::Key(k) = event::read()? {
-            if k.kind == KeyEventKind::Press {
-                return Ok(k);
-            }
-        }
-    }
 }
 
 
@@ -219,6 +174,8 @@ struct Screen {
     scroll: u16,
     /// a card text line to keep visible (the table cursor)
     focus: Option<usize>,
+    /// tree modules: the tree line of the cursor; the tree fills the screen
+    tree_focus: Option<usize>,
     /// the terminal cursor, columns into the last input line
     cursor: Option<usize>,
     /// a text box over everything: (title, text so far); the cursor follows the text
@@ -245,6 +202,8 @@ struct Ui {
     changed: std::collections::HashMap<PathBuf, std::collections::HashSet<String>>,
     /// how changed items were before, for undo
     before: std::collections::HashMap<(PathBuf, String), list::Before>,
+    /// what a change gave per item (an answer, "sent back"), shown in the tree
+    results: std::collections::HashMap<(PathBuf, String), String>,
 }
 
 /// wrapped height of `lines` at `width`
@@ -418,9 +377,6 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
     let width = column_width(area.width, max);
     let col = Rect { x: area.x + (area.width - width) / 2, y: area.y, width, height: area.height };
     let inner = width.saturating_sub(4);
-    let tree_h = (screen.tree.len() as u16).min(col.height / 3);
-    let fixed = 4 + 1 + tree_h + u16::from(tree_h > 0) + 2;
-    let avail = col.height.saturating_sub(fixed).max(4);
     let body_h = height(&screen.card, inner);
     let choices_h = height(&screen.choices, inner);
     // the input line wrapped here, so text and cursor agree
@@ -434,12 +390,32 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
     }
     let input_h = height(&input, inner);
     let sep = u16::from(!screen.choices.is_empty() && body_h > 0);
-    let card_h = (body_h + sep + choices_h + input_h + 2).min(avail);
+    let has_card = !screen.card_title.is_empty() || !screen.card.is_empty() || !screen.choices.is_empty() || !screen.input.is_empty();
+    let natural = if has_card { body_h + sep + choices_h + input_h + 2 } else { 0 };
+    let (tree_h, tree_scroll, card_h) = match screen.tree_focus {
+        // tree modules: the tree takes the room, a card at most half of it
+        Some(focus) => {
+            let avail = col.height.saturating_sub(4 + 1 + 2);
+            let card_h = natural.min((avail / 2).max(8)).min(avail);
+            let room = avail.saturating_sub(card_h + u16::from(has_card));
+            let len = screen.tree.len() as u16;
+            let tree_h = len.min(room);
+            // the cursor row and two lines under it (edit line) stay in view
+            let scroll = (focus as u16 + 3).saturating_sub(tree_h).min(len.saturating_sub(tree_h));
+            (tree_h, scroll, card_h)
+        }
+        None => {
+            let tree_h = (screen.tree.len() as u16).min(col.height / 3);
+            let fixed = 4 + 1 + tree_h + u16::from(tree_h > 0) + 2;
+            let avail = col.height.saturating_sub(fixed).max(4);
+            (tree_h, 0, natural.min(avail))
+        }
+    };
     let [head, _, tree, _, card, keys_a, note_a, _] = Layout::vertical([
         Constraint::Length(4),
         Constraint::Length(1),
         Constraint::Length(tree_h),
-        Constraint::Length(u16::from(tree_h > 0)),
+        Constraint::Length(u16::from(tree_h > 0 && card_h > 0)),
         Constraint::Length(card_h),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -448,7 +424,7 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
     .areas(col);
     let block = Block::default().borders(Borders::ALL).border_set(g.border).border_style(dim());
     f.render_widget(Paragraph::new(header_lines.to_vec()).block(block.clone().padding(Padding::horizontal(1))), head);
-    f.render_widget(Paragraph::new(screen.tree.clone()), tree);
+    f.render_widget(Paragraph::new(screen.tree.clone()).scroll((tree_scroll, 0)), tree);
     // the text scrolls, choices and input stay
     let view = card_h.saturating_sub(2 + sep + choices_h + input_h);
     let max_scroll = body_h.saturating_sub(view);
@@ -470,7 +446,9 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
         card_block = card_block.title_bottom(Line::from(Span::styled(more, Style::default().fg(theme::t().hint))).right_aligned());
     }
     let inside = card_block.inner(card);
-    f.render_widget(card_block, card);
+    if card_h > 0 {
+        f.render_widget(card_block, card);
+    }
     let [body_a, _, choices_a, input_a] = Layout::vertical([
         Constraint::Length(view),
         Constraint::Length(sep),
@@ -547,71 +525,6 @@ enum Leave {
     Quit,
 }
 
-/// what the user did with one item
-enum Outcome {
-    /// short result for the tree, counted (answered, done, approved)
-    Next(Option<String>, bool),
-    NextGoal,
-    Previous,
-    Leave(Leave),
-}
-
-/// the tree lines of a goal: the current item marked, decided ones with ✓
-/// and their result, an opened item's text under its line, hint numbers
-fn tree_lines(
-    all: &[Value],
-    tree: &[(String, String)],
-    targets: &[&Value],
-    current: &str,
-    decided: &std::collections::HashMap<String, String>,
-    hints: bool,
-    opened: Option<&str>,
-    width: u16,
-) -> Vec<Line<'static>> {
-    let t = theme::t();
-    let g = style::g();
-    let mut out = vec![];
-    for (n, (prefix, id)) in tree.iter().enumerate() {
-        let node = find(all, id).unwrap();
-        let title = str_of(node, "title").to_string();
-        let mut spans = vec![Span::styled(prefix.clone(), dim())];
-        if hints {
-            let h = HINTS.chars().nth(n).unwrap_or(' ');
-            spans.push(Span::styled(format!("{} ", h), Style::default().fg(t.hint).add_modifier(Modifier::BOLD | Modifier::REVERSED)));
-        }
-        if let Some(result) = decided.get(id) {
-            spans.push(Span::styled(format!("{} {}", g.check, title), dim()));
-            spans.push(Span::styled(format!("  {}", result), Style::default().fg(t.dim).add_modifier(Modifier::ITALIC)));
-        } else if id == current {
-            spans.push(Span::styled(format!("? {}", title), bold().fg(t.question)));
-            spans.push(Span::styled(" <", Style::default().fg(t.question)));
-        } else if targets.iter().any(|x| str_of(x, "id") == id) {
-            spans.push(Span::styled(format!("? {}", title), Style::default().fg(t.question)));
-        } else if n == 0 {
-            spans.push(Span::styled(title, bold()));
-        } else {
-            spans.push(Span::raw(title));
-        }
-        out.push(Line::from(spans));
-        if opened == Some(id.as_str()) {
-            // continue the tree lines through the text
-            let cont = match (prefix.strip_suffix(g.branch), prefix.strip_suffix(g.last)) {
-                (Some(rest), _) => format!("{}{}", rest, g.pipe),
-                (_, Some(rest)) => format!("{}{}", rest, g.space),
-                _ => String::new(),
-            };
-            let indent = format!("{}  ", cont);
-            let body = body_of(node);
-            let body = if body.is_empty() { "(no text)".to_string() } else { body };
-            for l in markdown::render(&body, width.saturating_sub(indent.len() as u16)) {
-                let mut spans = vec![Span::styled(indent.clone(), dim())];
-                spans.extend(l.spans.into_iter().map(|s| Span::styled(s.content.to_string(), s.style.patch(dim()))));
-                out.push(Line::from(spans));
-            }
-        }
-    }
-    out
-}
 
 /// the modules a form can run, in their default order
 pub const MODULES: &[&str] = &["news", "sort", "answer", "review", "mine"];
@@ -733,13 +646,9 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
     for ((_, root), since) in stores.iter().zip(&since) {
         let cake = Cake { root };
         for (n, m) in o.modules.iter().enumerate() {
-            per_module[n] += match m.as_str() {
-                "news" => table::count(&cake, table::Kind::News, user, *since)?,
-                "sort" => list::count(&cake)?,
-                "mine" => table::count(&cake, table::Kind::Mine, user, *since)?,
-                "answer" => card::count(&cake, card::Kind::Answer, user)?,
-                "review" => card::count(&cake, card::Kind::Review, user)?,
-                _ => 0,
+            per_module[n] += match list::Kind::of(m) {
+                Some(kind) => list::count(&cake, kind, user, *since)?,
+                None => 0,
             };
         }
     }
@@ -758,7 +667,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), changed: Default::default(), before: Default::default() };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), changed: Default::default(), before: Default::default(), results: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the
@@ -778,13 +687,9 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
                     let mut leave = Leave::Empty;
                     for ((name, sroot), since) in stores.iter().zip(&since) {
                         let cake = Cake { root: sroot };
-                        let (c, l) = match m.as_str() {
-                            "news" => table::run(&mut ui, &cake, sroot, table::Kind::News, user, name, *since)?,
-                            "sort" => list::run(&mut ui, &cake, sroot, user, name)?,
-                            "mine" => table::run(&mut ui, &cake, sroot, table::Kind::Mine, user, name, *since)?,
-                            "answer" => card::run(&mut ui, &cake, card::Kind::Answer, user, name)?,
-                            "review" => card::run(&mut ui, &cake, card::Kind::Review, user, name)?,
-                            _ => (0, Leave::Done),
+                        let (c, l) = match list::Kind::of(m) {
+                            Some(kind) => list::run(&mut ui, &cake, sroot, kind, user, name, *since)?,
+                            None => (0, Leave::Done),
                         };
                         counts[n] += c;
                         match l {
@@ -861,48 +766,37 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
 mod tests {
     use super::*;
 
-    /// prints the form as it looks in a 60 column pane (cargo test -- --nocapture)
+    fn render(screen: &Screen, w: u16, h: u16) -> Vec<String> {
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).unwrap();
+        term.draw(|f| paint(f, &header(&["news".into(), "sort".into(), "answer".into()], &[0, 2, 3], 2, 2, 5, w - 8), screen, 2, 100)).unwrap();
+        let buf = term.backend().buffer().clone();
+        (0..buf.area.height).map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string()).collect()
+    }
+
+    /// tree modules: the tree fills the screen, the card under it, the
+    /// cursor row stays in view (cargo test -- --nocapture prints it)
     #[test]
-    fn form_renders_top_to_bottom_in_a_narrow_pane() {
-        let item = |id: &str, parent: &str, title: &str, body: &str| {
-            serde_json::json!({"id": id, "parent": parent, "title": title, "body": format!("# {}\n\n{}", title, body)})
+    fn tree_fills_the_screen_and_follows_the_cursor() {
+        let tree: Vec<Line> = (0..40).map(|n| Line::from(format!("row {}", n))).collect();
+        let screen = Screen {
+            tree: tree.clone(),
+            tree_focus: Some(2),
+            card_title: "How keep the repo list? · cake".into(),
+            card: vec![Line::from("The routine needs to know which repos.")],
+            choices: vec![Line::from("› 1) by hand"), Line::from("  2) stores.json flag")],
+            keys: keys(&[("<cr>", "answer")]),
+            ..Default::default()
         };
-        let all = vec![
-            item("cli", "", "cake CLI: fast capture", ""),
-            item("sync", "cli", "Sync across clones", "- why: two machines edit one store"),
-            item("rt", "sync", "Nightly routine", ""),
-            item("q1", "rt", "How keep the repo list?", "The routine needs to know which repos.\n\n- a) by hand\n- b) stores.json flag"),
-            item("q0", "cli", "Plain ASCII output?", "- a) yes\n- b) no"),
-        ];
-        let targets: Vec<&Value> = vec![&all[4], &all[3]];
-        let tree = overview(&all, &all[0], &targets);
-        let decided = [("q0".to_string(), "a) yes".to_string())].into();
-        let render = |opened: Option<&str>| {
-            let screen = Screen {
-                tree: tree_lines(&all, &tree, &targets, "q1", &decided, false, opened, 56),
-                card_title: "How keep the repo list? · cake".into(),
-                card: markdown::render("The routine needs to know which repos.", 52)
-                    .into_iter()
-                    .chain([Line::default(), Line::from("› a) by hand"), Line::from("  b) stores.json flag")])
-                    .collect(),
-                keys: keys(&[("a-c", "choose"), ("enter", "confirm"), ("f", "open")]),
-                ..Default::default()
-            };
-            let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 24)).unwrap();
-            term.draw(|f| paint(f, &header(&["news".into(), "sort".into(), "answer".into()], &[0, 2, 3], 2, 2, 5, 52), &screen, 2, 100)).unwrap();
-            let buf = term.backend().buffer().clone();
-            (0..buf.area.height)
-                .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string())
-                .collect::<Vec<_>>()
-        };
-        let lines = render(None);
+        let lines = render(&screen, 60, 30);
         println!("{}", lines.join("\n"));
         let pos = |text: &str| lines.iter().position(|l| l.contains(text)).unwrap_or_else(|| panic!("{} missing", text));
-        assert!(pos("ANSWER") < pos("cake CLI") && pos("cake CLI") < pos("by hand") && pos("by hand") < pos("confirm"));
-        assert!(lines[pos("Plain ASCII")].contains("a) yes"), "decided items keep their answer");
-        let opened = render(Some("sync"));
-        println!("{}", opened.join("\n"));
-        assert_eq!(opened.iter().position(|l| l.contains("two machines")), Some(opened.iter().position(|l| l.contains("Sync across")).unwrap() + 1), "opened under its line");
+        assert!(pos("ANSWER") < pos("row 0") && pos("row 0") < pos("by hand") && pos("by hand") < pos("answer"));
+        assert!(!lines[pos("row 0")].contains('│'), "the tree has no box");
+        let lines = render(&Screen { tree_focus: Some(35), ..screen }, 60, 30);
+        assert!(lines.iter().any(|l| l.trim() == "row 35") && lines.iter().any(|l| l.trim() == "row 37"), "cursor and two rows under it in view");
+        // no card: the tree takes the whole height
+        let lines = render(&Screen { tree, tree_focus: Some(0), ..Default::default() }, 60, 30);
+        assert!(lines.iter().any(|l| l.trim() == "row 21"));
     }
 
     #[test]
@@ -983,53 +877,7 @@ mod screens {
     fn dump_screens() {
         style::init(&std::env::var("CAKE_STYLE").unwrap_or("unicode".into()));
         let keymap = Keymap::new(&Default::default()).unwrap();
-        let item = |id: &str, parent: &str, title: &str, body: &str, status: &str| {
-            serde_json::json!({"id": id, "parent": parent, "title": title, "status": status,
-                "body": format!("# {}\n\n{}", title, body)})
-        };
-        let all = vec![
-            item("cli", "", "cake CLI: fast capture", "", "task"),
-            item("sync", "cli", "Sync errors that say what failed", "- why: unclear git errors", "task"),
-            item("hint", "sync", "Hint per error type", "", "task"),
-            item("raw", "hint", "Show git's raw message too?", "Git's own text helps experts.\n\n- a) always\n- b) only with -d (recommended)", "task"),
-            item("step", "sync", "Name the failed git step", "- changed: fetch, merge, push named\n- try: cake sync offline", "review"),
-        ];
         for width in [60u16, 100] {
-            let inner = column_width(width, 100).saturating_sub(4);
-            // answer card
-            let targets: Vec<&Value> = vec![&all[3]];
-            let tree = overview(&all, &all[0], &targets);
-            let (context, options) = split_options(&body_of(&all[3]));
-            let mut card = markdown::render(&context, inner);
-            card.push(Line::default());
-            for (n, (_, text)) in options.iter().enumerate() {
-                let mark = if n == 0 { style::g().select } else { " " };
-                card.push(Line::from(format!("{} {}) {}", mark, n + 1, text)));
-            }
-            card.push(Line::from(format!("  3) {} own words", style::g().ellipsis)));
-            let k = |a: Act| keymap.keys_of(a);
-            let card_keys = keys(&[("1-3", "choose"), (&k(Act::Confirm), "confirm"), (&k(Act::Insert), "own words"), (&k(Act::Hints), "open"), (&k(Act::Next), "skip"), (&k(Act::Help), "keys")]);
-            let screen = Screen {
-                tree: tree_lines(&all, &tree, &targets, "raw", &Default::default(), false, Some("sync"), inner),
-                card_title: "Show git's raw message too? · cake".into(),
-                card,
-                keys: card_keys.clone(),
-                ..Default::default()
-            };
-            dump("answer", width, &screen, 2);
-            // a long review card with a comment being typed
-            let long: String = (1..=18).map(|n| format!("- changed: part {} of the work, with enough words to wrap\n", n)).collect();
-            let mut screen = Screen {
-                tree: tree_lines(&all, &tree, &[&all[4]], "step", &Default::default(), false, None, inner),
-                card_title: "Name the failed git step · cake".into(),
-                card: markdown::render(&long, inner),
-                choices: vec![Line::from(format!("{} 1) ok, done", style::g().select)), Line::from("  2) drop"), Line::from(format!("  3) {} change something", style::g().ellipsis))],
-                keys: card_keys.clone(),
-                scroll: 4,
-                ..Default::default()
-            };
-            screen.input = vec![Line::default(), Line::from("what should change:"), Line::from(format!("{} shorter hints please_", style::g().select))];
-            dump("review", width, &screen, 3);
             // help overlay
             let screen = Screen { help: keymap.help(), ..Default::default() };
             dump("help", width, &screen, 2);

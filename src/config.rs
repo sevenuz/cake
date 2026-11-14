@@ -113,8 +113,9 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   //   prev_module "h <left>", next_module "l <right>",
   //   open "o <space>", back "<esc>", confirm "<cr>", insert "i",
   //   task "t", note "n", drop "dd x", complete "c", timer "s", who "w",
-  //   prio "p", undo "u", next "J", previous "K", skip_goal "}",
-  //   hints "f", subtree "A", feedback "F", command ":", help "?", quit "q",
+  //   prio "p", undo "u", next "J", previous "K",
+  //   subtree "A", full_tree "O", feedback "F", command ":",
+  //   help "?", quit "q",
   //   escape (leaving text input) "<esc> jk"; cards choose with 1-9
   keys: {}
 

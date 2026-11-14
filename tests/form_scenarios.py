@@ -3,7 +3,7 @@
 checks the store afterwards. Usage: form_scenarios.py <cake binary>.
 Run by `cargo test` (tests/form.rs); prints keys per decision."""
 
-import json, os, pty, select, signal, struct, subprocess, sys, tempfile, time, fcntl, termios
+import json, os, pty, re, shlex, shutil, select, signal, struct, subprocess, sys, tempfile, time, fcntl, termios
 
 CAKE = sys.argv[1]
 TMP = tempfile.mkdtemp(prefix="cake-form-")
@@ -85,12 +85,12 @@ cake("add", "land", "--task", "--assignee", "me", "-m", "# call landlord")
 keys = [
     # sort: first row a task (sort_who: ai), due friday; second row a note; go on
     "t", ":", "due fri\r", "j", "n", "\r",
-    # answer: start typing, leave with jk (typed fast), then option 2
-    "i", "may", "jk", "2", "\r",
-    # review: c is done
-    "c",
-    # mine: hand the task to ai, save; the end screen stays on l
-    "w", "\r", "l", "q",
+    # answer: start typing, leave with jk (typed fast), then option 2; on
+    "i", "may", "jk", "2", "l",
+    # review: c is done; on
+    "c", "l",
+    # mine: hand the task to ai; the end screen stays on l
+    "w", "l", "q",
 ]
 form(keys)
 first, second = item("pass"), item("blog")
@@ -125,10 +125,31 @@ check("F: feedback is a task for ai", len(fb) == 1 and fb[0]["status"] == "task"
 cake("set", "dropped", "yy")
 cake("add", "s1", "-m", "# sticky one")
 cake("add", "s2", "-m", "# sticky two")
-screen = form(["t", "j", "n", "h", "l", "q"])
-back = screen[screen.rfind("nothing here"):]
+
+
+def tmux_screen(keys):
+    """runs `cake` in a detached tmux session, types `keys`, returns the
+    screen as text (the real screen: ratatui sends only changed cells)"""
+    if not shutil.which("tmux"):
+        return None
+    name = f"cake-test-{os.getpid()}"
+    env = " ".join(f"{k}={shlex.quote(v)}" for k, v in ENV.items() if k.startswith(("XDG_", "CAKE_")))
+    subprocess.run(["tmux", "new-session", "-d", "-s", name, "-x", "100", "-y", "30", "-c", STORE, f"env {env} {CAKE}"], check=True)
+    time.sleep(1.5)
+    for k in keys:
+        subprocess.run(["tmux", "send-keys", "-t", name, "-l", k])
+        time.sleep(0.5)
+    text = subprocess.run(["tmux", "capture-pane", "-p", "-t", name], capture_output=True, text=True).stdout
+    subprocess.run(["tmux", "kill-session", "-t", name], capture_output=True)
+    return text
+
+
+back = tmux_screen(["t", "j", "n", "h", "l"])
 check("sticky: saved at once", item("s1")["status"] == "task" and item("s1")["assignee"] == "ai" and item("s2")["status"] is None)
-check("sticky: both still shown after h/l", "✓ sticky one" in back and "✓ sticky two" in back)
+if back is None:
+    print("skip sticky: both still shown (no tmux)")
+else:
+    check("sticky: both still shown after h/l", "✓ sticky one" in back and "✓ sticky two" in back)
 
 # config sort_who "-": a task from sort gets nobody
 os.makedirs(f"{TMP}/config/cake", exist_ok=True)
@@ -138,6 +159,25 @@ cake("set", "dropped", "s2")
 cake("add", "s3", "-m", "# nobody's task")
 form(["t", "q"])
 check("sort_who -: task without assignee", item("s3")["status"] == "task" and item("s3")["assignee"] is None)
+
+# answer on the tree: n to the second question, <cr> card, j option 2,
+# <cr> saves; p back to the first, 1 picks from the tree; k o on a parent
+cake("add", "work", "--task", "--assignee", "claude-code", "-m", "# work", agent=True)
+cake("add", "qa", "--task", "-p", "work", "--assignee", "jul", "-m", "# first?\n\n- a) one\n- b) two", agent=True)
+cake("add", "qb", "--task", "-p", "work", "--assignee", "jul", "-m", "# second?\n\n- a) one\n- b) two", agent=True)
+cake("edit", "work", "--blocked-by", "qa,qb", agent=True)
+pid, fd = pty.fork()
+if pid == 0:
+    os.chdir(STORE)
+    os.execve(CAKE, [CAKE, "form", "answer"], ENV)
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
+time.sleep(1.5)
+for k in ["n", "\r", "j", "\r", "p", "1", "k", "o", "q"]:
+    os.write(fd, k.encode())
+    time.sleep(0.5)
+os.waitpid(pid, 0)
+check("answer tree: <cr> j <cr> gave option 2", "answer: b) two" in item("qb")["body"])
+check("answer tree: p and 1 answered the first", "answer: a) one" in item("qa")["body"])
 
 subprocess.run(["rm", "-rf", TMP])
 sys.exit(1 if failures else 0)

@@ -16,6 +16,8 @@ pub(super) struct Tree<'a> {
     pub opened: HashSet<String>,
     /// parents shown above a match (config tree_depth)
     pub depth: usize,
+    /// a mark and color for open module items (answer: "? ")
+    pub accent: Option<(&'static str, Color)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,7 +39,7 @@ pub(super) struct Row {
 
 impl<'a> Tree<'a> {
     pub fn new(all: &'a [Value], matched: impl IntoIterator<Item = String>, depth: usize) -> Self {
-        Tree { all, matched: matched.into_iter().collect(), changed: HashSet::new(), opened: HashSet::new(), depth }
+        Tree { all, matched: matched.into_iter().collect(), changed: HashSet::new(), opened: HashSet::new(), depth, accent: None }
     }
 
     pub fn item(&self, id: &str) -> Option<&'a Value> {
@@ -130,6 +132,10 @@ impl<'a> Tree<'a> {
             if r.cut_above {
                 title.push_str(&format!("{} {} ", g.ellipsis, g.select));
             }
+            let accent = self.accent.filter(|_| r.editable && !r.changed);
+            if let Some((mark, _)) = accent {
+                title.push_str(mark);
+            }
             title.push_str(str_of(item, "title"));
             if r.hidden > 0 && !r.opened {
                 title.push_str(&format!(" +{}", r.hidden));
@@ -137,10 +143,12 @@ impl<'a> Tree<'a> {
             let lead = format!("{} {}", if here { g.select } else { " " }, r.prefix);
             let used = lead.chars().count() + right.chars().count() + 1;
             let title = cut(&title, w.saturating_sub(used).max(8));
-            let style = match (here, r.editable) {
-                (true, _) => bold().fg(t.hint),
-                (false, true) => Style::default(),
-                (false, false) => dim(),
+            let style = match (here, r.editable, accent) {
+                (true, _, Some((_, c))) => bold().fg(c),
+                (true, _, None) => bold().fg(t.hint),
+                (false, true, Some((_, c))) => Style::default().fg(c),
+                (false, true, None) => Style::default(),
+                (false, false, _) => dim(),
             };
             out.push(Line::from(vec![
                 Span::styled(lead, if here { bold().fg(t.hint) } else { dim() }),
