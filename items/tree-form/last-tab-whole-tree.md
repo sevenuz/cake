@@ -5,7 +5,7 @@ parent: "[[tree-form]]"
 created: 2026-11-14T20:51:28+01:00
 by: claude-code
 sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10]
-usage: {claude-opus-5-5: {in: 10, out: 4917, cache_read: 764562, cache_write: 8756}}
+usage: {claude-opus-5-5: {in: 16, out: 6720, cache_read: 1322044, cache_write: 10826}}
 assignee: ai
 owner: sevenuz
 time:
