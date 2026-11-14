@@ -2,6 +2,7 @@
 id: session-note
 status: task
 parent: "[[also-handoff-needs-be]]"
+blocked_by: ["[[agent-metadata-field]]"]
 created: 2026-11-14T22:57:08+01:00
 by: claude-code
 sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10]
