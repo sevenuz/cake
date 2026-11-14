@@ -6,6 +6,8 @@
 mod card;
 mod keys;
 mod table;
+#[allow(dead_code)] // the modules move to it in tree-modules
+mod tree;
 
 use keys::{Act, Keymap, Text as TextKey};
 
@@ -92,6 +94,16 @@ fn answer_text(body: &str, input: &str) -> String {
         }
     }
     input.to_string()
+}
+
+/// `s` padded to `w` columns, or cut with an ellipsis
+fn cut(s: &str, w: usize) -> String {
+    if s.chars().count() <= w {
+        return format!("{:<w$}", s, w = w);
+    }
+    let g = style::g();
+    let keep = w.saturating_sub(g.ellipsis.chars().count());
+    format!("{}{}", s.chars().take(keep).collect::<String>(), g.ellipsis)
 }
 
 fn find<'a>(all: &'a [Value], id: &str) -> Option<&'a Value> {

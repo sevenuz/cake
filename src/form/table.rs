@@ -110,15 +110,6 @@ pub(super) fn count(cake: &Cake, kind: Kind, user: &str, since: i64) -> Result<u
     Ok(rows(cake, kind, user, since)?.len())
 }
 
-fn cut(s: &str, w: usize) -> String {
-    if s.chars().count() <= w {
-        return format!("{:<w$}", s, w = w);
-    }
-    let g = style::g();
-    let keep = w.saturating_sub(g.ellipsis.chars().count());
-    format!("{}{}", s.chars().take(keep).collect::<String>(), g.ellipsis)
-}
-
 /// short date for a column: 30.11.
 fn short_date(d: &Option<String>) -> String {
     d.as_deref()
