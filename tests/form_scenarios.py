@@ -195,6 +195,11 @@ landed = tmux_screen(["1"], args=("form", "answer", "review", "mine"))
 if landed is not None:
     check("answer done: on to mine, not review with the answers", "your tasks" in landed and "third?" not in landed)
 
+# the last tab: the whole open tree with the details box
+end = tmux_screen(["l"], args=("form", "mine"))
+if end is not None:
+    check("last tab: everything open as a tree", "everything open" in end and "a task of mine" in end and "sync errors" in end)
+
 # review: : sets fields of the item under review
 cake("add", "rv", "--task", "--assignee", "claude-code", "-m", "# to review", agent=True)
 cake("edit", "rv", "--owner", "jul")

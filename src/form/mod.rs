@@ -195,6 +195,8 @@ struct Ui {
     auto_next: bool,
     /// items changed this run per store and module: they stay in that module
     changed: std::collections::HashMap<(PathBuf, &'static str), std::collections::HashSet<String>>,
+    /// what this run decided, shown on the last tab
+    summary: String,
     /// the module running now, the second key of `changed`
     module: &'static str,
     /// how changed items were before, for undo
@@ -586,6 +588,27 @@ fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str))
     }
 }
 
+/// the last tab: every open item of `root` as one tree, details below;
+/// h goes back, :q quits
+fn last_tab(ui: &mut Ui, root: &Path, user: &str, store: &str) -> Result<Leave, Box<dyn Error>> {
+    ui.names.push("all".into());
+    ui.step = ui.names.len() - 1;
+    let cake = Cake { root };
+    let leave = loop {
+        let (_, l) = list::run(ui, &cake, root, list::Kind::All, user, store, 0)?;
+        match l {
+            Leave::Prev | Leave::Quit => break l,
+            Leave::Empty => {
+                let text = format!("Nothing open in this store; {}.", ui.summary);
+                break still(ui, "end of the form", vec![Line::from(text)], (&cake, store))?;
+            }
+            _ => (),
+        }
+    };
+    ui.names.pop();
+    Ok(leave)
+}
+
 /// dump: one new item per line into the inbox of `root`
 fn dump(ui: &mut Ui, here: &Cake, store: &str) -> Result<usize, Box<dyn Error>> {
     let mut added: Vec<String> = vec![];
@@ -678,7 +701,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), auto_next: o.auto_next, changed: Default::default(), module: "", before: Default::default(), results: Default::default(), order: Default::default() };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), auto_next: o.auto_next, changed: Default::default(), module: "", summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the
@@ -727,11 +750,12 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
             } else {
                 leave
             };
-            // after the last module: an end screen instead of closing by accident
+            // after the last module: the whole tree as the last tab, instead
+            // of closing by accident
             let leave = if n + 1 == o.modules.len() && matches!(leave, Leave::Next | Leave::Done | Leave::Empty) {
                 let summary: Vec<String> = o.modules.iter().zip(&counts).filter(|(_, c)| **c > 0).map(|(m, c)| format!("{} {}", m, c)).collect();
-                let text = if summary.is_empty() { "Nothing decided this time.".to_string() } else { format!("Decided: {}.", summary.join(", ")) };
-                match still(&mut ui, "end of the form", vec![Line::from(text), Line::from(Span::styled(":q closes the form, h goes back.", dim()))], (&Cake { root }, &stores[0].0))? {
+                ui.summary = if summary.is_empty() { "nothing decided".to_string() } else { format!("decided: {}", summary.join(", ")) };
+                match last_tab(&mut ui, root, user, &stores[0].0)? {
                     Leave::Prev => Leave::Prev,
                     Leave::Quit => Leave::Quit,
                     _ => continue,

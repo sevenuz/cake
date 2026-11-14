@@ -16,6 +16,8 @@ pub(super) enum Kind {
     Answer,
     Review,
     Mine,
+    /// the end tab: every open item of the store
+    All,
 }
 
 impl Kind {
@@ -26,6 +28,7 @@ impl Kind {
             "answer" => Kind::Answer,
             "review" => Kind::Review,
             "mine" => Kind::Mine,
+            "all" => Kind::All,
             _ => return None,
         })
     }
@@ -37,6 +40,7 @@ impl Kind {
             Kind::Answer => "answer",
             Kind::Review => "review",
             Kind::Mine => "mine",
+            Kind::All => "all",
         }
     }
 
@@ -47,12 +51,13 @@ impl Kind {
             Kind::Answer => "questions for you",
             Kind::Review => "finished work to check",
             Kind::Mine => "your tasks",
+            Kind::All => "everything open",
         }
     }
 
     /// modules where the edit line shows and fields can be set
     fn edits(self) -> bool {
-        matches!(self, Kind::Sort | Kind::Mine | Kind::News)
+        matches!(self, Kind::Sort | Kind::Mine | Kind::News | Kind::All)
     }
 
     /// the `:` commands of the module besides w and q: the item's fields
@@ -60,7 +65,7 @@ impl Kind {
     fn commands(self) -> &'static [&'static str] {
         match self {
             Kind::Sort => &["due", "deadline", "who", "prio", "move"],
-            Kind::Mine | Kind::News | Kind::Review => &["due", "deadline", "who", "prio"],
+            Kind::Mine | Kind::News | Kind::Review | Kind::All => &["due", "deadline", "who", "prio"],
             Kind::Answer => &[],
         }
     }
@@ -89,6 +94,7 @@ impl Kind {
             Kind::Answer => (Some("?"), t.question),
             Kind::Review => (None, t.code),
             Kind::Mine => (None, t.doing),
+            Kind::All => (None, Color::Reset),
         }
     }
 
@@ -156,6 +162,7 @@ fn matches(kind: Kind, i: &Value, all: &[Value], user: &str, since: i64) -> bool
         Kind::Answer => status == "task" && str_of(i, "assignee") == user && blocks_open,
         Kind::Review => status == "review" && (str_of(i, "owner") == user || i["owner"].is_null()),
         Kind::Mine => str_of(i, "assignee") == user && matches!(status, "task" | "doing") && !blocks_open,
+        Kind::All => !closed(i),
     }
 }
 
@@ -502,7 +509,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             return Ok((decided, Leave::Empty));
         }
         // the last open item done: on to the next module
-        if std::mem::take(&mut st.saved) && ui.auto_next && !rows.iter().any(|r| r.editable && !r.changed) {
+        if std::mem::take(&mut st.saved) && ui.auto_next && kind != Kind::All && !rows.iter().any(|r| r.editable && !r.changed) {
             return Ok((decided, Leave::Done));
         }
         // the cursor stays on its item; at first the first open module item
@@ -540,6 +547,12 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                     (":due".into(), String::new()),
                 ],
                 Kind::News => vec![(ks(Act::Who), "hold".into()), (ks(Act::Drop), "drop".into())],
+                Kind::All => vec![
+                    (format!("{}/{}", ks(Act::Complete), ks(Act::Drop)), "done drop".into()),
+                    (ks(Act::Who), "who".into()),
+                    (ks(Act::Prio), "prio".into()),
+                    (":due".into(), String::new()),
+                ],
                 Kind::Mine => vec![
                     (format!("{}/{}/{}", ks(Act::Timer), ks(Act::Complete), ks(Act::Drop)), "start done drop".into()),
                     (ks(Act::Who), "who".into()),
@@ -563,8 +576,15 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             (format!("{}/{}", ks(Act::PrevModule), ks(Act::NextModule)), "module".into()),
             (ks(Act::Help), "keys".into()),
         ]);
+        if kind == Kind::All {
+            parts.push((":q".into(), "quit".into()));
+        }
         let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
-        let mut tree_lines = vec![Line::from(Span::styled(format!("{} · {}", kind.title(), store), bold().fg(kind.accent().1)))];
+        let mut head = vec![Span::styled(format!("{} · {}", kind.title(), store), bold().fg(kind.accent().1))];
+        if kind == Kind::All && !ui.summary.is_empty() {
+            head.push(Span::styled(format!(" · {}", ui.summary), dim()));
+        }
+        let mut tree_lines = vec![Line::from(head)];
         tree_lines.extend(lines);
         let mut screen = Screen {
             tree: tree_lines,
@@ -668,6 +688,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                 }
             }
             Act::PrevModule => return Ok((decided, Leave::Prev)),
+            Act::NextModule if kind == Kind::All => st.note = Some(("the last tab: :q closes the form".into(), false)),
             Act::NextModule => return Ok((decided, Leave::Next)),
             Act::Quit => return Ok((decided, Leave::Quit)),
             Act::QuitHint => st.note = Some((QUIT_HINT.into(), false)),
@@ -703,7 +724,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                     then_next = true;
                 }
             }
-            Act::Complete if matches!(kind, Kind::Review | Kind::Mine) => (change, then_next) = (Some(Change::Status("done")), true),
+            Act::Complete if matches!(kind, Kind::Review | Kind::Mine | Kind::All) => (change, then_next) = (Some(Change::Status("done")), true),
             Act::Drop if kind != Kind::Answer => (change, then_next) = (Some(Change::Status("dropped")), true),
             Act::Timer if kind == Kind::Mine => change = Some(Change::Timer(str_of(&item, "status") != "doing")),
             Act::Who if kind == Kind::News => (change, then_next) = (Some(Change::Hold), true),
