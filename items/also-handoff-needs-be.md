@@ -3,6 +3,7 @@ id: also-handoff-needs-be
 status: task
 created: 2026-11-14T11:28:06+01:00
 by: sevenuz
+assignee: ai
 owner: sevenuz
 ---
 also the handoff needs to be better. i discuss stuff, ai makes a plan and should substructure it in cake. i think the hard rules that an item should be short have to be softend -> as short as possible to be complete, so that plans do not have to get huge doc tagged entries. 
