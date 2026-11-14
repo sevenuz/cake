@@ -9,26 +9,16 @@ owner: sevenuz
 ---
 # Tree form: decisions
 
-Agreed in chat 2026-11-14. Cross-cutting rules; each subtask carries its own details.
+Agreed in chat 2026-11-14 (second round after testing). Build from this.
 
-- one widget, five filters: news, sort, answer, review, mine show the same tree; the module decides which items match (editable) and which only give context
-- context rows (parents, revealed siblings) are dimmed and not editable in this module
-- parents: up to `tree_depth` levels above a match (config, default 2); deeper ancestors collapse into one `… ›` row before the oldest shown parent
-- hidden siblings: the parent shows `+N` (N children not shown)
-- one open key everywhere (`open`: `o <space>`, as today): on any row, also a context row, it shows the body under the line and reveals hidden children (dimmed); again closes both. Rejected: separate keys for body and children (inconsistent with the other views)
-- full subtree: `O` opens an overlay with the whole tree from the root above the hovered item; j/k, `o` open; `<cr>` closes and jumps to the item if this module has it; read only (one place to edit); closes with `<esc>` or `q`. `A` stays sort's "decision for the rows below"
-- jk (config `keys.escape`) only leaves text input; in navigation j moves at once (answer to jk-in-navigation)
-- saving: every change is written at once (undo `u` as today); items changed this run stay in the module with a ✓ mark until the form quits, even when they no longer match the filter (e.g. inbox → task in sort)
-- edit line: under the hovered editable entry, `status · who · prio · due · deadline`; no field cursor, the existing keys (t/n/x, w, p, :due, :deadline) set fields, the line only shows them (answer to edit-line-fields)
-- sort default who: config `sort_who`, default "ai"; "-" nobody, "me" or a name
-- rejected: tables with heading rows (parents blend in, see how-set-parent-headings); editing inside the overlay (two places to edit); whole subtrees as context (too long)
-
-Example (sort, tree_depth 2):
-
-```
-… › Form
-    Dashboard: one screen            +2
-    ▸ Gantt view of tasks             inbox
-      task · who:ai · prio – · due – · deadline –
-    ✓ Time per goal                   task ai
-```
+- one layout for all modules (news, inbox, answer, review, mine): the tree on top, a detail box below; no box around the tree
+- tree: navigation only; module items bright (answer `? ` in the question color, review its own mark and color), parents and revealed rows dimmed; parents up to `tree_depth` (config, default 2), deeper ones as `… ›`; `+N` hidden children
+- `o` on the tree only shows or hides hidden children (no text in the tree any more)
+- detail box: always the full content of the hovered row: title, fields line (status · who · prio · due · deadline), whole body, and for answer/review the options; context rows show content but take no actions
+- focus: `<tab>` switches between tree and box (also `<cr>` from the tree into the box); in the box j/k choose options (answer, review) or scroll the text, `<esc>`/`<tab>` back
+- action keys (t n dd w p c s i digits :) work from the tree too, on the hovered item (answer 1a): sorting stays `t j t j`; in answer/review n/p jump between questions
+- `e`: open the hovered item in the editor (`cake edit <id>`), the form pauses and redraws after
+- every key saves at once; changed items stay with ✓ until quit; `u` undo
+- after the last open item of a module the form goes on to the next module; config `form_auto_next` (default true)
+- module `sort` is renamed `inbox`; no old name kept (nobody else uses it yet)
+- rejected: `O` full tree overlay (o reveals what is hidden; a whole-tree form may come later), text opened inside the tree (shown twice with the box), actions only in the box (too many keys for sorting)
