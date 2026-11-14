@@ -1,12 +1,14 @@
 ---
 id: key-repeat-lag
-status: task
+status: doing
 parent: "[[tree-form]]"
 created: 2026-11-14T21:34:43+01:00
 by: claude-code
 sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-14T22:39:50+01:00/
 ---
 # Holding j lags and jumps a random amount
 
