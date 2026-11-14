@@ -196,6 +196,9 @@ struct Ui {
     before: std::collections::HashMap<(PathBuf, String), list::Before>,
     /// what a change gave per item (an answer, "sent back"), shown in the tree
     results: std::collections::HashMap<(PathBuf, String), String>,
+    /// per store: the place each item was first seen at this run; rows
+    /// keep it, so a change never moves a row
+    order: std::collections::HashMap<PathBuf, std::collections::HashMap<String, usize>>,
 }
 
 /// wrapped height of `lines` at `width`
@@ -665,7 +668,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), auto_next: o.auto_next, changed: Default::default(), before: Default::default(), results: Default::default() };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), auto_next: o.auto_next, changed: Default::default(), before: Default::default(), results: Default::default(), order: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the

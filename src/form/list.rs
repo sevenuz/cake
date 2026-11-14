@@ -492,7 +492,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         let changed = ui.changed.entry(root.to_path_buf()).or_default().clone();
         let results: std::collections::HashMap<String, String> =
             ui.results.iter().filter(|((r, _), _)| r == root).map(|((_, id), v)| (id.clone(), v.clone())).collect();
-        let all = load(cake, &changed)?;
+        let mut all = load(cake, &changed)?;
+        keep_order(ui.order.entry(root.to_path_buf()).or_default(), &mut all);
         let matched: Vec<String> = all.iter().filter(|i| matches(kind, i, &all, user, since)).map(|i| str_of(i, "id").to_string()).collect();
         let mut tree = Tree::new(&all, matched, ui.tree_depth);
         tree.changed = changed.clone();
@@ -787,6 +788,16 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
     }
 }
 
+/// sorts `all` by the place each item was first seen; new ones go last
+/// in the order they come
+fn keep_order(seen: &mut std::collections::HashMap<String, usize>, all: &mut [Value]) {
+    for i in all.iter() {
+        let n = seen.len();
+        seen.entry(str_of(i, "id").to_string()).or_insert(n);
+    }
+    all.sort_by_key(|i| seen[str_of(i, "id")]);
+}
+
 fn toggle(set: &mut HashSet<String>, id: &str) {
     if !set.remove(id) {
         set.insert(id.to_string());
@@ -899,6 +910,18 @@ mod tests {
         assert_eq!(ids(Kind::Mine), ["m"]);
         assert_eq!(ids(Kind::Review), ["r"]);
         assert_eq!(ids(Kind::News), ["n"]);
+    }
+
+    #[test]
+    fn rows_keep_the_first_seen_order() {
+        let mut seen = std::collections::HashMap::new();
+        let mut all = vec![json!({"id": "a"}), json!({"id": "b"}), json!({"id": "c"})];
+        keep_order(&mut seen, &mut all);
+        // after a change, ls sorts b last and a new item d comes first
+        let mut all = vec![json!({"id": "d"}), json!({"id": "a"}), json!({"id": "c"}), json!({"id": "b"})];
+        keep_order(&mut seen, &mut all);
+        let ids: Vec<&str> = all.iter().map(|i| str_of(i, "id")).collect();
+        assert_eq!(ids, ["a", "b", "c", "d"]);
     }
 
     #[test]
