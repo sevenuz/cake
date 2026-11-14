@@ -1,10 +1,11 @@
 ---
 id: input-always-at-bottom
-status: task
+status: dropped
 parent: "[[cake-morning-terminal-form]]"
 created: 2026-11-13T19:35:29+01:00
 by: sevenuz
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+closed: 2026-11-14T01:36:37+01:00
 assignee: sevenuz
 owner: sevenuz
 ---
