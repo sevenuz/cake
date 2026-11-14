@@ -133,9 +133,9 @@ fn render(kind: Kind, rows: &[Row], cur: usize, opened: Option<usize>, width: u1
     let w = width as usize;
     let mut out = vec![];
     let (head, fixed) = match kind {
-        Kind::Sort => (format!("  {:<6} {{}} {:<9} {:<7} {:<8} !", "kind", "who", "due", "deadline"), 2 + 7 + 10 + 8 + 9 + 2),
+        Kind::Sort => (format!("  {:<6} {{}} {:<9} {:<7} {:<8} prio", "kind", "who", "due", "deadline"), 2 + 7 + 10 + 8 + 9 + 5),
         Kind::News => (format!("  {:<6} {:<9} {{}} {:<6}", "do", "what", "status"), 2 + 7 + 10 + 7),
-        Kind::Mine => (format!("  {:<6} {{}} {:<9} {:<7} {:<8} !", "do", "who", "due", "deadline"), 2 + 7 + 10 + 8 + 9 + 2),
+        Kind::Mine => (format!("  {:<6} {{}} {:<9} {:<7} {:<8} prio", "do", "who", "due", "deadline"), 2 + 7 + 10 + 8 + 9 + 5),
     };
     let title_w = w.saturating_sub(fixed).max(10);
     out.push(Line::from(Span::styled(head.replace("{}", &cut("title", title_w)), dim())));
@@ -262,6 +262,7 @@ pub(super) fn run(
             Kind::Mine => vec![
                 (format!("{}/{}/{}", ks(Act::Timer), ks(Act::Complete), ks(Act::Drop)), "start done drop".into()),
                 (ks(Act::Who), "who".into()),
+                (ks(Act::Prio), "prio".into()),
                 (ks(Act::Open), "open".into()),
                 (ks(Act::Confirm), "save".into()),
                 (format!("{}/{}", ks(Act::PrevModule), ks(Act::NextModule)), "module".into()),
@@ -547,6 +548,7 @@ mod tests {
         println!("{}", lines.join("\n"));
         assert!(lines.iter().any(|l| l.contains("task") && l.contains("renew passport") && l.contains("me") && l.contains("20.11.")));
         assert!(lines.iter().any(|l| l.contains("→paper")));
+        assert!(lines.iter().any(|l| l.contains("deadline prio")), "the priority column says what it is");
     }
 
     #[test]

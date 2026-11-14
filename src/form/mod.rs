@@ -207,6 +207,8 @@ struct Screen {
     scroll: u16,
     /// a card text line to keep visible (the table cursor)
     focus: Option<usize>,
+    /// the terminal cursor, columns into the last input line
+    cursor: Option<usize>,
 }
 
 struct Ui {
@@ -295,13 +297,16 @@ impl Ui {
     fn input(&mut self, screen: &mut Screen, prompt: &str) -> Result<Option<String>, Box<dyn Error>> {
         let keys_before = std::mem::replace(&mut screen.keys, keys(&[("<cr>", "save"), ("<esc> jk", "cancel")]));
         let mut buf = String::new();
+        // one line like vim: the prompt, then the text, the real cursor after it
+        let lead = if prompt == ":" { ":".to_string() } else { format!("{} ", prompt) };
+        let hint = if prompt == ":" { "due fri · deadline 30.11. · who ai · prio 1 · move <store> · w · q" } else { "" };
         let result = loop {
-            screen.input = vec![Line::default(), Line::from(Span::styled(prompt.to_string(), Style::default().fg(theme::t().hint)))];
-            screen.input.push(Line::from(vec![
-                Span::styled(format!("{} ", style::g().select), Style::default().fg(theme::t().hint)),
-                Span::raw(buf.clone()),
-                Span::styled("_", dim()),
-            ]));
+            let mut line = vec![Span::styled(lead.clone(), Style::default().fg(theme::t().hint)), Span::raw(buf.clone())];
+            if buf.is_empty() && !hint.is_empty() {
+                line.push(Span::styled(hint, dim()));
+            }
+            screen.input = vec![Line::default(), Line::from(line)];
+            screen.cursor = Some(lead.chars().count() + buf.chars().count());
             self.draw(screen)?;
             match self.keys.text()? {
                 TextKey::Submit => break Some(buf.trim().to_string()),
@@ -314,6 +319,7 @@ impl Ui {
             }
         };
         screen.input.clear();
+        screen.cursor = None;
         screen.keys = keys_before;
         Ok(result)
     }
@@ -387,6 +393,12 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
     f.render_widget(Paragraph::new(Text::from(screen.card.clone())).wrap(Wrap { trim: false }).scroll((scroll, 0)), body_a);
     f.render_widget(Paragraph::new(Text::from(screen.choices.clone())).wrap(Wrap { trim: false }), choices_a);
     f.render_widget(Paragraph::new(Text::from(screen.input.clone())).wrap(Wrap { trim: false }), input_a);
+    if let (Some(at), Some(_)) = (screen.cursor, screen.input.last()) {
+        let w = input_a.width.max(1) as usize;
+        let above = height(&screen.input[..screen.input.len() - 1], input_a.width);
+        let (row, col) = (above as usize + at / w, at % w);
+        f.set_cursor_position((input_a.x + col as u16, (input_a.y + row as u16).min(input_a.bottom().saturating_sub(1))));
+    }
     f.render_widget(Paragraph::new(screen.keys.clone()), keys_a);
     if let Some((text, error)) = &screen.note {
         let s = if *error { Style::default().fg(theme::t().error) } else { dim() };
@@ -809,6 +821,28 @@ mod tests {
         let opened = render(Some("sync"));
         println!("{}", opened.join("\n"));
         assert_eq!(opened.iter().position(|l| l.contains("two machines")), Some(opened.iter().position(|l| l.contains("Sync across")).unwrap() + 1), "opened under its line");
+    }
+
+    #[test]
+    fn command_line_is_one_line_with_the_cursor_after_the_text() {
+        let screen = Screen {
+            card_title: "sort".into(),
+            card: vec![Line::from("a row")],
+            input: vec![Line::default(), Line::from(vec![Span::raw(":"), Span::raw("prio 2")])],
+            cursor: Some(":prio 2".len()),
+            ..Default::default()
+        };
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 20)).unwrap();
+        let names: Vec<String> = vec!["sort".into()];
+        term.draw(|f| paint(f, &header(&names, &[1], 0, 0, 1, 52), &screen, 0, 100)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let row = (0..buf.area.height)
+            .find(|y| (0..buf.area.width).map(|x| buf[(x, *y)].symbol().to_string()).collect::<String>().contains(":prio 2"))
+            .expect("one line with :prio 2");
+        let line: String = (0..buf.area.width).map(|x| buf[(x, row)].symbol().to_string()).collect();
+        let start = line[..line.find(":prio 2").unwrap()].chars().count() as u16;
+        let pos = term.get_cursor_position().unwrap();
+        assert_eq!((pos.x, pos.y), (start + 7, row), "cursor right after the text");
     }
 
     #[test]
