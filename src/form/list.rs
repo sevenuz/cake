@@ -166,9 +166,40 @@ fn matches(kind: Kind, i: &Value, all: &[Value], user: &str, since: i64) -> bool
     }
 }
 
-/// all items with closed ones only when changed this run
-fn load(cake: &Cake, changed: &HashSet<String>) -> Result<Vec<Value>, Box<dyn Error>> {
-    Ok(cake.call(&["ls", "-l", "-A"])?.into_iter().filter(|i| !closed(i) || changed.contains(str_of(i, "id"))).collect())
+/// what the items dir looks like on disk: entries and the newest change;
+/// a few stats instead of a cake call, so moving the cursor stays fast
+pub(super) fn disk_stamp(root: &Path) -> (usize, std::time::SystemTime) {
+    let mut stamp = (0, std::time::UNIX_EPOCH);
+    let mut dirs = vec![root.join("items")];
+    while let Some(d) = dirs.pop() {
+        if let Ok(m) = std::fs::metadata(&d).and_then(|m| m.modified()) {
+            stamp.1 = stamp.1.max(m);
+        }
+        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            stamp.0 += 1;
+            match e.metadata() {
+                Ok(m) if m.is_dir() => dirs.push(e.path()),
+                Ok(m) => stamp.1 = stamp.1.max(m.modified().unwrap_or(std::time::UNIX_EPOCH)),
+                Err(_) => (),
+            }
+        }
+    }
+    stamp
+}
+
+/// all items with closed ones only when changed this run; `cake ls` runs
+/// again only when the store changed on disk (own saves, agents, sync)
+fn load(ui: &mut Ui, cake: &Cake, root: &Path, changed: &HashSet<String>) -> Result<Vec<Value>, Box<dyn Error>> {
+    let stamp = disk_stamp(root);
+    let fresh = match ui.cache.get(root) {
+        Some((s, items)) if *s == stamp => items.clone(),
+        _ => {
+            let items = cake.call(&["ls", "-l", "-A"])?;
+            ui.cache.insert(root.to_path_buf(), (stamp, items.clone()));
+            items
+        }
+    };
+    Ok(fresh.into_iter().filter(|i| !closed(i) || changed.contains(str_of(i, "id"))).collect())
 }
 
 pub(super) fn count(cake: &Cake, kind: Kind, user: &str, since: i64) -> Result<usize, Box<dyn Error>> {
@@ -497,7 +528,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         let changed = ui.changed.entry((root.to_path_buf(), kind.name())).or_default().clone();
         let results: std::collections::HashMap<String, String> =
             ui.results.iter().filter(|((r, _), _)| r == root).map(|((_, id), v)| (id.clone(), v.clone())).collect();
-        let mut all = load(cake, &changed)?;
+        let mut all = load(ui, cake, root, &changed)?;
         keep_order(ui.order.entry(root.to_path_buf()).or_default(), &mut all);
         let matched: Vec<String> = all.iter().filter(|i| matches(kind, i, &all, user, since)).map(|i| str_of(i, "id").to_string()).collect();
         let mut tree = Tree::new(&all, matched, ui.tree_depth);
