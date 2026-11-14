@@ -1,6 +1,6 @@
 ---
 id: command-surface
-status: task
+status: doing
 tags: [cli]
 parent: "[[zcgwhr]]"
 created: 2026-11-14T01:11:22+01:00
@@ -8,6 +8,8 @@ by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
 assignee: claude-code
 owner: sevenuz
+time:
+  - 2026-11-14T01:11:22+01:00/
 ---
 # Fewer commands: set, edit options, aliases
 
