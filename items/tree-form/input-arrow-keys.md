@@ -1,12 +1,14 @@
 ---
 id: input-arrow-keys
-status: task
+status: doing
 parent: "[[tree-form]]"
 created: 2026-11-14T20:51:28+01:00
 by: claude-code
 sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-14T21:15:29+01:00/
 ---
 # Arrow keys and ctrl-arrows in every input field
 
