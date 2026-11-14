@@ -631,6 +631,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             ..Default::default()
         };
         ui.draw(&screen)?;
+        st.scroll = st.scroll.min(ui.box_max);
         if st.help {
             st.help = false;
             let _ = ui.keys.act()?;
@@ -661,6 +662,22 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                 }
                 Act::Up if with_options => {
                     st.sel = st.sel.saturating_sub(1);
+                    true
+                }
+                Act::Top if with_options => {
+                    st.sel = 0;
+                    true
+                }
+                Act::Bottom if with_options => {
+                    st.sel = n_opts - 1;
+                    true
+                }
+                Act::Top => {
+                    st.scroll = 0;
+                    true
+                }
+                Act::Bottom => {
+                    st.scroll = ui.box_max;
                     true
                 }
                 Act::Down => {

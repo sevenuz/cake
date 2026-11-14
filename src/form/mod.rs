@@ -197,6 +197,8 @@ struct Ui {
     changed: std::collections::HashMap<(PathBuf, &'static str), std::collections::HashSet<String>>,
     /// `cake ls -l -A` per store with the disk stamp it was read at
     cache: std::collections::HashMap<PathBuf, ((usize, std::time::SystemTime), Vec<Value>)>,
+    /// how far the card text could scroll at the last draw
+    box_max: u16,
     /// what this run decided, shown on the last tab
     summary: String,
     /// the module running now, the second key of `changed`
@@ -300,7 +302,9 @@ impl Ui {
         let col_w = column_width(size.width, self.max_width);
         let header_lines = header(&self.names, &self.counts, self.step, self.handled, self.total, col_w.saturating_sub(4));
         let (step, max) = (self.step, self.max_width);
-        self.term.draw(|f| paint(f, &header_lines, screen, step, max))?;
+        let mut box_max = 0;
+        self.term.draw(|f| box_max = paint_max(f, &header_lines, screen, step, max))?;
+        self.box_max = box_max;
         Ok(())
     }
 
@@ -366,7 +370,13 @@ fn column_width(area: u16, max: u16) -> u16 {
 
 /// a screen into frame `f`: header box, tree, card (scrolling text,
 /// pinned choices and input), keys, note, help
+#[cfg(test)]
 fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen, step: usize, max: u16) {
+    paint_max(f, header_lines, screen, step, max);
+}
+
+/// paint, returns how far the card text can scroll
+fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen, step: usize, max: u16) -> u16 {
     let g = style::g();
     let area = f.area();
     let width = column_width(area.width, max);
@@ -390,12 +400,13 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
     let (tree_h, tree_scroll, card_h) = match screen.tree_focus {
         // tree modules: the tree takes the room, a card at most half of it
         Some(focus) => {
-            // the tree takes what it needs up to half, the box the rest
+            // fixed halves: the box never changes size while moving, its
+            // text scrolls inside
             let avail = col.height.saturating_sub(4 + 1 + 2);
             let len = screen.tree.len() as u16;
             let gap = u16::from(has_card);
-            let tree_h = len.min((avail / 2).max(avail.saturating_sub(natural + gap)));
-            let card_h = natural.min(avail.saturating_sub(tree_h + gap));
+            let card_h = if has_card { avail.saturating_sub(gap) / 2 } else { 0 };
+            let tree_h = avail.saturating_sub(card_h + gap);
             // the cursor row and one line under it stay in view
             let scroll = (focus as u16 + 2).saturating_sub(tree_h).min(len.saturating_sub(tree_h));
             (tree_h, scroll, card_h)
@@ -497,6 +508,7 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
             pop,
         );
     }
+    max_scroll
 }
 
 /// F: feedback on this screen as a task for the AI (tag form-feedback),
@@ -695,7 +707,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), auto_next: o.auto_next, changed: Default::default(), module: "", cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), auto_next: o.auto_next, changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the
@@ -826,6 +838,23 @@ mod tests {
         // no card: the tree takes the whole height
         let lines = render(&Screen { tree, tree_focus: Some(0), ..Default::default() }, 60, 30);
         assert!(lines.iter().any(|l| l.trim() == "row 21"));
+    }
+
+    /// the box keeps half the screen whatever it shows
+    #[test]
+    fn box_height_is_fixed() {
+        let tree: Vec<Line> = (0..5).map(|n| Line::from(format!("row {}", n))).collect();
+        let box_rows = |card: Vec<Line<'static>>| {
+            let screen = Screen { tree: tree.clone(), tree_focus: Some(0), card_title: "item".into(), card, ..Default::default() };
+            let lines = render(&screen, 60, 30);
+            let top = lines.iter().position(|l| l.contains("item")).unwrap();
+            let bottom = lines.iter().rposition(|l| l.contains('╯')).unwrap();
+            bottom - top
+        };
+        let short = box_rows(vec![Line::from("one line")]);
+        let long = box_rows((0..40).map(|n| Line::from(format!("text {}", n))).collect());
+        assert_eq!(short, long, "same height for one line and forty");
+        assert!(short >= 10, "about half of 30 rows: {}", short);
     }
 
     #[test]
