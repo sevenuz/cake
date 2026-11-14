@@ -1,12 +1,14 @@
 ---
 id: prio-column-header
-status: task
+status: doing
 parent: "[[how-do-i-set]]"
 created: 2026-11-14T00:48:17+01:00
 by: claude-code
-sessions: [09ab2c5e-817c-4232-99aa-cd89bfb2b546]
+sessions: [09ab2c5e-817c-4232-99aa-cd89bfb2b546, 81954e9f-9185-4d55-a366-5581de2aacd6]
 assignee: claude-code
 owner: sevenuz
+time:
+  - 2026-11-14T01:03:32+01:00/
 ---
 # Priority column that says what it is
 
