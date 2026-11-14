@@ -1,12 +1,13 @@
 ---
 id: tree-edit-line
-status: task
+status: dropped
 parent: "[[tree-form]]"
 blocked_by: ["[[tree-widget]]", "[[edit-line-fields]]"]
 created: 2026-11-14T11:59:44+01:00
 by: claude-code
 sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a, cce3e92b-a15e-4436-ae00-939981d6ff10]
 usage: {claude-opus-5-5: {in: 1, out: 386, cache_read: 71621, cache_write: 478}}
+closed: 2026-11-14T21:11:23+01:00
 assignee: ai
 owner: sevenuz
 time:
