@@ -2,6 +2,7 @@
 id: handoff-after-tree
 status: task
 parent: "[[tree-form]]"
+blocked_by: ["[[handoff-process]]"]
 created: 2026-11-14T13:14:14+01:00
 by: claude-code
 sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a]
