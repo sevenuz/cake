@@ -25,6 +25,7 @@ pub struct Config {
     pub form: Vec<String>,
     pub form_width: u16,
     pub tree_depth: usize,
+    pub sort_who: String,
     pub keys: BTreeMap<String, String>,
     pub usage_tracking: bool,
     pub score: crate::store::ScoreWeights,
@@ -48,6 +49,7 @@ impl Default for Config {
             form: crate::form::MODULES.iter().map(|m| m.to_string()).collect(),
             form_width: 100,
             tree_depth: 2,
+            sort_who: "ai".to_string(),
             keys: BTreeMap::new(),
             usage_tracking: true,
             score: Default::default(),
@@ -103,6 +105,8 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   form_width: 100
   // parents the form shows above an item, deeper ones as "… ›"
   tree_depth: 2
+  // who a task from sort gets: "ai", "me", a name, "-" nobody
+  sort_who: "ai"
   // form keys, vim notation, several per action; defaults:
   //   down "j <down>", up "k <up>", top "gg <home>", bottom "G <end>",
   //   half_down "<c-d> <pagedown>", half_up "<c-u> <pageup>",

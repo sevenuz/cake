@@ -5,8 +5,8 @@
 
 mod card;
 mod keys;
+mod list;
 mod table;
-#[allow(dead_code)] // the modules move to it in tree-modules
 mod tree;
 
 use keys::{Act, Keymap, Text as TextKey};
@@ -237,6 +237,14 @@ struct Ui {
     /// widest column (config form_width)
     max_width: u16,
     keys: Keymap,
+    /// parents shown above an item (config tree_depth)
+    tree_depth: usize,
+    /// who a task from sort gets (config sort_who)
+    sort_who: String,
+    /// items changed this run per store: they stay in their module
+    changed: std::collections::HashMap<PathBuf, std::collections::HashSet<String>>,
+    /// how changed items were before, for undo
+    before: std::collections::HashMap<(PathBuf, String), list::Before>,
 }
 
 /// wrapped height of `lines` at `width`
@@ -700,6 +708,10 @@ pub struct Options {
     pub width: u16,
     /// config `keys`: action -> keys in vim notation
     pub keys: std::collections::BTreeMap<String, String>,
+    /// parents shown above an item
+    pub tree_depth: usize,
+    /// who a task from sort gets: me, ai, a name, - nobody
+    pub sort_who: String,
 }
 
 /// runs the modules on `root` (with `all`: every known store); dump goes
@@ -723,7 +735,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         for (n, m) in o.modules.iter().enumerate() {
             per_module[n] += match m.as_str() {
                 "news" => table::count(&cake, table::Kind::News, user, *since)?,
-                "sort" => table::count(&cake, table::Kind::Sort, user, *since)?,
+                "sort" => list::count(&cake)?,
                 "mine" => table::count(&cake, table::Kind::Mine, user, *since)?,
                 "answer" => card::count(&cake, card::Kind::Answer, user)?,
                 "review" => card::count(&cake, card::Kind::Review, user)?,
@@ -746,7 +758,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.clone(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), changed: Default::default(), before: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the
@@ -768,7 +780,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
                         let cake = Cake { root: sroot };
                         let (c, l) = match m.as_str() {
                             "news" => table::run(&mut ui, &cake, sroot, table::Kind::News, user, name, *since)?,
-                            "sort" => table::run(&mut ui, &cake, sroot, table::Kind::Sort, user, name, *since)?,
+                            "sort" => list::run(&mut ui, &cake, sroot, user, name)?,
                             "mine" => table::run(&mut ui, &cake, sroot, table::Kind::Mine, user, name, *since)?,
                             "answer" => card::run(&mut ui, &cake, card::Kind::Answer, user, name)?,
                             "review" => card::run(&mut ui, &cake, card::Kind::Review, user, name)?,

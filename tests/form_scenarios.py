@@ -83,8 +83,8 @@ cake("review", "feat", agent=True)
 cake("add", "land", "--task", "--assignee", "me", "-m", "# call landlord")
 
 keys = [
-    # sort: first row a task for ai, due friday; second row a note; save
-    "t", "w", ":", "due fri\r", "j", "n", "\r",
+    # sort: first row a task (sort_who: ai), due friday; second row a note; go on
+    "t", ":", "due fri\r", "j", "n", "\r",
     # answer: start typing, leave with jk (typed fast), then option 2
     "i", "may", "jk", "2", "\r",
     # review: c is done
@@ -120,6 +120,24 @@ cake("add", "yy", "-m", "# another idea")
 form(["F", "too many columns\r", "q", "q"])
 fb = [i for i in cake("ls", "-t", "form-feedback")["items"]]
 check("F: feedback is a task for ai", len(fb) == 1 and fb[0]["status"] == "task" and fb[0]["assignee"] == "ai")
+
+# sticky: two items sorted, h and l: both still in sort with a check
+cake("set", "dropped", "yy")
+cake("add", "s1", "-m", "# sticky one")
+cake("add", "s2", "-m", "# sticky two")
+screen = form(["t", "j", "n", "h", "l", "q"])
+back = screen[screen.rfind("nothing here"):]
+check("sticky: saved at once", item("s1")["status"] == "task" and item("s1")["assignee"] == "ai" and item("s2")["status"] is None)
+check("sticky: both still shown after h/l", "✓ sticky one" in back and "✓ sticky two" in back)
+
+# config sort_who "-": a task from sort gets nobody
+os.makedirs(f"{TMP}/config/cake", exist_ok=True)
+with open(f"{TMP}/config/cake/config.hjson", "w") as f:
+    f.write('{ sort_who: "-" }\n')
+cake("set", "dropped", "s2")
+cake("add", "s3", "-m", "# nobody's task")
+form(["t", "q"])
+check("sort_who -: task without assignee", item("s3")["status"] == "task" and item("s3")["assignee"] is None)
 
 subprocess.run(["rm", "-rf", TMP])
 sys.exit(1 if failures else 0)

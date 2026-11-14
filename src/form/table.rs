@@ -8,6 +8,7 @@ use crate::util;
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum Kind {
     News,
+    #[allow(dead_code)] // sort runs on the tree (list.rs); tables go in tree-modules
     Sort,
     Mine,
 }
@@ -111,7 +112,7 @@ pub(super) fn count(cake: &Cake, kind: Kind, user: &str, since: i64) -> Result<u
 }
 
 /// short date for a column: 30.11.
-fn short_date(d: &Option<String>) -> String {
+pub(super) fn short_date(d: &Option<String>) -> String {
     d.as_deref()
         .and_then(|d| chrono::NaiveDate::parse_from_str(&d[..d.len().min(10)], "%Y-%m-%d").ok())
         .map_or(String::new(), |d| d.format("%d.%m.").to_string())
@@ -192,7 +193,7 @@ fn render(kind: Kind, rows: &[Row], cur: usize, opened: Option<usize>, width: u1
 }
 
 /// who `w` cycles through: you, ai, agents and people of the store config
-fn who_cycle(root: &Path, user: &str) -> Vec<String> {
+pub(super) fn who_cycle(root: &Path, user: &str) -> Vec<String> {
     let sc = crate::config::Config::store(root).unwrap_or_default();
     let mut list = vec![user.to_string(), "ai".to_string()];
     for a in sc.agents.iter().chain(&sc.people) {

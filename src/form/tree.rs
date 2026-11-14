@@ -108,9 +108,10 @@ impl<'a> Tree<'a> {
     }
 
     /// the lines of `rows` at `width`, the cursor on row `cur`; `cols` gives
-    /// the right-hand text of an item (status, who); returns the lines and
-    /// the line of the cursor
-    pub fn lines(&self, rows: &[Row], cur: usize, width: u16, cols: &dyn Fn(&Value) -> String) -> (Vec<Line<'static>>, usize) {
+    /// the right-hand text of an item (status, who), `under` a line under
+    /// the cursor row (the edit line); returns the lines and the line of
+    /// the cursor
+    pub fn lines(&self, rows: &[Row], cur: usize, width: u16, cols: &dyn Fn(&Value) -> String, under: Option<Vec<Span<'static>>>) -> (Vec<Line<'static>>, usize) {
         let (t, g) = (theme::t(), style::g());
         let w = width as usize;
         let mut out = vec![];
@@ -146,10 +147,15 @@ impl<'a> Tree<'a> {
                 Span::styled(title, style),
                 Span::styled(format!(" {}", right), dim()),
             ]));
+            // under the title: the tree lines go on, then the text
+            let kids_below = rows.get(n + 1).is_some_and(|x| x.prefix.len() > r.prefix.len());
+            let lead = format!("  {}{}", r.below, if kids_below { g.pipe } else { g.space });
+            if let (true, Some(spans)) = (here, &under) {
+                let mut line = vec![Span::styled(lead.clone(), dim())];
+                line.extend(spans.iter().cloned());
+                out.push(Line::from(line));
+            }
             if r.opened {
-                // under the title: the tree lines go on, then the text
-                let kids_below = rows.get(n + 1).is_some_and(|x| x.prefix.len() > r.prefix.len());
-                let lead = format!("  {}{}", r.below, if kids_below { g.pipe } else { g.space });
                 let body = body_of(item);
                 let body = if body.is_empty() { "(no text)".to_string() } else { body };
                 for l in markdown::render(&body, width.saturating_sub(lead.chars().count() as u16)) {
@@ -236,7 +242,7 @@ mod tests {
         tree.changed.insert("e".into());
         tree.opened.insert("d".into());
         let rows = tree.rows();
-        let (lines, focus) = tree.lines(&rows, 2, 60, &|i| str_of(i, "id").to_string());
+        let (lines, focus) = tree.lines(&rows, 2, 60, &|i| str_of(i, "id").to_string(), None);
         let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         println!("{}", text.join("\n"));
         assert!(text[0].contains("… › title c"), "{}", text[0]);
@@ -269,7 +275,7 @@ mod tests {
         for width in [60u16, 100] {
             let inner = column_width(width, 100).saturating_sub(4);
             let rows = tree.rows();
-            let (card, focus) = tree.lines(&rows, 3, inner, &|i| if str_of(i, "id") == "goal" { "task ai".into() } else { "inbox".into() });
+            let (card, focus) = tree.lines(&rows, 3, inner, &|i| if str_of(i, "id") == "goal" { "task ai".into() } else { "inbox".into() }, Some(vec![Span::raw("inbox · who – · prio – · due – · deadline –")]));
             let screen = Screen { card_title: "sort on the tree · cake".into(), card, focus: Some(focus), ..Default::default() };
             super::super::screens::dump("tree", width, &screen, 1);
         }
