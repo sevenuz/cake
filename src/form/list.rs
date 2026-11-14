@@ -472,17 +472,42 @@ impl View<'_> {
         let choices = options
             .iter()
             .enumerate()
-            .map(|(n, text)| {
+            .flat_map(|(n, text)| {
                 let chosen = sel == Some(n);
-                Line::from(vec![
-                    Span::styled(format!("{} {}) ", if chosen { g.select } else { " " }, n + 1), Style::default().fg(t.hint)),
-                    Span::styled(text.clone(), if chosen { bold().fg(t.hint) } else { Style::default() }),
-                ])
+                let lead = Span::styled(format!("{} {}) ", if chosen { g.select } else { " " }, n + 1), Style::default().fg(t.hint));
+                hanging(lead, text, if chosen { bold().fg(t.hint) } else { Style::default() }, width.saturating_sub(4) as usize)
             })
             .collect();
         let title = if actions { str_of(item, "title").to_string() } else { format!("{} · context, no actions here", str_of(item, "title")) };
         (title, lines, choices)
     }
+}
+
+/// `lead` then `text` word-wrapped at `width`; wrapped lines start under
+/// the text's first word, not under the lead
+fn hanging(lead: Span<'static>, text: &str, style: Style, width: usize) -> Vec<Line<'static>> {
+    let indent = lead.width();
+    let room = width.saturating_sub(indent).max(8);
+    let mut rows: Vec<String> = vec![String::new()];
+    for word in text.split_whitespace() {
+        let row = rows.last_mut().unwrap();
+        let len = row.chars().count();
+        if len > 0 && len + 1 + word.chars().count() > room {
+            rows.push(word.to_string());
+        } else {
+            if len > 0 {
+                row.push(' ');
+            }
+            row.push_str(word);
+        }
+    }
+    rows.into_iter()
+        .enumerate()
+        .map(|(n, r)| {
+            let head = if n == 0 { lead.clone() } else { Span::raw(" ".repeat(indent)) };
+            Line::from(vec![head, Span::styled(r, style)])
+        })
+        .collect()
 }
 
 /// the state of one module run
@@ -946,6 +971,13 @@ mod tests {
         assert_eq!(Kind::Review.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · w · q");
         assert_eq!(Kind::Sort.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · move <store> · w · q");
         assert_eq!(Kind::Answer.command_hint(), "w · q");
+    }
+
+    #[test]
+    fn wrapped_options_hang_under_their_first_word() {
+        let lines = hanging(Span::raw("› 1) "), "one two three four five", Style::default(), 18);
+        let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        assert_eq!(text, ["› 1) one two three", "     four five"]);
     }
 
     #[test]
