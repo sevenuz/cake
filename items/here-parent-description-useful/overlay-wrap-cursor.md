@@ -1,12 +1,14 @@
 ---
 id: overlay-wrap-cursor
-status: task
+status: doing
 parent: "[[here-parent-description-useful]]"
 created: 2026-11-14T11:18:40+01:00
 by: claude-code
-sessions: [4fa59fcd-dfb0-420a-8037-705b420d66a2]
+sessions: [4fa59fcd-dfb0-420a-8037-705b420d66a2, 9dc30da3-12f6-4942-83f6-605fbb210d3a]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-14T11:54:45+01:00/
 ---
 # Feedback box: grow and place cursor by word wrap
 
