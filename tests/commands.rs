@@ -790,3 +790,16 @@ fn claude_hook_logs_session_time_split_by_the_running_timer() {
     assert!(lines[0].get("item").is_none(), "before the timer: the store only");
     assert_eq!(lines[1]["item"], "work");
 }
+
+#[test]
+fn estimate_round_trips_and_clears() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "work", "--todo", "--est", "2h30m", "-m", "# Work"]);
+    assert!(read_item(&d, "work").contains("estimate: 2h30m"));
+    assert_eq!(json_value(&env, &d, &["show", "work"])["items"][0]["estimate"], 9000);
+    assert!(env.cake_ok(&d, &["show", "work"]).contains("est 2h30m"));
+    assert!(env.cake_err(&d, &["edit", "work", "--est", "soon"]).contains("estimate"));
+    env.cake_ok(&d, &["edit", "work", "--est", "-"]);
+    assert!(!read_item(&d, "work").contains("estimate"));
+}

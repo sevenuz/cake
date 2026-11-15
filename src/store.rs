@@ -537,6 +537,29 @@ pub mod inner {
             self.inherited(id, |i| i.deadline().cloned())
         }
 
+        /// expected work in seconds: the item's estimate, else the median
+        /// tracked time of done tasks of the same kind (delegated: assignee
+        /// is not the owner, or the owner's own work); (seconds, from history)
+        pub fn expected(&self, id: &str) -> Option<(i64, bool)> {
+            let item = self.items.get(id)?;
+            if let Some(e) = item.estimate() {
+                return Some((e, false));
+            }
+            let own = |i: &Item| i.assignee().is_some() && i.assignee() == i.owner();
+            let mut done: Vec<i64> = self
+                .items
+                .values()
+                .filter(|i| i.status() == Some(Status::Done) && own(i) == own(item))
+                .map(|i| i.tracked_seconds())
+                .filter(|t| *t > 0)
+                .collect();
+            if done.is_empty() {
+                return None;
+            }
+            done.sort();
+            Some((done[done.len() / 2], true))
+        }
+
         pub fn score(&self, id: &str, now: i64) -> i64 {
             let Some(i) = self.items.get(id).filter(|i| i.status().map_or(true, |s| s.is_open())) else {
                 return 0;
@@ -633,6 +656,9 @@ pub mod inner {
             }
             if let Some((d, true)) = self.effective_deadline(id) {
                 inherited.insert("deadline".into(), d.into());
+            }
+            if let Some((e, true)) = self.expected(id).filter(|_| item.is_open()) {
+                inherited.insert("estimate".into(), e.into());
             }
             if !inherited.is_empty() {
                 m.insert("inherited".into(), inherited.into());
@@ -996,6 +1022,34 @@ pub mod inner {
             assert_eq!(o.blocked_by(), &vec!["agents".to_string()]);
             assert!(o.content().contains("[[agents]] and [[goalie]]"), "{}", o.content());
             assert!(dir.path().join("items/agents/kid.md").exists() && !dir.path().join("items/goal.md").exists() && !dir.path().join("items/goal").exists());
+        }
+
+        #[test]
+        fn expected_work_is_the_estimate_else_the_median_of_done_tasks() {
+            let mut s = empty_store();
+            for (id, secs) in [("a", 600), ("b", 3600), ("c", 7200)] {
+                let mut i = item(id, None, vec![]);
+                i.set_status(Status::Done).unwrap();
+                i.set_assignee(Some("claude-code".into()));
+                i.set_timetrack(vec![0, secs]);
+                s.add(i).unwrap();
+            }
+            let mut open = item("open", None, vec![]);
+            open.set_status(Status::Task).unwrap();
+            open.set_assignee(Some("claude-code".into()));
+            s.add(open.clone()).unwrap();
+            assert_eq!(s.expected("open"), Some((3600, true)));
+            assert_eq!(s.item_json("open").unwrap()["inherited"]["estimate"], 3600);
+            open.set_estimate(Some("2h30m".into())).unwrap();
+            s.edit(open).unwrap();
+            assert_eq!(s.expected("open"), Some((9000, false)));
+            // the user's own work has no history here
+            let mut mine = item("mine", None, vec![]);
+            mine.set_status(Status::Task).unwrap();
+            mine.set_assignee(Some("jul".into()));
+            mine.set_owner(Some("jul".into()));
+            s.add(mine).unwrap();
+            assert_eq!(s.expected("mine"), None);
         }
 
         #[test]

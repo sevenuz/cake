@@ -112,6 +112,8 @@ mod tests {
         assert_eq!(parse_date("+3d").unwrap(), fmt(today + Duration::days(3)));
         assert_eq!(parse_date("2w").unwrap(), fmt(today + Duration::days(14)));
         assert_eq!(parse_age("3m").unwrap(), 90 * 86400);
+        assert_eq!(timestamp_to_hms(3700), "1h1m40s");
+        assert_eq!(timestamp_to_hms(9000), "2h30m");
         assert_eq!(parse_age("2w").unwrap(), 14 * 86400);
         assert!(parse_age("3").is_err() && parse_age("xm").is_err() && parse_age("3h").is_err());
         assert_eq!(parse_date("1w2d").unwrap(), fmt(today + Duration::days(9)));
@@ -326,7 +328,7 @@ pub fn parse_date(s: &str) -> Result<String, String> {
 /// show timestamp in hours, minutes, seconds
 pub fn timestamp_to_hms(timestamp: i64) -> String {
     let hours = timestamp / 60 / 60;
-    let minutes = (timestamp - hours * 60) / 60;
+    let minutes = (timestamp - hours * 60 * 60) / 60;
     let seconds = timestamp - hours * 60 * 60 - minutes * 60;
     let mut res = "".to_string();
     if hours > 0 {

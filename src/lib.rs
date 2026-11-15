@@ -265,6 +265,10 @@ pub enum Commands {
         #[arg(long, value_name = "N")]
         prio: Option<u64>,
 
+        /// expected work: 2h30m, 45m, 1d
+        #[arg(long, value_name = "DURATION")]
+        est: Option<String>,
+
         /// items that must be closed first
         #[arg(long, value_name = "IDS")]
         blocked_by: Option<String>,
@@ -291,6 +295,10 @@ pub enum Commands {
         /// hard limit date, - clears
         #[arg(long, value_name = "DATE")]
         deadline: Option<String>,
+
+        /// expected work (2h30m, 45m), - clears
+        #[arg(long, value_name = "DURATION")]
+        est: Option<String>,
 
         /// who does it (me, ai, a name), - clears
         #[arg(long, value_name = "WHO")]
@@ -550,7 +558,7 @@ pub fn print_error(e: &Box<dyn Error>) {
 /// fields of ls/ready --json without -l
 const BRIEF: &[&str] = &[
     "id", "title", "status", "tags", "parent", "children", "blocked_by", "blocks", "ready", "score", "due",
-    "deadline", "priority", "running", "by", "assignee", "owner",
+    "deadline", "priority", "estimate", "running", "by", "assignee", "owner",
 ];
 
 fn print_report(store: &Store, report: commands::Report) {
@@ -759,6 +767,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             prio: None,
             due: None,
             deadline: None,
+            est: None,
             assignee: None,
             owner: None,
             tag: None,
@@ -833,6 +842,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             due,
             deadline,
             prio,
+            est,
             blocked_by,
             ..
         }) => commands::add(
@@ -857,12 +867,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 due: due.to_owned(),
                 deadline: deadline.to_owned(),
                 priority: *prio,
+                estimate: est.to_owned(),
                 blocked_by: util::split_comma_cleanup(blocked_by.to_owned().unwrap_or_default()),
             },
         )?,
-        Some(Commands::Edit { ids, prio, due, deadline, assignee, owner, tag, blocked_by, parent, .. }) => {
+        Some(Commands::Edit { ids, prio, due, deadline, est, assignee, owner, tag, blocked_by, parent, .. }) => {
             let fields = edited.is_some()
                 || message.is_some()
+                || est.is_some()
                 || prio.is_some()
                 || due.is_some()
                 || deadline.is_some()
@@ -884,6 +896,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                             priority: *prio,
                             due: due.to_owned(),
                             deadline: deadline.to_owned(),
+                            estimate: est.to_owned(),
                             assignee: assignee.clone(),
                             owner: owner.clone(),
                         },

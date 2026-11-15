@@ -110,8 +110,10 @@ Per store (`cake --store <path> … --json`), when asked to triage or work:
 5. Loop until `cake ready --json` is empty:
    - take the highest `score`, `cake show <id> --json`;
    - a task without children that is too big → split: subtasks with
-     `cake add --task -p <id> --assignee <you> -m …` (they inherit the
-     owner), order with `--blocked-by` between siblings, never the parent;
+     `cake add --task -p <id> --assignee <you> --est 1h -m …` (they
+     inherit the owner), order with `--blocked-by` between siblings, never
+     the parent; `--est` is your honest guess of the work (2h30m, 45m), it
+     feeds the critical path to a goal's deadline;
    - a decision that is hard to undo or changes the scope → ask (below),
      then continue with the next ready item;
    - otherwise `cake start <id>`, do the work (code on a branch per item,
@@ -165,10 +167,10 @@ cake edit <task> --blocked-by <question> --json
 cake ls --json [selectors]              # tree: matches with children; -l adds bodies
 cake ready --json                       # = ls --ready: ready tasks (agents: yours and ai)
 cake show <id> --json                   # one item with body
-cake add [ID] --json [--task|--note] [-p ID] [--assignee WHO] [-t TAGS] [--blocked-by IDS] [--prio N] [--due D] [--deadline D] -m TEXT
+cake add [ID] --json [--task|--note] [-p ID] [--assignee WHO] [-t TAGS] [--blocked-by IDS] [--prio N] [--due D] [--deadline D] [--est 2h] -m TEXT
 cake set <status> <ids> [-m TEXT] --json   # inbox note task doing review done dropped; -m appends
 # aliases: done, drop, do (task), note, review: `cake review <id> -m "changed …"`
-cake edit <ids> --json [-m BODY] [--prio N] [--due D] [--deadline D] [--assignee WHO] [--owner WHO]
+cake edit <ids> --json [-m BODY] [--prio N] [--due D] [--deadline D] [--est 2h|-] [--assignee WHO] [--owner WHO]
           [--tag a,~b] [--blocked-by x,~y] [--parent ID|-] [--comment TEXT]
 # -m replaces the body (your items only); --comment appends and gives it back to the assignee
 # dates: 2026-11-30, 30.11., today, tomorrow, mon..sun, +3d, 2w; stored as YYYY-MM-DD

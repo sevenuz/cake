@@ -69,6 +69,8 @@ pub struct Item {
     assignee: Option<String>,
     owner: Option<String>,
     priority: Option<u64>,
+    /// expected work, seconds
+    estimate: Option<i64>,
     timetrack: Vec<i64>,
     extra: Mapping,
     content: String,
@@ -161,6 +163,7 @@ impl Item {
             assignee: None,
             owner: None,
             priority: None,
+            estimate: None,
             timetrack: vec![],
             extra: Mapping::new(),
             content: String::new(),
@@ -210,6 +213,10 @@ impl Item {
             Some(Value::Number(n)) if n.as_u64().is_some() => n.as_u64(),
             Some(_) => return Err(err("'priority' must be a number".to_string())),
         };
+        let estimate = match take_str(&mut m, "estimate")? {
+            None => None,
+            Some(e) => Some(util::parse_duration(&e).map_err(|_| err(format!("'estimate' {} is no duration like 2h30m", e)))?),
+        };
         let mut timetrack = vec![];
         for interval in take_list(&mut m, "time")? {
             let (start, end) = interval
@@ -238,6 +245,7 @@ impl Item {
             assignee,
             owner,
             priority,
+            estimate,
             timetrack,
             extra: m,
             content,
@@ -301,6 +309,9 @@ impl Item {
         if let Some(p) = self.priority {
             s += &format!("priority: {}\n", p);
         }
+        if let Some(e) = self.estimate {
+            s += &format!("estimate: {}\n", util::timestamp_to_hms(e));
+        }
         if !self.timetrack.is_empty() {
             s += "time:\n";
             for pair in self.timetrack.chunks(2) {
@@ -343,6 +354,9 @@ impl Item {
         }
         if let Some(p) = self.priority {
             meta.push(format!("prio {}", p));
+        }
+        if let Some(e) = self.estimate {
+            meta.push(format!("est {}", util::timestamp_to_hms(e)));
         }
         if let Some(d) = &self.due {
             meta.push(format!("due {}", d));
@@ -566,6 +580,27 @@ impl Item {
     }
 
     /// hard limit, same forms as `due`
+    #[cfg(test)]
+    pub fn set_timetrack(&mut self, t: Vec<i64>) {
+        self.timetrack = t;
+    }
+
+    pub fn estimate(&self) -> Option<i64> {
+        self.estimate
+    }
+
+    /// a duration like 2h30m, 45m, 1d
+    pub fn set_estimate(&mut self, estimate: Option<String>) -> Result<(), String> {
+        self.estimate = match estimate {
+            None => None,
+            Some(e) => match util::parse_duration(&e) {
+                Ok(s) if s > 0 => Some(s),
+                _ => return Err(format!("estimate: '{}' is no duration like 2h30m", e)),
+            },
+        };
+        Ok(())
+    }
+
     pub fn set_deadline(&mut self, deadline: Option<String>) -> Result<(), String> {
         self.deadline = deadline.map(|d| util::parse_date(&d).map_err(|e| format!("deadline: {}", e))).transpose()?;
         Ok(())
@@ -632,6 +667,7 @@ impl Item {
             "assignee": self.assignee,
             "owner": self.owner,
             "priority": self.priority,
+            "estimate": self.estimate,
             "time": time,
             "tracked_seconds": self.tracked_seconds(),
             "running": self.is_started(),

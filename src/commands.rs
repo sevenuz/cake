@@ -24,6 +24,7 @@ pub struct AddOptions {
     pub due: Option<String>,
     pub deadline: Option<String>,
     pub priority: Option<u64>,
+    pub estimate: Option<String>,
     pub blocked_by: Vec<String>,
 }
 
@@ -84,6 +85,7 @@ where
     item.set_due(options.due).map_err(error::invalid)?;
     item.set_deadline(options.deadline).map_err(error::invalid)?;
     item.set_priority(options.priority).map_err(error::invalid)?;
+    item.set_estimate(options.estimate).map_err(error::invalid)?;
     item.set_blocked_by(options.blocked_by);
     item.set_by(config.author(store.root()));
     item.set_content(content);
@@ -101,6 +103,8 @@ pub struct EditOptions {
     pub priority: Option<u64>,
     pub due: Option<String>,
     pub deadline: Option<String>,
+    /// "-" clears
+    pub estimate: Option<String>,
     /// Some(None) clears
     pub assignee: Option<Option<String>>,
     pub owner: Option<Option<String>>,
@@ -136,6 +140,7 @@ where
         || options.priority.is_some()
         || options.due.is_some()
         || options.deadline.is_some()
+        || options.estimate.is_some()
         || options.assignee.is_some()
         || options.owner.is_some()
     {
@@ -151,6 +156,9 @@ where
         }
         if let Some(d) = options.deadline {
             item.set_deadline(Some(d).filter(|d| d != "-")).map_err(error::invalid)?;
+        }
+        if let Some(e) = options.estimate {
+            item.set_estimate(Some(e).filter(|e| e != "-")).map_err(error::invalid)?;
         }
         if let Some(a) = options.assignee {
             item.set_assignee(a);
