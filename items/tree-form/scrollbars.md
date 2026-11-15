@@ -1,11 +1,12 @@
 ---
 id: scrollbars
-status: review
+status: done
 parent: "[[tree-form]]"
 created: 2026-11-15T17:36:37+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 7, out: 2647, cache_read: 607118, cache_write: 4021}}
+closed: 2026-11-15T17:44:13+01:00
 assignee: ai
 owner: sevenuz
 time:
