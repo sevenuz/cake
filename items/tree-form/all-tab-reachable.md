@@ -1,11 +1,12 @@
 ---
 id: all-tab-reachable
-status: review
+status: done
 parent: "[[tree-form]]"
 created: 2026-11-15T17:12:06+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 0, out: 1436, cache_read: 356217, cache_write: 2945}}
+closed: 2026-11-15T17:33:12+01:00
 assignee: ai
 owner: sevenuz
 time:
