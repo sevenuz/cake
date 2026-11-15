@@ -13,3 +13,5 @@ owner: sevenuz
 - why: ? lists every action with one meaning; in answer and review n/p mean next/previous, not note/prio; the list is long and not grouped
 - what: the help shows the keys of the current module and focus (tree or box), grouped: move, act, box, form
 - done when: ? in each module shows only what works there, with the module's meaning
+
+also the key doc (was form-keys-update): a doc note under [[form]], checked against the keymap in src/form/keys.rs
