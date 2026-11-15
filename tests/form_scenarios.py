@@ -203,7 +203,7 @@ if landed is not None:
 # the last tab: the whole open tree with the details box
 end = tmux_screen(["l"], args=("form", "mine"))
 if end is not None:
-    check("last tab: everything open as a tree", "everything open" in end and "ALL" in end)
+    check("last tab: everything open as a tree", "open work, by score" in end and "ALL" in end)
 start = tmux_screen([], args=("form", "mine"))
 if start is not None:
     check("header: all listed from the start", " · all" in start)
@@ -221,7 +221,7 @@ check("review: :prio 2 set the priority", item("rv")["priority"] == 2)
 # nothing waits: the form opens at dump anyway, esc goes on to the last tab
 empty = tmux_screen(["\x1b"], args=("form", "answer"))
 if empty is not None:
-    check("nothing waits: dump, then the last tab", "everything open" in empty and "dump" in empty)
+    check("nothing waits: dump, then the last tab", "open work, by score" in empty and "dump" in empty)
 
 subprocess.run(["rm", "-rf", TMP])
 sys.exit(1 if failures else 0)

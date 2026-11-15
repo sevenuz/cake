@@ -126,6 +126,16 @@ fn before(i: &Value) -> Before {
     }
 }
 
+/// an item of the ALL tab at filter `level`: 0 open work (inbox, task,
+/// doing, review), 1 also notes, 2 also done and dropped
+fn in_all(i: &Value, level: u8) -> bool {
+    match str_of(i, "status") {
+        "inbox" | "task" | "doing" | "review" => true,
+        "done" | "dropped" => level >= 2,
+        _ => level >= 1,
+    }
+}
+
 fn closed(i: &Value) -> bool {
     matches!(str_of(i, "status"), "done" | "dropped")
 }
@@ -192,7 +202,7 @@ pub(super) fn disk_stamp(root: &Path) -> (usize, std::time::SystemTime) {
 
 /// all items with closed ones only when changed this run; `cake ls` runs
 /// again only when the store changed on disk (own saves, agents, sync)
-fn load(ui: &mut Ui, cake: &Cake, root: &Path, changed: &HashSet<String>) -> Result<Vec<Value>, Box<dyn Error>> {
+fn load(ui: &mut Ui, cake: &Cake, root: &Path, changed: &HashSet<String>, with_closed: bool) -> Result<Vec<Value>, Box<dyn Error>> {
     let stamp = disk_stamp(root);
     let fresh = match ui.cache.get(root) {
         Some((s, items)) if *s == stamp => items.clone(),
@@ -202,7 +212,7 @@ fn load(ui: &mut Ui, cake: &Cake, root: &Path, changed: &HashSet<String>) -> Res
             items
         }
     };
-    Ok(fresh.into_iter().filter(|i| !closed(i) || changed.contains(str_of(i, "id"))).collect())
+    Ok(fresh.into_iter().filter(|i| with_closed || !closed(i) || changed.contains(str_of(i, "id"))).collect())
 }
 
 pub(super) fn count(cake: &Cake, kind: Kind, user: &str, since: i64) -> Result<usize, Box<dyn Error>> {
@@ -518,11 +528,14 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         let changed = ui.changed.entry((root.to_path_buf(), kind.name())).or_default().clone();
         let results: std::collections::HashMap<String, String> =
             ui.results.iter().filter(|((r, _), _)| r == root).map(|((_, id), v)| (id.clone(), v.clone())).collect();
-        let mut all = load(ui, cake, root, &changed)?;
+        let level = if kind == Kind::All { ui.all_filter } else { 0 };
+        let mut all = load(ui, cake, root, &changed, level >= 2)?;
         keep_order(ui.order.entry(root.to_path_buf()).or_default(), &mut all);
-        let mut matched: Vec<String> = all.iter().filter(|i| matches(kind, i, &all, user, since)).map(|i| str_of(i, "id").to_string()).collect();
+        let mut matched: Vec<String> = all.iter().filter(|i| if kind == Kind::All { in_all(i, level) } else { matches(kind, i, &all, user, since) }).map(|i| str_of(i, "id").to_string()).collect();
         matched.extend(st.added.iter().filter(|id| !matched.contains(id)).cloned().collect::<Vec<_>>());
-        let mut tree = Tree::new(&all, matched, ui.tree_depth);
+        // ALL shows the whole way up, the modules `tree_depth` parents
+        let depth = if kind == Kind::All { crate::store::MAX_DEPTH } else { ui.tree_depth };
+        let mut tree = Tree::new(&all, matched, depth);
         tree.changed = changed.clone();
         tree.opened = st.opened.clone();
         tree.accent = Some(kind.accent());
@@ -577,7 +590,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                 ],
                 Kind::News => vec![("read only:".into(), String::new()), (ks(Act::Timer), "stop agent".into()), (ks(Act::Drop), "drop".into())],
                 Kind::All => vec![
-                    (format!("{}/{}", ks(Act::Complete), ks(Act::Drop)), "done drop".into()),
+                    (ks(Act::Filter), ["more", "closed too", "focus"][ui.all_filter as usize % 3].into()),
+                    (format!("{}/{}/{}/{}", ks(Act::Complete), ks(Act::Drop), ks(Act::Note), ks(Act::Task)), "done drop note task".into()),
                     (ks(Act::Who), "who".into()),
                     (ks(Act::Prio), "prio".into()),
                     (":due".into(), String::new()),
@@ -611,7 +625,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         // ? keys always last: kept when the line is cut
         parts.push((ks(Act::Help), "keys".into()));
         let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
-        let mut head = vec![Span::styled(format!("{} · {}", kind.title(), store), bold().fg(kind.accent().1))];
+        let title = if kind == Kind::All { ["open work, by score", "open work and notes", "everything, closed too"][level as usize % 3] } else { kind.title() };
+        let mut head = vec![Span::styled(format!("{} · {}", title, store), bold().fg(kind.accent().1))];
         if kind == Kind::All && !ui.summary.is_empty() {
             head.push(Span::styled(format!(" · {}", ui.summary), dim()));
         }
@@ -790,8 +805,11 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             Act::Drop if kind != Kind::Answer => (change, then_next) = (Some(Change::Status("dropped")), true),
             Act::Timer if kind == Kind::Mine => change = Some(Change::Timer(str_of(&item, "status") != "doing")),
             Act::Timer if kind == Kind::News => (change, then_next) = (Some(Change::Hold), true),
-            Act::Task if kind == Kind::Sort => change = Some(Change::Status("task")),
+            Act::Task if matches!(kind, Kind::Sort | Kind::All) => change = Some(Change::Status("task")),
             Act::Note if kind == Kind::Sort => (change, then_next) = (Some(Change::Status("note")), true),
+            // ALL: park a task right where it is
+            Act::Note if kind == Kind::All => change = Some(Change::Status("note")),
+            Act::Filter if kind == Kind::All => ui.all_filter = (ui.all_filter + 1) % 3,
             Act::Who if kind.edits() => {
                 let at = item["assignee"].as_str().and_then(|w| whos.iter().position(|x| x == w));
                 change = Some(Change::Who(Some(whos[at.map_or(0, |a| (a + 1) % whos.len())].clone())));
@@ -990,6 +1008,16 @@ mod tests {
         assert_eq!(ids(Kind::News), ["n"]);
         let finished = vec![json!({"id": "f", "status": "review", "by": "claude-code", "created": "2026-11-14T10:00:00Z"})];
         assert!(!matches(Kind::News, &finished[0], &finished, "jul", 1), "finished work is in review, not news");
+    }
+
+    #[test]
+    fn all_filter_levels() {
+        let ids = |level: u8| -> Vec<&str> {
+            ["inbox", "task", "doing", "review", "", "done", "dropped"].into_iter().filter(|s| in_all(&json!({"status": if s.is_empty() { Value::Null } else { json!(s) }}), level)).collect()
+        };
+        assert_eq!(ids(0), ["inbox", "task", "doing", "review"]);
+        assert_eq!(ids(1), ["inbox", "task", "doing", "review", ""]);
+        assert_eq!(ids(2).len(), 7);
     }
 
     #[test]

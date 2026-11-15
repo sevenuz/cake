@@ -193,6 +193,8 @@ struct Ui {
     tree_depth: usize,
     /// who a task from the inbox module gets (config sort_who)
     sort_who: String,
+    /// the ALL tab's view: 0 open work, 1 with notes, 2 with closed items
+    all_filter: u8,
     /// per step: nothing left to decide (a check in the header)
     done: Vec<bool>,
     /// items changed this run per store and module: they stay in that module
@@ -860,7 +862,7 @@ pub fn run(root: &Path, user: &str, mut o: Options) -> Result<(), Box<dyn Error>
         per_module.insert(0, 0);
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.iter().cloned().chain(["all".to_string()]).collect(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), done: vec![false; o.modules.len() + 1], changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.iter().cloned().chain(["all".to_string()]).collect(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), all_filter: 0, done: vec![false; o.modules.len() + 1], changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the
