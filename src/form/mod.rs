@@ -13,7 +13,7 @@ use crate::{error, markdown, style, theme};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap};
 use ratatui::DefaultTerminal;
 use serde_json::Value;
 use std::error::Error;
@@ -268,6 +268,79 @@ fn keys(parts: &[(&str, &str)]) -> Line<'static> {
 }
 
 
+/// a scrollbar at the right edge of `area` when `len` lines do not fit
+/// (`view` shown, scrolled by `pos`); `active`: in the hint color
+fn scrollbar(f: &mut ratatui::Frame, area: Rect, len: u16, view: u16, pos: u16, active: bool) {
+    if len <= view || area.height == 0 {
+        return;
+    }
+    let g = style::g();
+    let bar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(None)
+        .end_symbol(None)
+        .track_symbol(Some(g.scroll_track))
+        .thumb_symbol(g.scroll_thumb)
+        .track_style(dim())
+        .thumb_style(if active { Style::default().fg(theme::t().hint) } else { dim() });
+    let mut state = ScrollbarState::new((len - view) as usize).position(pos as usize).viewport_content_length(view as usize);
+    f.render_stateful_widget(bar, area, &mut state);
+}
+
+/// below this column width the key line gets two rows
+const KEYS_TWO_ROWS_BELOW: u16 = 100;
+
+/// the key line in at most `rows` rows of `width`: whole `key what`
+/// groups per row; when they do not fit, groups before the last one
+/// (`? keys`) are dropped from the end and `…` marks the cut
+fn fit_keys(line: &Line<'static>, width: u16, rows: usize) -> Vec<Line<'static>> {
+    let w = width as usize;
+    // groups: the spans between the two-space separators
+    let mut groups: Vec<Vec<Span<'static>>> = vec![vec![]];
+    for s in &line.spans {
+        if s.content == "  " {
+            groups.push(vec![]);
+        } else {
+            groups.last_mut().unwrap().push(s.clone());
+        }
+    }
+    groups.retain(|g| !g.is_empty());
+    let gw = |g: &[Span]| g.iter().map(Span::width).sum::<usize>();
+    let layout = |gs: &[Vec<Span<'static>>]| -> Option<Vec<Line<'static>>> {
+        let mut out: Vec<Vec<Span<'static>>> = vec![vec![]];
+        let mut used = 0;
+        for g in gs {
+            let need = gw(g) + if used > 0 { 2 } else { 0 };
+            if used > 0 && used + need > w {
+                out.push(vec![]);
+                used = 0;
+            }
+            let row = out.last_mut().unwrap();
+            if used > 0 {
+                row.push(Span::styled("  ", dim()));
+                used += 2;
+            }
+            row.extend(g.iter().cloned());
+            used += gw(g);
+        }
+        (out.len() <= rows).then(|| out.into_iter().map(Line::from).collect())
+    };
+    if let Some(l) = layout(&groups) {
+        return l;
+    }
+    let ell = vec![Span::styled(style::g().ellipsis.to_string(), dim())];
+    let last = groups.pop().unwrap_or_default();
+    while !groups.is_empty() {
+        groups.pop();
+        let mut gs = groups.clone();
+        gs.push(ell.clone());
+        gs.push(last.clone());
+        if let Some(l) = layout(&gs) {
+            return l;
+        }
+    }
+    vec![Line::from(last)]
+}
+
 /// step names (done ones ✓, the current one big in its color) and the
 /// progress bar over all items
 fn header(names: &[String], counts: &[usize], done: &[bool], step: usize, handled: usize, total: usize, width: u16) -> Vec<Line<'static>> {
@@ -406,13 +479,17 @@ fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Sc
     let sep = u16::from(!screen.choices.is_empty() && body_h > 0);
     // tree screens always have the box, so nothing jumps
     let has_card = screen.tree_focus.is_some() || !screen.card_title.is_empty() || !screen.card.is_empty() || !screen.choices.is_empty() || !screen.input.is_empty();
+    // narrow: two rows for the keys, always, so the box does not jump
+    let keys_rows = if width < KEYS_TWO_ROWS_BELOW { 2 } else { 1 };
+    let key_lines = fit_keys(&screen.keys, width, keys_rows);
+    let keys_h = keys_rows as u16;
     let natural = if has_card { body_h + sep + choices_h + input_h + 2 } else { 0 };
     let (tree_h, tree_scroll, card_h) = match screen.tree_focus {
         // tree modules: the tree takes the room, a card at most half of it
         Some(focus) => {
             // fixed halves: the box never changes size while moving, its
             // text scrolls inside
-            let avail = col.height.saturating_sub(4 + 1 + 2);
+            let avail = col.height.saturating_sub(4 + 1 + keys_h + 1);
             let len = screen.tree.len() as u16;
             let gap = u16::from(has_card);
             let card_h = if has_card { avail.saturating_sub(gap) / 2 } else { 0 };
@@ -423,7 +500,7 @@ fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Sc
         }
         None => {
             let tree_h = (screen.tree.len() as u16).min(col.height / 3);
-            let fixed = 4 + 1 + tree_h + u16::from(tree_h > 0) + 2;
+            let fixed = 4 + 1 + tree_h + u16::from(tree_h > 0) + keys_h + 1;
             let avail = col.height.saturating_sub(fixed).max(4);
             (tree_h, 0, natural.min(avail))
         }
@@ -434,7 +511,7 @@ fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Sc
         Constraint::Length(tree_h),
         Constraint::Length(u16::from(tree_h > 0 && card_h > 0)),
         Constraint::Length(card_h),
-        Constraint::Length(1),
+        Constraint::Length(keys_h),
         Constraint::Length(1),
         Constraint::Min(0),
     ])
@@ -442,6 +519,7 @@ fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Sc
     let block = Block::default().borders(Borders::ALL).border_set(g.border).border_style(dim());
     f.render_widget(Paragraph::new(header_lines.to_vec()).block(block.clone().padding(Padding::horizontal(1))), head);
     f.render_widget(Paragraph::new(screen.tree.clone()).scroll((tree_scroll, 0)), tree);
+    scrollbar(f, tree, screen.tree.len() as u16, tree_h, tree_scroll, !screen.card_active);
     // the text scrolls, choices and input stay
     let view = card_h.saturating_sub(2 + sep + choices_h + input_h);
     let max_scroll = body_h.saturating_sub(view);
@@ -480,12 +558,15 @@ fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Sc
     ])
     .areas(inside);
     f.render_widget(Paragraph::new(Text::from(screen.card.clone())).wrap(Wrap { trim: false }).scroll((scroll, 0)), body_a);
+    // on the box's right border, beside the text that scrolls
+    let edge = Rect { x: card.right().saturating_sub(1), y: body_a.y, width: 1, height: body_a.height };
+    scrollbar(f, edge, body_h, view, scroll, screen.card_active);
     f.render_widget(Paragraph::new(Text::from(screen.choices.clone())).wrap(Wrap { trim: false }), choices_a);
     f.render_widget(Paragraph::new(Text::from(input)).wrap(Wrap { trim: false }), input_a);
     if let Some((row, col)) = input_cursor {
         f.set_cursor_position((input_a.x + col as u16, (input_a.y + row as u16).min(input_a.bottom().saturating_sub(1))));
     }
-    f.render_widget(Paragraph::new(screen.keys.clone()), keys_a);
+    f.render_widget(Paragraph::new(key_lines), keys_a);
     if let Some((line, at)) = &screen.cmdline {
         // the terminal's last row, whatever the layout above
         let last = Rect { x: col.x, y: area.bottom().saturating_sub(1), width: col.width, height: 1 };
@@ -607,8 +688,8 @@ fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str))
     let parts = [
         (format!("{}/{}", k(Act::PrevModule), k(Act::NextModule)), "module".to_string()),
         (k(Act::Add), "new".to_string()),
-        (k(Act::Help), "keys".to_string()),
         (":q".to_string(), "quit".to_string()),
+        (k(Act::Help), "keys".to_string()),
     ];
     let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
     let mut help = false;
@@ -899,12 +980,52 @@ mod tests {
         assert!(pos("ANSWER") < pos("row 0") && pos("row 0") < pos("by hand") && pos("by hand") < pos("answer"));
         assert!(!lines[pos("row 0")].contains('│'), "the tree has no box");
         let lines = render(&Screen { tree_focus: Some(35), ..screen }, 60, 30);
-        assert!(lines.iter().any(|l| l.trim() == "row 35") && lines.iter().any(|l| l.trim() == "row 36"), "cursor and the row under it in view");
+        assert!(lines.iter().any(|l| l.trim_start().starts_with("row 35")) && lines.iter().any(|l| l.trim_start().starts_with("row 36")), "cursor and the row under it in view");
         // no card: the box stays empty at its place, nothing jumps
         let with = render(&Screen { tree: tree.clone(), tree_focus: Some(0), card_title: "x".into(), ..Default::default() }, 60, 30);
         let without = render(&Screen { tree, tree_focus: Some(0), ..Default::default() }, 60, 30);
         let last_row = |ls: &[String]| ls.iter().rposition(|l| l.trim_start().starts_with("row ")).unwrap();
         assert_eq!(last_row(&with), last_row(&without), "same tree height with and without a card");
+    }
+
+    /// narrow panes: the key line takes two rows, whole groups per row,
+    /// ? keys always at the end; too many groups are cut before it
+    #[test]
+    fn key_line_fits_narrow_panes_and_keeps_help() {
+        style::init("unicode");
+        let parts = [("n/p", "next prev"), ("t/N/dd", "task note drop"), ("w", "who"), ("P", "prio"), (":due", ""), ("o", "open"), ("a/A", "new"), ("tab", "details"), ("e", "edit"), ("h/l", "module"), ("?", "keys")];
+        let line = keys(&parts);
+        let wide = fit_keys(&line, 200, 1);
+        assert_eq!(wide.len(), 1);
+        let two = fit_keys(&line, 60, 2);
+        assert_eq!(two.len(), 2);
+        assert!(two.iter().all(|l| l.width() <= 60));
+        assert!(two[1].to_string().ends_with("? keys"), "{}", two[1]);
+        let cut = fit_keys(&line, 30, 2);
+        assert!(cut.iter().all(|l| l.width() <= 30));
+        let end = cut.last().unwrap().to_string();
+        assert!(end.contains('…') && end.ends_with("? keys"), "{:?}", cut);
+        for w in [60u16, 80] {
+            let screen = Screen { tree: vec![Line::from("row")], tree_focus: Some(0), keys: line.clone(), ..Default::default() };
+            let lines = render(&screen, w, 30);
+            assert!(lines.iter().any(|l| l.trim_end().ends_with("? keys")), "{} columns: {:?}", w, lines);
+        }
+    }
+
+    /// scrollbars only where the content is longer than the room
+    #[test]
+    fn scrollbars_only_on_overflow() {
+        style::init("unicode");
+        let thumb = style::g().scroll_thumb;
+        let short = Screen { tree: vec![Line::from("row")], tree_focus: Some(0), card: vec![Line::from("text")], ..Default::default() };
+        assert!(!render(&short, 60, 30).iter().any(|l| l.contains(thumb)));
+        let tree: Vec<Line> = (0..40).map(|n| Line::from(format!("row {}", n))).collect();
+        let long = Screen { tree, tree_focus: Some(0), card: (0..40).map(|n| Line::from(format!("text {}", n))).collect(), ..Default::default() };
+        let lines = render(&long, 60, 30);
+        let tree_row = lines.iter().position(|l| l.contains("row 0")).unwrap();
+        let text_row = lines.iter().position(|l| l.contains("text 0")).unwrap();
+        assert!(lines[tree_row..text_row].iter().any(|l| l.ends_with(thumb)), "tree bar: {:?}", lines);
+        assert!(lines[text_row..].iter().any(|l| l.ends_with(thumb)), "box bar: {:?}", lines);
     }
 
     /// the box keeps half the screen whatever it shows
@@ -921,7 +1042,8 @@ mod tests {
         let short = box_rows(vec![Line::from("one line")]);
         let long = box_rows((0..40).map(|n| Line::from(format!("text {}", n))).collect());
         assert_eq!(short, long, "same height for one line and forty");
-        assert!(short >= 10, "about half of 30 rows: {}", short);
+        // 30 rows: header 4, gap, two key rows at 60 columns, the note
+        assert!(short >= 9, "about half of 30 rows: {}", short);
     }
 
     #[test]

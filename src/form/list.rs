@@ -548,7 +548,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         let n_opts = if with_options { card_of(kind, &item, &all).1.len() } else { 0 };
         let view = View { kind, user, since, results: &results };
         let width = column_width(ui.term.size()?.width, ui.max_width);
-        let lines = tree.lines(&rows, cur, width, &|i, context| fields(i, user, since, kind == Kind::News, context), st.in_box);
+        // the last column is the scrollbar's
+        let lines = tree.lines(&rows, cur, width.saturating_sub(2), &|i, context| fields(i, user, since, kind == Kind::News, context), st.in_box);
         let (card_title, card, choices) = view.detail(&item, &all, editable, (st.in_box && with_options).then_some(st.sel), width);
         let k = &ui.keys;
         let ks = |a: Act| k.keys_of(a);
@@ -593,11 +594,12 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             (ks(Act::Focus), if st.in_box { "tree".into() } else { "details".into() }),
             (ks(Act::Editor), "edit".into()),
             (format!("{}/{}", ks(Act::PrevModule), ks(Act::NextModule)), "module".into()),
-            (ks(Act::Help), "keys".into()),
         ]);
         if kind == Kind::All {
             parts.push(("q".into(), "quit".into()));
         }
+        // ? keys always last: kept when the line is cut
+        parts.push((ks(Act::Help), "keys".into()));
         let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
         let mut head = vec![Span::styled(format!("{} · {}", kind.title(), store), bold().fg(kind.accent().1))];
         if kind == Kind::All && !ui.summary.is_empty() {
