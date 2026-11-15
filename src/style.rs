@@ -124,6 +124,11 @@ pub fn init(setting: &str) {
     let _ = IS_ASCII.set(ascii);
 }
 
+/// true with the ascii style
+pub fn ascii() -> bool {
+    *IS_ASCII.get().unwrap_or(&false)
+}
+
 pub fn g() -> &'static Glyphs {
     if *IS_ASCII.get().unwrap_or(&false) {
         &ASCII

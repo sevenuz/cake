@@ -444,6 +444,63 @@ pub fn comment(store: &mut Store, id: &str, user: &str, text: &str) -> Result<Re
 }
 
 /// one line for prompts, tmux and status lines, segments from config `status`
+/// "1h05", "0h00"
+fn hm(s: i64) -> String {
+    format!("{}h{:02}", s / 3600, s / 60 % 60)
+}
+
+/// a sparkline of `values`, scaled to the largest
+fn spark(values: &[i64]) -> String {
+    let marks: Vec<char> = if style::ascii() { " .:-=+*#".chars().collect() } else { " ▁▂▃▄▅▆▇█".chars().collect() };
+    let max = values.iter().copied().max().unwrap_or(0).max(1);
+    values.iter().map(|v| if *v <= 0 { marks[0] } else { marks[1 + (*v * (marks.len() as i64 - 2) / max) as usize] }).collect()
+}
+
+/// numbers for a period: this store, or all known stores with `all`
+pub fn stats(config: &Config, store: &Store, period: &str, all: bool) -> Result<Report, Box<dyn Error>> {
+    use crate::stats::{self, Period};
+    let period = Period::parse(period).ok_or_else(|| error::invalid(format!("'{}' is no period: day, week, month, year", period)))?;
+    let now = util::timestamp();
+    let user = config.user(store.root());
+    let (from, _) = period.range(now);
+    let same = |a: &Path, b: &Path| fs::canonicalize(a).ok() == fs::canonicalize(b).ok();
+    let known = crate::stores::all().unwrap_or_default();
+    let here = known.iter().find(|(_, p)| same(p, store.root())).map_or("this store".to_string(), |(n, _)| n.clone());
+    let mut rows: Vec<(String, stats::StoreStats)> = vec![(here, stats::of_store(store, &crate::log::read(store.root(), from, now), &user, period, now))];
+    if all {
+        for (name, path) in known.iter().filter(|(_, p)| !same(p, store.root())) {
+            let s = Store::new_except(path, &[])?;
+            rows.push((name.clone(), stats::of_store(&s, &crate::log::read(path, from, now), &user, period, now)));
+        }
+    }
+    if !out::json() {
+        let w = rows.iter().map(|(n, _)| n.chars().count()).max().unwrap_or(5).max(5);
+        println!("{} {}", period.name(), util::format_timestamp(from)[..10].to_string() + " – now");
+        println!("{:w$}  {:>6}  {:>6}  {:>7}  {:>8}  {:>4}  {}", "", "you", "agents", "tokens", "CO2e", "done", "per bucket", w = w);
+        let line = |name: &str, n: &stats::Numbers, buckets: &str| {
+            println!(
+                "{:w$}  {:>6}  {:>6}  {:>7}  {:>6.1} g  {:>4}  {}",
+                name, hm(n.you), hm(n.agents), crate::footprint::human(n.tokens), n.co2_g, n.done, buckets, w = w
+            )
+        };
+        for (name, s) in &rows {
+            line(name, &s.numbers, &spark(&s.buckets.iter().map(|(_, v)| *v).collect::<Vec<_>>()));
+        }
+        if rows.len() > 1 {
+            line("all", &stats::sum(rows.iter().map(|(_, s)| s)), "");
+        }
+        let s = &rows[0].1;
+        println!("overdue {} · review {} · questions {} · streak {} d", s.overdue, s.review, s.questions, s.streak);
+        let goals: Vec<String> = s.goals.iter().map(|g| format!("{} {}", if g.id.is_empty() { "other" } else { &g.id }, hm(g.numbers.you + g.numbers.agents))).collect();
+        if !goals.is_empty() {
+            println!("goals ({}): {}", rows[0].0, goals.join(" · "));
+        }
+    }
+    let stores: Vec<serde_json::Value> =
+        rows.iter().map(|(n, s)| serde_json::json!({ "store": n, "stats": s })).collect();
+    Ok(Report::Value(serde_json::json!({ "period": period.name(), "stores": stores })))
+}
+
 pub fn status(config: &Config, store: &Store) -> Result<Report, Box<dyn Error>> {
     let me = config.user(store.root());
     let short = store.short_ids();

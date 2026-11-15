@@ -803,3 +803,19 @@ fn estimate_round_trips_and_clears() {
     env.cake_ok(&d, &["edit", "work", "--est", "-"]);
     assert!(!read_item(&d, "work").contains("estimate"));
 }
+
+#[test]
+fn stats_count_done_items_per_goal_and_period() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "g", "--note", "-t", "goal", "-m", "# goal"]);
+    env.cake_ok(&d, &["add", "t", "--todo", "-p", "g", "-m", "# task"]);
+    env.cake_ok(&d, &["done", "t"]);
+    let v = json_value(&env, &d, &["stats", "-p", "week"]);
+    let s = &v["stores"][0]["stats"];
+    assert_eq!(v["period"], "week");
+    assert_eq!(s["done"], 1);
+    assert_eq!(s["goals"][0]["id"], "g");
+    assert!(env.cake_err(&d, &["stats", "-p", "decade"]).contains("no period"));
+    assert!(env.cake_ok(&d, &["stats"]).contains("streak 1 d"));
+}

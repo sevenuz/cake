@@ -435,6 +435,10 @@ impl Item {
         self.content = content;
     }
 
+    pub fn usage(&self) -> &BTreeMap<String, Usage> {
+        &self.usage
+    }
+
     pub fn closed(&self) -> Option<i64> {
         self.closed
     }

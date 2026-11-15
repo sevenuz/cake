@@ -91,7 +91,6 @@ pub fn append(root: &Path, lines: &[Line]) -> Result<Vec<PathBuf>, Box<dyn Error
 }
 
 /// every line of every machine that overlaps [from, to]
-#[allow(dead_code)] // read by the stats
 pub fn read(root: &Path, from: i64, to: i64) -> Vec<Line> {
     let Ok(entries) = std::fs::read_dir(dir(root)) else { return vec![] };
     let mut out = vec![];

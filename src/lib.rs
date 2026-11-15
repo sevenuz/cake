@@ -10,6 +10,7 @@ mod migrate;
 mod form;
 mod out;
 mod selector;
+mod stats;
 mod store;
 mod stores;
 mod style;
@@ -349,6 +350,16 @@ pub enum Commands {
     },
     /// one line for prompts and tmux: your timers, others' timers, ready, today
     Status {},
+    /// time (you, agents), tokens, footprint and done items for a period,
+    /// per store and goal
+    Stats {
+        /// day, week, month or year
+        #[arg(short, long, default_value = "day")]
+        period: String,
+        /// every store from stores.json, not only this one
+        #[arg(short, long)]
+        all: bool,
+    },
     /// start the timer, sets status doing
     Start {
         #[command(flatten)]
@@ -990,6 +1001,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             commands::list(debug, &config, &mut store, selector, *long, *all)?
         }
         Some(Commands::Status {}) => commands::status(&config, &store)?,
+        Some(Commands::Stats { period, all }) => commands::stats(&config, &store, period, *all)?,
         Some(Commands::Show { target }) => commands::show(debug, &config, &store, target)?,
         Some(Commands::Init {}) => commands::init(debug, &config, cli.global, cli.store.as_deref())?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,

@@ -101,6 +101,11 @@ fn totals(f: &Footprint, usage: &BTreeMap<String, Usage>) -> (f64, f64, f64) {
     (drawn, drawn / 1000.0 * f.co2_g_per_kwh, it / 1000.0 * f.wue_l_per_kwh + drawn / 1000.0 * f.ewif_l_per_kwh)
 }
 
+/// (Wh drawn, g CO2e, litres of water) of `usage` under the config
+pub fn amounts(usage: &BTreeMap<String, Usage>) -> (f64, f64, f64) {
+    totals(config(), usage)
+}
+
 /// {wh, co2_g, water_l}, null without usage
 pub fn estimate(usage: &BTreeMap<String, Usage>) -> serde_json::Value {
     if usage.is_empty() {
@@ -114,7 +119,7 @@ pub fn estimate(usage: &BTreeMap<String, Usage>) -> serde_json::Value {
     })
 }
 
-fn human(n: u64) -> String {
+pub fn human(n: u64) -> String {
     match n {
         0..=999 => n.to_string(),
         1_000..=999_999 => format!("{:.1}k", n as f64 / 1e3),
