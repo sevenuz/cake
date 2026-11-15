@@ -21,3 +21,5 @@ time:
 - done when: archive moves the right items, views skip them, show and stats find them; tests
 
 changed: cake archive [--older 3m] moves closed subtrees (notes below go along) to items/archive/, same tree layout; ls/ready/form skip it; ls --archive and show (id or prefix) load it; ids stay taken, id 'archive' reserved; rename carries archived children; reopening takes an item and its ancestors out; skill lists the command; commits: 3892a7d; try: cake archive --older 1w, then cake ls --archive
+
+added: cake archive -n/--dry-run lists what would move, changes nothing; commits: 761a8d0
