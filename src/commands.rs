@@ -450,7 +450,7 @@ fn hm(s: i64) -> String {
 }
 
 /// a sparkline of `values`, scaled to the largest
-fn spark(values: &[i64]) -> String {
+pub(crate) fn spark(values: &[i64]) -> String {
     let marks: Vec<char> = if style::ascii() { " .:-=+*#".chars().collect() } else { " ▁▂▃▄▅▆▇█".chars().collect() };
     let max = values.iter().copied().max().unwrap_or(0).max(1);
     values.iter().map(|v| if *v <= 0 { marks[0] } else { marks[1 + (*v * (marks.len() as i64 - 2) / max) as usize] }).collect()

@@ -252,10 +252,202 @@ fn card(srcs: &[Src], row: &Row, width: u16) -> (String, Vec<Line<'static>>) {
     (i.title(), lines)
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    Pie,
+    Stats,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Measure {
+    Time,
+    Tokens,
+    Done,
+}
+
+impl Measure {
+    fn next(self) -> Measure {
+        match self {
+            Measure::Time => Measure::Tokens,
+            Measure::Tokens => Measure::Done,
+            Measure::Done => Measure::Time,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Measure::Time => "time",
+            Measure::Tokens => "tokens",
+            Measure::Done => "done",
+        }
+    }
+
+    fn of(self, n: &stats::Numbers) -> f64 {
+        match self {
+            Measure::Time => (n.you + n.agents) as f64,
+            Measure::Tokens => n.tokens as f64,
+            Measure::Done => n.done as f64,
+        }
+    }
+
+    fn show(self, v: f64) -> String {
+        match self {
+            Measure::Time => hm(v as i64),
+            Measure::Tokens => crate::footprint::human(v as u64),
+            Measure::Done => format!("{}", v as u64),
+        }
+    }
+}
+
+/// a full-screen overlay over the list and the card (the tabs stay)
+struct Overlay {
+    kind: Kind,
+    period: Period,
+    measure: Measure,
+    /// pie: the store whose goals are shown, None: stores
+    zoom: Option<usize>,
+    /// pie: the selected slice
+    sel: usize,
+    /// per store, for `period`
+    stats: Vec<stats::StoreStats>,
+}
+
+impl Overlay {
+    fn new(kind: Kind, srcs: &[Src], user: &str) -> Overlay {
+        let mut o = Overlay { kind, period: Period::Day, measure: Measure::Time, zoom: None, sel: 0, stats: vec![] };
+        o.refresh(srcs, user);
+        o
+    }
+
+    fn refresh(&mut self, srcs: &[Src], user: &str) {
+        let now = util::timestamp();
+        let (from, _) = self.period.range(now);
+        self.stats = srcs.iter().map(|s| stats::of_store(&s.store, &crate::log::read(&s.root, from, now), user, self.period, now)).collect();
+    }
+
+    /// (name, value) of the pie's slices, largest first
+    fn slices(&self, srcs: &[Src]) -> Vec<(String, f64)> {
+        let mut v: Vec<(String, f64)> = match self.zoom {
+            None => srcs.iter().zip(&self.stats).map(|(s, st)| (s.name.clone(), self.measure.of(&st.numbers))).collect(),
+            Some(n) => self.stats[n].goals.iter().map(|g| (if g.id.is_empty() { "other".into() } else { g.id.clone() }, self.measure.of(&g.numbers))).collect(),
+        };
+        v.retain(|(_, x)| *x > 0.0);
+        v.sort_by(|a, b| b.1.total_cmp(&a.1));
+        v
+    }
+}
+
 struct View {
     tab: usize,
     sel: usize,
     note: Option<String>,
+    overlay: Option<Overlay>,
+}
+
+/// slice colors, from the theme
+fn palette() -> Vec<ratatui::style::Color> {
+    let t = theme::t();
+    vec![t.hint, t.mine, t.ok, t.code, t.bold, t.tag, t.error, t.heading]
+}
+
+fn paint_pie(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
+    use ratatui::widgets::canvas::{Canvas, Points};
+    let slices = o.slices(srcs);
+    let total: f64 = slices.iter().map(|(_, v)| v).sum();
+    let what = match o.zoom {
+        None => "stores".to_string(),
+        Some(n) => format!("goals in {}", srcs[n].name),
+    };
+    let block = boxed(format!(" {} · {} · {} ", o.period.name(), o.measure.name(), what));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    if slices.is_empty() {
+        f.render_widget(Paragraph::new(Span::styled("nothing in this period yet (d: longer period, m: other measure)", dim())), inner);
+        return;
+    }
+    // a circle: braille dots are square when the pie is twice as wide as high
+    let h = inner.height.min(inner.width / 4).clamp(4, 10);
+    let top = inner.y + 1.min(inner.height.saturating_sub(h));
+    let pie = Rect { x: inner.x + 2, y: top, width: h * 2, height: h };
+    let legend = Rect { x: inner.x + h * 2 + 6, y: top, width: inner.width.saturating_sub(h * 2 + 6), height: inner.height.saturating_sub(top - inner.y) };
+    let colors = palette();
+    // each slice from its start angle, clockwise from 12 o'clock
+    let mut bounds = vec![];
+    let mut acc = 0.0;
+    for (_, v) in &slices {
+        bounds.push(acc);
+        acc += v / total;
+    }
+    let (w, ht) = (pie.width as usize * 2, pie.height as usize * 4);
+    let mut points: Vec<Vec<(f64, f64)>> = vec![vec![]; slices.len()];
+    for px in 0..w {
+        for py in 0..ht {
+            let x = (px as f64 + 0.5) / w as f64 * 2.0 - 1.0;
+            let y = (py as f64 + 0.5) / ht as f64 * 2.0 - 1.0;
+            if x * x + y * y > 1.0 {
+                continue;
+            }
+            let turn = (x.atan2(y) / std::f64::consts::TAU).rem_euclid(1.0);
+            let n = bounds.iter().rposition(|b| *b <= turn).unwrap_or(0);
+            points[n].push((x, y));
+        }
+    }
+    let canvas = Canvas::default().marker(ratatui::symbols::Marker::Braille).x_bounds([-1.0, 1.0]).y_bounds([-1.0, 1.0]).paint(|ctx| {
+        for (n, p) in points.iter().enumerate() {
+            ctx.draw(&Points { coords: p, color: colors[n % colors.len()] });
+        }
+    });
+    f.render_widget(canvas, pie);
+    let mut lines: Vec<Line> = slices
+        .iter()
+        .enumerate()
+        .map(|(n, (name, v))| {
+            let here = n == o.sel;
+            let style = if here { Style::default().add_modifier(Modifier::BOLD) } else { Style::default() };
+            Line::from(vec![
+                Span::raw(if here { "› " } else { "  " }),
+                Span::styled("■ ", Style::default().fg(colors[n % colors.len()])),
+                Span::styled(format!("{:<16} {:>8} {:>4.0}%", cut(name, 16), o.measure.show(*v), v / total * 100.0), style),
+            ])
+        })
+        .collect();
+    let n = o.zoom.map_or_else(|| stats::sum(&o.stats), |z| o.stats[z].numbers.clone());
+    lines.push(Line::default());
+    lines.push(Line::from(Span::styled(format!("you {} · agents {}", hm(n.you), hm(n.agents)), dim())));
+    lines.push(Line::from(Span::styled(format!("{:.0} Wh · {:.0} g CO2e · {:.2} l water", n.wh, n.co2_g, n.water_l), dim())));
+    f.render_widget(Paragraph::new(lines), legend);
+}
+
+fn paint_stats(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
+    let t = theme::t();
+    let block = boxed(format!(" stats · {} ", o.period.name()));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let w = srcs.iter().map(|s| s.name.chars().count()).max().unwrap_or(5).clamp(5, 16);
+    let head = format!("{:w$}  {:>6}  {:>6}  {:>7}  {:>6}  {:>8}  {:>4}  {}", "", "you", "agents", "tokens", "kWh", "CO2e", "done", "per bucket", w = w);
+    let row = |name: &str, n: &stats::Numbers, buckets: String| {
+        format!(
+            "{:w$}  {:>6}  {:>6}  {:>7}  {:>6.2}  {:>6.0} g  {:>4}  {}",
+            cut(name, w), hm(n.you), hm(n.agents), crate::footprint::human(n.tokens), n.wh / 1000.0, n.co2_g, n.done, buckets, w = w
+        )
+    };
+    let mut lines = vec![Line::from(Span::styled(head, dim()))];
+    for (s, st) in srcs.iter().zip(&o.stats) {
+        lines.push(Line::from(row(&s.name, &st.numbers, crate::commands::spark(&st.buckets.iter().map(|(_, v)| *v).collect::<Vec<_>>()))));
+    }
+    if srcs.len() > 1 {
+        lines.push(Line::from(Span::styled(row("all", &stats::sum(&o.stats), String::new()), Style::default().add_modifier(Modifier::BOLD))));
+    }
+    lines.push(Line::default());
+    let (overdue, review, questions) =
+        o.stats.iter().fold((0, 0, 0), |a, s| (a.0 + s.overdue, a.1 + s.review, a.2 + s.questions));
+    let streak = o.stats.iter().map(|s| s.streak).max().unwrap_or(0);
+    let late = Style::default().fg(if overdue > 0 { t.error } else { t.dim });
+    lines.push(Line::from(vec![
+        Span::styled(format!("overdue {}", overdue), late),
+        Span::styled(format!(" · review {} · questions {} · streak {} d", review, questions, streak), dim()),
+    ]));
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &str) {
@@ -276,6 +468,19 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
     let room = (head.width as usize).saturating_sub(5 + used);
     tabs.push(Span::styled(format!("{:>w$}", cut(total, room), w = room), dim()));
     f.render_widget(Paragraph::new(Line::from(tabs)).block(boxed(String::new())), head);
+    if let Some(o) = &v.overlay {
+        let body = Rect { height: list.height + card_area.height, ..list };
+        match o.kind {
+            Kind::Pie => paint_pie(f, body, srcs, o),
+            Kind::Stats => paint_stats(f, body, srcs, o),
+        }
+        let k = match o.kind {
+            Kind::Pie => "m measure  d period  j/k slice  <cr> goals  <bs> stores  s stats  q back",
+            Kind::Stats => "d period  p pie  q back",
+        };
+        f.render_widget(Paragraph::new(Line::from(Span::styled(k, dim()))), keys);
+        return;
+    }
     // the list, the cursor row kept in view
     let h = list.height as usize;
     let top = (v.sel + 2).saturating_sub(h);
@@ -304,7 +509,7 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
     f.render_widget(Paragraph::new(body).wrap(Wrap { trim: false }).block(block), card_area);
     let keys_line = match &v.note {
         Some(n) => Line::from(Span::styled(n.clone(), Style::default().fg(t.error))),
-        None => Line::from(Span::styled("h/l store  j/k  <cr> form here  e edit  F form  q quit", dim())),
+        None => Line::from(Span::styled("h/l store  j/k  <cr> form here  e edit  F form  p pie  s stats  q quit", dim())),
     };
     f.render_widget(Paragraph::new(keys_line), keys);
 }
@@ -350,7 +555,7 @@ fn first(rows: &[Row]) -> usize {
 pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
     let mut srcs = load(root)?;
     // tab 0 is all, the nearest store is tab 1
-    let mut v = View { tab: 1.min(srcs.len()), sel: 0, note: None };
+    let mut v = View { tab: 1.min(srcs.len()), sel: 0, note: None, overlay: None };
     let mut term = ratatui::init();
     let result = (|| -> Result<(), Box<dyn Error>> {
         let mut total = totals(&srcs, user);
@@ -366,6 +571,9 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                 if last.elapsed() >= Duration::from_secs(2) {
                     srcs = load(root)?;
                     total = totals(&srcs, user);
+                    if let Some(o) = v.overlay.as_mut() {
+                        o.refresh(&srcs, user);
+                    }
                     last = std::time::Instant::now();
                 }
                 continue;
@@ -375,6 +583,30 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                 continue;
             }
             v.note = None;
+            if let Some(o) = v.overlay.as_mut() {
+                let count = o.slices(&srcs).len();
+                match k.code {
+                    KeyCode::Char('q') | KeyCode::Esc => v.overlay = None,
+                    KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => return Ok(()),
+                    KeyCode::Char('d') => {
+                        o.period = o.period.next();
+                        o.refresh(&srcs, user);
+                    }
+                    KeyCode::Char('m') => o.measure = o.measure.next(),
+                    KeyCode::Char('j') | KeyCode::Down => o.sel = (o.sel + 1).min(count.saturating_sub(1)),
+                    KeyCode::Char('k') | KeyCode::Up => o.sel = o.sel.saturating_sub(1),
+                    KeyCode::Enter if o.kind == Kind::Pie && o.zoom.is_none() => {
+                        let name = o.slices(&srcs).get(o.sel).map(|(n, _)| n.clone());
+                        o.zoom = name.and_then(|n| srcs.iter().position(|s| s.name == n));
+                        o.sel = 0;
+                    }
+                    KeyCode::Backspace => (o.zoom, o.sel) = (None, 0),
+                    KeyCode::Char('p') => o.kind = Kind::Pie,
+                    KeyCode::Char('s') => o.kind = Kind::Stats,
+                    _ => (),
+                }
+                continue;
+            }
             let tabs = srcs.len() + 1;
             match k.code {
                 KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
@@ -398,6 +630,8 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                     }
                     None => v.note = Some("no item on this line".into()),
                 },
+                KeyCode::Char('p') => v.overlay = Some(Overlay::new(Kind::Pie, &srcs, user)),
+                KeyCode::Char('s') => v.overlay = Some(Overlay::new(Kind::Stats, &srcs, user)),
                 KeyCode::Char('F') => {
                     let n = tab.unwrap_or(0);
                     suspend(&mut term, &srcs[n].root.clone(), &["form"])?;
@@ -473,5 +707,24 @@ mod tests {
         let b = selectable(&rows, a, true);
         assert!(rows[a].store.is_some() && rows[b].store.is_some() && b > a);
         assert_eq!(selectable(&rows, b, true), b, "stays on the last");
+    }
+
+    #[test]
+    fn pie_slices_are_stores_or_a_stores_goals_largest_first() {
+        let mut goal = Item::new("g".into(), vec![], None, vec!["goal".into()]);
+        goal.set_content("# g\n".into());
+        let mut a = task("a", "ai");
+        a.set_status(Status::Done).unwrap();
+        let mut b = task("b", "ai");
+        b.set_status(Status::Done).unwrap();
+        b.set_parent(Some("g".into()));
+        let srcs = vec![src("small", vec![task("x", "ai")]), src("big", vec![goal, a, b])];
+        let mut o = Overlay::new(Kind::Pie, &srcs, "jul");
+        o.measure = Measure::Done;
+        assert_eq!(o.slices(&srcs), vec![("big".to_string(), 2.0)], "empty stores have no slice");
+        o.zoom = Some(1);
+        let mut names: Vec<String> = o.slices(&srcs).into_iter().map(|(n, _)| n).collect();
+        names.sort();
+        assert_eq!(names, ["g", "other"]);
     }
 }

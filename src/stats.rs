@@ -30,6 +30,16 @@ impl Period {
         }
     }
 
+    /// day → week → month → year → day
+    pub fn next(self) -> Period {
+        match self {
+            Period::Day => Period::Week,
+            Period::Week => Period::Month,
+            Period::Month => Period::Year,
+            Period::Year => Period::Day,
+        }
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Period::Day => "day",
