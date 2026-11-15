@@ -388,13 +388,20 @@ fn fields(i: &Value, user: &str, since: i64, news: bool, context: bool) -> Vec<S
         Some(1) => parts.push(("p1".into(), Style::default().fg(t.error))),
         Some(2) => parts.push(("p2".into(), Style::default().fg(t.doing))),
         Some(p) => parts.push((format!("p{}", p), Style::default())),
-        None => (),
+        // from a parent: dim, so own values stand out
+        None => {
+            if let Some(p) = i["inherited"]["priority"].as_u64() {
+                parts.push((format!("p{}", p), dim().add_modifier(Modifier::ITALIC)));
+            }
+        }
     }
     if let Some(d) = i["due"].as_str() {
         parts.push(date("due ", d));
     }
     if let Some(d) = i["deadline"].as_str() {
         parts.push(date("deadline ", d));
+    } else if let Some(d) = i["inherited"]["deadline"].as_str() {
+        parts.push((format!("deadline {}", short_date(d)), dim().add_modifier(Modifier::ITALIC)));
     }
     let mut out = vec![];
     for (n, (text, style)) in parts.into_iter().enumerate() {
@@ -1007,6 +1014,8 @@ mod tests {
         assert_eq!(text(&i), "me · p1 · due 20.11.");
         assert_eq!(text(&json!({"id": "a", "status": "inbox"})), "");
         assert_eq!(text(&json!({"id": "a", "status": "review", "assignee": "claude-code"})), "review · claude-code");
+        let inh = json!({"id": "a", "status": "task", "inherited": {"priority": 1, "deadline": "2026-12-01"}});
+        assert_eq!(text(&inh), "p1 · deadline 01.12.");
     }
 
     #[test]

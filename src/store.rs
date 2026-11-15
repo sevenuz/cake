@@ -473,6 +473,35 @@ pub mod inner {
         /// how much an open item needs attention, 0 for closed ones: deadline
         /// pressure (hard and soft), items waiting on it, priority and age,
         /// weighted by config `score`
+        /// the first ancestor value of `get` for an item without its own:
+        /// (value, from an ancestor)
+        fn inherited<T: Clone>(&self, id: &str, get: impl Fn(&Item) -> Option<T>) -> Option<(T, bool)> {
+            let mut seen = HashSet::new();
+            let mut cur = self.items.get(id);
+            let mut own = true;
+            while let Some(i) = cur {
+                if !seen.insert(i.id().clone()) {
+                    break;
+                }
+                if let Some(v) = get(i) {
+                    return Some((v, !own));
+                }
+                own = false;
+                cur = i.parents().first().and_then(|p| self.items.get(p));
+            }
+            None
+        }
+
+        /// the priority that counts: its own, else the nearest ancestor's
+        pub fn effective_priority(&self, id: &str) -> Option<(u64, bool)> {
+            self.inherited(id, |i| i.priority())
+        }
+
+        /// the deadline that counts: its own, else the nearest ancestor's
+        pub fn effective_deadline(&self, id: &str) -> Option<(String, bool)> {
+            self.inherited(id, |i| i.deadline().cloned())
+        }
+
         pub fn score(&self, id: &str, now: i64) -> i64 {
             let Some(i) = self.items.get(id).filter(|i| i.status().map_or(true, |s| s.is_open())) else {
                 return 0;
@@ -480,14 +509,15 @@ pub mod inner {
             let w = WEIGHTS.get_or_init(ScoreWeights::default);
             let days = |d: Option<&String>| d.and_then(|d| util::date_timestamp(d)).map(|t| (t - now) / 86400);
             let mut score = 0;
-            if let Some(d) = days(i.deadline()) {
+            let deadline = self.effective_deadline(id).map(|(d, _)| d);
+            if let Some(d) = days(deadline.as_ref()) {
                 score += (w.deadline_today - w.deadline_per_day * d).clamp(0, w.deadline_max);
             }
             if let Some(d) = days(i.due()) {
                 score += (w.due_today - w.due_per_day * d).clamp(0, w.due_max);
             }
             score += w.per_waiting * self.waiting_on(id) as i64;
-            score += match i.priority() {
+            score += match self.effective_priority(id).map(|(p, _)| p) {
                 Some(p @ 1..=3) => w.prio[p as usize - 1],
                 _ => 0,
             };
@@ -561,6 +591,17 @@ pub mod inner {
             m.insert("blocks".into(), serde_json::json!(blocks));
             m.insert("ready".into(), self.is_ready(id).into());
             m.insert("score".into(), self.score(id, util::timestamp()).into());
+            // values that come from a parent, for views that show them dim
+            let mut inherited = serde_json::Map::new();
+            if let Some((p, true)) = self.effective_priority(id) {
+                inherited.insert("priority".into(), p.into());
+            }
+            if let Some((d, true)) = self.effective_deadline(id) {
+                inherited.insert("deadline".into(), d.into());
+            }
+            if !inherited.is_empty() {
+                m.insert("inherited".into(), inherited.into());
+            }
             let path = self.item_path(id);
             m.insert("path".into(), path.to_string_lossy().into());
             Some(serde_json::Value::Object(m))
@@ -817,6 +858,31 @@ pub mod inner {
             assert_eq!(o.blocked_by(), &vec!["agents".to_string()]);
             assert!(o.content().contains("[[agents]] and [[goalie]]"), "{}", o.content());
             assert!(dir.path().join("items/agents/kid.md").exists() && !dir.path().join("items/goal.md").exists() && !dir.path().join("items/goal").exists());
+        }
+
+        #[test]
+        fn priority_and_deadline_come_from_the_nearest_parent() {
+            let mut s = empty_store();
+            let mut goal = item("goal", None, vec![]);
+            goal.set_priority(Some(1)).unwrap();
+            goal.set_deadline(Some("2026-12-01".into())).unwrap();
+            s.add(goal).unwrap();
+            s.add(item("plan", Some("goal"), vec![])).unwrap();
+            let mut low = item("low", Some("plan"), vec![]);
+            low.set_priority(Some(3)).unwrap();
+            s.add(low).unwrap();
+            s.add(item("task", Some("plan"), vec![])).unwrap();
+            s.add(item("alone", None, vec![])).unwrap();
+            assert_eq!(s.effective_priority("goal"), Some((1, false)));
+            assert_eq!(s.effective_priority("task"), Some((1, true)));
+            assert_eq!(s.effective_priority("low"), Some((3, false)), "own value wins");
+            assert_eq!(s.effective_priority("alone"), None);
+            assert_eq!(s.effective_deadline("task"), Some(("2026-12-01".to_string(), true)));
+            let now = s.get_item("task").unwrap().timestamp();
+            assert!(s.score("task", now) > s.score("alone", now));
+            assert!(s.score("task", now) > s.score("low", now));
+            assert_eq!(s.item_json("task").unwrap()["inherited"]["priority"], 1);
+            assert!(s.item_json("goal").unwrap().get("inherited").is_none());
         }
 
         #[test]
