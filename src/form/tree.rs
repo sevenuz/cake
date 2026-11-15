@@ -188,7 +188,7 @@ impl<'a> Tree<'a> {
             };
             let mut spans = vec![Span::styled(lead, if here && !dim_cursor { focus_style() } else { dim() }), Span::styled(title, style)];
             if !tags.is_empty() {
-                spans.push(Span::styled(tags, dim()));
+                spans.push(Span::styled(tags, Style::default().fg(t.tag)));
             }
             if after_w > 0 {
                 spans.push(Span::raw("  "));

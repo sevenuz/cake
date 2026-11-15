@@ -445,7 +445,7 @@ impl View<'_> {
         let mut lines: Vec<Line<'static>> = vec![];
         let tags: Vec<String> = item["tags"].as_array().into_iter().flatten().filter_map(|t| t.as_str()).map(|t| format!("#{}", t)).collect();
         if !tags.is_empty() {
-            lines.push(Line::from(Span::styled(tags.join(" "), dim())));
+            lines.push(Line::from(Span::styled(tags.join(" "), Style::default().fg(t.tag))));
         }
         if let Some(what) = news_what(item, self.user, self.since).filter(|_| self.kind == Kind::News) {
             lines.push(Line::from(vec![Span::styled("what ", dim()), Span::raw(what)]));
