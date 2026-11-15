@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod dash;
 mod error;
 mod footprint;
 mod git;
@@ -747,7 +748,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Form { .. }) if !interactive => {
             return Err(error::invalid("the form needs a terminal and no --json."))
         }
-        Some(Commands::Form { .. }) | None if interactive => {
+        // bare cake: the dashboard; the form is one key away
+        None if interactive => return dash::run(&root, &config.user(&root)),
+        Some(Commands::Form { .. }) if interactive => {
             let modules = match &cli.command {
                 Some(Commands::Form { modules }) if !modules.is_empty() => modules.clone(),
                 _ => config.form.clone(),

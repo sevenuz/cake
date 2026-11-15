@@ -28,7 +28,8 @@ def item(id_):
 
 
 def form(keys, timeout=30, args=()):
-    """runs `cake` (with `args`) and types `keys` (each a write, 0.4 s apart); returns the screen text"""
+    """runs `cake form` (or `cake <args>`) and types `keys` (each a write, 0.4 s apart); returns the screen text"""
+    args = args or ("form",)
     pid, fd = pty.fork()
     if pid == 0:
         os.chdir(STORE)
@@ -133,6 +134,7 @@ def tmux_screen(keys, args=()):
     screen as text (the real screen: ratatui sends only changed cells)"""
     if not shutil.which("tmux"):
         return None
+    args = args or ("form",)
     name = f"cake-test-{os.getpid()}"
     env = " ".join(f"{k}={shlex.quote(v)}" for k, v in ENV.items() if k.startswith(("XDG_", "CAKE_")))
     subprocess.run(["tmux", "new-session", "-d", "-s", name, "-x", "100", "-y", "30", "-c", STORE, f"env {env} {CAKE} {' '.join(args)}"], check=True)
@@ -224,6 +226,11 @@ check("review: :tag adds and removes tags", item("rv")["tags"] == ["doc"])
 empty = tmux_screen(["\x1b"], args=("form", "answer"))
 if empty is not None:
     check("nothing waits: dump, then the last tab", "open work, by score" in empty and "dump" in empty)
+
+# bare cake: the dashboard with its sections; q quits
+dash = tmux_screen([], args=("--store", f"{STORE}/.cake"))
+if dash is not None:
+    check("dashboard: sections on bare cake", "your focus" in dash and "ai queue" in dash and "running" in dash)
 
 subprocess.run(["rm", "-rf", TMP])
 sys.exit(1 if failures else 0)
