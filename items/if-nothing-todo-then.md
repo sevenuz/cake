@@ -1,8 +1,9 @@
 ---
 id: if-nothing-todo-then
-status: review
+status: done
 created: 2026-11-14T01:59:15+01:00
 by: sevenuz
+closed: 2026-11-15T17:34:40+01:00
 assignee: ai
 owner: sevenuz
 ---
