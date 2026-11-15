@@ -6,6 +6,7 @@ blocked_by: ["[[35xst1]]"]
 created: 2026-11-15T22:31:55+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
+usage: {claude-opus-5-5: {in: 22, out: 16410, cache_read: 3043414, cache_write: 21977}}
 assignee: claude-code
 owner: sevenuz
 time:
