@@ -1,6 +1,6 @@
 ---
 id: all-focus-filter
-status: task
+status: review
 parent: "[[form]]"
 created: 2026-11-15T18:47:52+01:00
 by: claude-code
@@ -15,3 +15,5 @@ owner: sevenuz
 - f cycles: focus → + notes (parked ideas, docs) → + closed (done, dropped) → focus; the title line says which
 - N in ALL makes a task a note (park it right there), t makes it a task again
 - done when: ALL starts in focus, f shows the other two, N parks; scenario test
+
+changed: ALL starts with open work (inbox, task, doing, review) and all their parents, in score order; f cycles to + notes and + done/dropped, the title says which; N parks a task as note, t back to task; test + scenario; commits: d6e6755; try: cake form review, l, f f, N on a task
