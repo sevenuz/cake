@@ -1,11 +1,12 @@
 ---
 id: status-legend
-status: review
+status: done
 parent: "[[tree-form]]"
 created: 2026-11-15T17:12:06+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 46, out: 2242, cache_read: 449594, cache_write: 3890}}
+closed: 2026-11-15T17:34:18+01:00
 assignee: ai
 owner: sevenuz
 time:
