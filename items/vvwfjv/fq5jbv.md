@@ -1,6 +1,5 @@
 ---
 id: fq5jbv
-status: task
 tags: [git]
 parent: "[[vvwfjv]]"
 created: 2026-10-27T12:30:10+01:00
