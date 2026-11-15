@@ -1,10 +1,11 @@
 ---
 id: form-keys-update
-status: task
+status: dropped
 parent: "[[tree-form]]"
 created: 2026-11-14T13:14:14+01:00
 by: claude-code
 sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a, eb1412a2-56ac-4478-9717-6ebac99000ac]
+closed: 2026-11-15T18:08:43+01:00
 assignee: ai
 owner: sevenuz
 ---
@@ -13,3 +14,5 @@ owner: sevenuz
 - why: the key doc (form-keys, done) lists f hints, } skip goal, A/O and the old card flow; the keys changed
 - what: a new doc note under tree-form with the current keys: j/k rows, J/K and n/p (answer, review) next item, o children and one parent, <tab>/<cr> focus the box, j/k in the box choose or scroll, e editor, digits/i answer, t n dd w p s c :due etc. from the tree
 - done when: the doc matches the keymap in src/form/keys.rs and the keys line of each module
+
+merged into help-per-module: the ? overlay per module is the key doc
