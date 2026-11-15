@@ -1,10 +1,11 @@
 ---
 id: tag-edit-form
-status: review
+status: done
 parent: "[[form-polish]]"
 created: 2026-11-15T23:19:47+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
+closed: 2026-11-15T23:32:45+01:00
 assignee: claude-code
 owner: sevenuz
 time:
