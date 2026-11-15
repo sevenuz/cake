@@ -1,6 +1,5 @@
 ---
 id: store-foreign-edits
-status: task
 parent: "[[when-i-started-new]]"
 created: 2026-11-14T22:57:08+01:00
 by: claude-code
