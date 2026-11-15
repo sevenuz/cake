@@ -268,20 +268,24 @@ fn keys(parts: &[(&str, &str)]) -> Line<'static> {
 }
 
 
+/// the focused pane: box border, tree cursor, scrollbar
+fn focus_style() -> Style {
+    Style::default().fg(theme::t().bold).add_modifier(Modifier::BOLD)
+}
+
 /// a scrollbar at the right edge of `area` when `len` lines do not fit
 /// (`view` shown, scrolled by `pos`); `active`: in the hint color
 fn scrollbar(f: &mut ratatui::Frame, area: Rect, len: u16, view: u16, pos: u16, active: bool) {
     if len <= view || area.height == 0 {
         return;
     }
-    let g = style::g();
+    // only the thumb, a full block; the focused pane's in the focus color
     let bar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(None)
         .end_symbol(None)
-        .track_symbol(Some(g.scroll_track))
-        .thumb_symbol(g.scroll_thumb)
-        .track_style(dim())
-        .thumb_style(if active { Style::default().fg(theme::t().hint) } else { dim() });
+        .track_symbol(None)
+        .thumb_symbol(style::g().scroll_thumb)
+        .thumb_style(if active { focus_style() } else { Style::default().fg(theme::t().hint) });
     let mut state = ScrollbarState::new((len - view) as usize).position(pos as usize).viewport_content_length(view as usize);
     f.render_stateful_widget(bar, area, &mut state);
 }
@@ -544,7 +548,8 @@ fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Sc
         card_block = card_block.title_bottom(Line::from(Span::styled(more, Style::default().fg(theme::t().hint))).right_aligned());
     }
     if screen.card_active {
-        card_block = card_block.border_style(Style::default().fg(theme::t().hint));
+        // the focused pane in the bold color, hard to miss
+        card_block = card_block.border_style(focus_style()).title_style(focus_style());
     }
     let inside = card_block.inner(card);
     if card_h > 0 {

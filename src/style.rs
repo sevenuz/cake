@@ -32,8 +32,7 @@ pub struct Glyphs {
     /// progress bar
     pub bar_full: &'static str,
     pub bar_empty: &'static str,
-    /// scrollbar: track and thumb
-    pub scroll_track: &'static str,
+    /// scrollbar thumb
     pub scroll_thumb: &'static str,
     /// saving spinner frames
     pub spinner: &'static [&'static str],
@@ -63,8 +62,7 @@ const UNICODE: Glyphs = Glyphs {
     ellipsis: "…",
     bar_full: "━",
     bar_empty: "─",
-    scroll_track: "│",
-    scroll_thumb: "┃",
+    scroll_thumb: "█",
     spinner: &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
     border: ratatui::symbols::border::ROUNDED,
 };
@@ -91,7 +89,6 @@ const ASCII: Glyphs = Glyphs {
     ellipsis: "...",
     bar_full: "#",
     bar_empty: ".",
-    scroll_track: "|",
     scroll_thumb: "#",
     spinner: &["|", "/", "-", "\\"],
     border: ratatui::symbols::border::Set {

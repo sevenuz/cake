@@ -167,7 +167,7 @@ impl<'a> Tree<'a> {
                 (true, true) => base.add_modifier(Modifier::BOLD),
                 _ => base,
             };
-            let mut spans = vec![Span::styled(lead, if here && !dim_cursor { bold().fg(t.hint) } else { dim() }), Span::styled(title, style)];
+            let mut spans = vec![Span::styled(lead, if here && !dim_cursor { focus_style() } else { dim() }), Span::styled(title, style)];
             if after_w > 0 {
                 spans.push(Span::raw("  "));
                 spans.extend(after);
