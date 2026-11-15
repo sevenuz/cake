@@ -1,6 +1,6 @@
 ---
 id: news-digest
-status: doing
+status: review
 parent: "[[tree-form]]"
 created: 2026-11-15T17:47:55+01:00
 by: claude-code
@@ -8,7 +8,7 @@ sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 assignee: ai
 owner: sevenuz
 time:
-  - 2026-11-15T17:47:55+01:00/
+  - 2026-11-15T17:47:55+01:00/2026-11-15T17:49:43+01:00
 ---
 # News as a read-only digest
 
@@ -21,3 +21,5 @@ time:
   - rejected: remove the module (marks in ALL instead); keep it with renamed labels
 - done when: scenario test (s gives it back to you); tmux check
 - also closes [[news-drop-w]]
+
+changed: news shows agent items new or started since the last run, without review items; count in the header, not in the progress bar; no ✓/all done; key line 'read only: s stop agent, dd drop'; w and : fields gone; l goes on; scenario: s gives it back to you; commits: 25c0c4f; try: cake (news is first)
