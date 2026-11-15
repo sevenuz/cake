@@ -355,7 +355,7 @@ pub enum Commands {
     /// time (you, agents), tokens, footprint and done items for a period,
     /// per store and goal
     Stats {
-        /// day, week, month or year
+        /// day, 7d (rolling), week, month or year
         #[arg(short, long, default_value = "day")]
         period: String,
         /// every store from stores.json, not only this one

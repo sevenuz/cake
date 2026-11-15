@@ -344,7 +344,14 @@ impl Overlay {
     fn refresh(&mut self, srcs: &[Src], user: &str) {
         let now = util::timestamp();
         let (from, _) = self.period.range(now);
-        let logs: Vec<Vec<crate::log::Line>> = srcs.iter().map(|s| crate::log::read(&s.root, from, now)).collect();
+        // the gantt looks back: the last 24 h or 7 days (today alone is
+        // empty right after midnight)
+        let gfrom = match self.period {
+            Period::Day => now - 86400,
+            Period::Week => now - 7 * 86400,
+            _ => from,
+        };
+        let logs: Vec<Vec<crate::log::Line>> = srcs.iter().map(|s| crate::log::read(&s.root, from.min(gfrom), now)).collect();
         self.stats = srcs.iter().zip(&logs).map(|(s, l)| stats::of_store(&s.store, l, user, self.period, now)).collect();
         // the gantt: the tab's store or all, from the first hour with work
         let picked: Vec<usize> = self.only.map_or((0..srcs.len()).collect(), |n| vec![n]);
@@ -357,16 +364,16 @@ impl Overlay {
                 (n, g, d, p)
             })
             .collect();
-        let mut lanes = if self.view == 0 { crate::gantt::sessions(&gsrcs, user, from, now) } else { crate::gantt::stores(&gsrcs, user, from, now) };
+        let mut lanes = if self.view == 0 { crate::gantt::sessions(&gsrcs, user, gfrom, now) } else { crate::gantt::stores(&gsrcs, user, gfrom, now) };
         // store indices of the lanes refer to `picked`; map back for colors
         for l in lanes.iter_mut() {
             for b in l.bars.iter_mut() {
                 b.store = picked[b.store];
             }
         }
-        let first = lanes.iter().flat_map(|l| &l.bars).map(|b| b.start).min().unwrap_or(from).max(from);
-        let start = if self.period == Period::Day { first - first.rem_euclid(3600) } else { from };
-        self.span = (start.max(from), now);
+        let first = lanes.iter().flat_map(|l| &l.bars).map(|b| b.start).min().unwrap_or(gfrom).max(gfrom);
+        let start = if self.period == Period::Day { first - first.rem_euclid(3600) } else { gfrom };
+        self.span = (start.max(gfrom), now);
         self.lanes = lanes;
     }
 
@@ -379,6 +386,75 @@ impl Overlay {
         v.retain(|(_, x)| *x > 0.0);
         v.sort_by(|a, b| b.1.total_cmp(&a.1));
         v
+    }
+}
+
+/// what the main screen shows beside the lists on wider terminals,
+/// for the open tab
+struct Side {
+    /// the pie of this week
+    pie: Overlay,
+    /// who-gantt of the last 24 h
+    who: Overlay,
+    /// one gantt line per store, last 24 h
+    stores: Overlay,
+    /// the stats line: the last 7 days per day, their numbers, and the
+    /// store numbers (review, overdue, streak)
+    days: Vec<i64>,
+    last7: stats::Numbers,
+    now: Vec<stats::StoreStats>,
+    only: Option<usize>,
+}
+
+impl Side {
+    fn new(only: Option<usize>, srcs: &[Src], user: &str) -> Side {
+        let mut pie = Overlay::new(Kind::Pie, srcs, user, only);
+        pie.period = Period::Days7;
+        let mut stores = Overlay::new(Kind::Gantt, srcs, user, only);
+        stores.view = 1;
+        let mut side = Side { pie, who: Overlay::new(Kind::Gantt, srcs, user, only), stores, days: vec![], last7: Default::default(), now: vec![], only };
+        side.refresh(srcs, user);
+        side
+    }
+
+    fn retab(&mut self, only: Option<usize>, srcs: &[Src], user: &str) {
+        *self = Side::new(only, srcs, user);
+    }
+
+    fn refresh(&mut self, srcs: &[Src], user: &str) {
+        for o in [&mut self.pie, &mut self.who, &mut self.stores] {
+            o.refresh(srcs, user);
+        }
+        let now = util::timestamp();
+        let picked: Vec<usize> = self.only.map_or((0..srcs.len()).collect(), |n| vec![n]);
+        self.days = vec![0; 7];
+        self.last7 = Default::default();
+        for n in &picked {
+            let log = crate::log::read(&srcs[*n].root, now - 8 * 86400, now);
+            for (k, d) in stats::days(&srcs[*n].store, &log, user, 7, now).into_iter().enumerate() {
+                self.days[k] += d;
+            }
+            self.last7.add(&stats::window(&srcs[*n].store, &log, user, now - 7 * 86400, now));
+        }
+        self.now = picked.iter().map(|n| self.pie.stats[*n].clone()).collect();
+    }
+
+    /// "7 days ▂▅█▃▁▆█ 14:20 · done 86 · streak 3 d · review 6 · overdue 0"
+    fn line(&self) -> Line<'static> {
+        let t = theme::t();
+        let review: usize = self.now.iter().map(|s| s.review).sum();
+        let overdue: usize = self.now.iter().map(|s| s.overdue).sum();
+        let streak = self.now.iter().map(|s| s.streak).max().unwrap_or(0);
+        let n = &self.last7;
+        Line::from(vec![
+            Span::styled(" 7 days ", dim()),
+            Span::styled(crate::commands::spark(&self.days), Style::default().fg(t.hint)),
+            Span::styled(
+                format!("  you {} · agents {} · done {} · streak {} d · review {} · ", hm(n.you), hm(n.agents), n.done, streak, review),
+                dim(),
+            ),
+            Span::styled(format!("overdue {}", overdue), if overdue > 0 { Style::default().fg(t.error) } else { dim() }),
+        ])
     }
 }
 
@@ -521,7 +597,7 @@ fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     }
     let (from, to) = o.span;
     let scope = o.only.map_or("all stores".to_string(), |n| srcs[n].name.clone());
-    let block = boxed(format!(" gantt · {} · {} · {} ", o.period.name(), if o.view == 0 { "who" } else { "stores" }, scope));
+    let block = boxed(format!(" gantt · {} · {} · {} ", if o.period == Period::Day { "24 h" } else { "7 days" }, if o.view == 0 { "who" } else { "stores" }, scope));
     let inner = block.inner(area);
     f.render_widget(block, area);
     let name_w = o.lanes.iter().map(|l| l.name.chars().count()).max().unwrap_or(4).clamp(4, 22);
@@ -550,6 +626,30 @@ fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     lines.push(Line::from(legend));
     let (max, avg, waited) = gantt::summary(&o.lanes, from, to);
     lines.push(Line::from(Span::styled(format!("at once: max {} · avg {:.1} · agents waited {} on you", max, avg, hm(waited)), dim())));
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// the store lanes of the last 24 h, compact: axis and one line per store
+fn paint_strip(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
+    let (from, to) = o.span;
+    let block = boxed(" last 24 h ".into());
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let name_w = o.lanes.iter().map(|l| l.name.chars().count()).max().unwrap_or(4).clamp(4, 16);
+    let width = (inner.width as usize).saturating_sub(name_w + 2).max(10);
+    let mut lines = vec![Line::from(Span::styled(format!("{:w$}  {}", "", crate::gantt::axis(from, to, width), w = name_w), dim()))];
+    let colors = palette();
+    let mut any = false;
+    for l in o.lanes.iter().filter(|l| !l.bars.is_empty()) {
+        any = true;
+        let mut spans = vec![Span::styled(format!("{:w$}  ", cut(&l.name, name_w), w = name_w), dim())];
+        spans.extend(crate::gantt::render(l, from, to, width, &colors, true, style::ascii()).spans);
+        lines.push(Line::from(spans));
+    }
+    if !any {
+        lines.push(Line::from(Span::styled("nothing ran in the last 24 h", dim())));
+    }
+    let _ = srcs;
     f.render_widget(Paragraph::new(lines), inner);
 }
 
@@ -594,12 +694,43 @@ fn paint_stats(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     f.render_widget(Paragraph::new(lines), inner);
 }
 
-fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &str) {
+/// terminal widths where the main screen shows more
+const MEDIUM: u16 = 100;
+const WIDE: u16 = 150;
+
+fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &str, side: &Side) {
     let t = theme::t();
     let area = f.area();
     let col = Rect { x: area.x + 1, width: area.width.saturating_sub(2), ..area };
-    let [head, list, card_area, keys] =
-        Layout::vertical([Constraint::Length(3), Constraint::Fill(1), Constraint::Percentage(40), Constraint::Length(1)]).areas(col);
+    let wide = col.width >= WIDE && v.overlay.is_none();
+    let medium = col.width >= MEDIUM && v.overlay.is_none();
+    // medium: a stats line and today's store lanes above the card
+    let strip_h = if medium && !wide { side.stores.lanes.iter().filter(|l| !l.bars.is_empty()).count().max(1) as u16 + 3 } else { 0 };
+    let [head, statline, list, strip, card_area, keys] = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(u16::from(medium)),
+        Constraint::Fill(1),
+        Constraint::Length(strip_h),
+        Constraint::Percentage(if wide { 30 } else { 40 }),
+        Constraint::Length(1),
+    ])
+    .areas(col);
+    if medium {
+        f.render_widget(Paragraph::new(side.line()), statline);
+    }
+    if strip_h > 0 {
+        paint_strip(f, strip, srcs, &side.stores);
+    }
+    // wide: pie and who-gantt to the right of the lists
+    let list = if wide {
+        let [l, r] = Layout::horizontal([Constraint::Fill(1), Constraint::Length(col.width * 45 / 100)]).areas(list);
+        let [pie, gantt] = Layout::vertical([Constraint::Length(12), Constraint::Fill(1)]).areas(r);
+        paint_pie(f, pie, srcs, &side.pie);
+        paint_gantt(f, gantt, srcs, &side.who);
+        l
+    } else {
+        list
+    };
     // tabs, totals on the right
     let mut tabs: Vec<Span> = vec![];
     for (n, name) in std::iter::once("all").chain(srcs.iter().map(|s| s.name.as_str())).enumerate() {
@@ -705,6 +836,7 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
     let mut term = ratatui::init();
     let result = (|| -> Result<(), Box<dyn Error>> {
         let mut total = totals(&srcs, user);
+        let mut side = Side::new((v.tab > 0).then(|| v.tab - 1), &srcs, user);
         let mut last = std::time::Instant::now();
         loop {
             let tab = (v.tab > 0).then(|| v.tab - 1);
@@ -712,7 +844,7 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
             if rows.get(v.sel).map_or(true, |r| r.store.is_none()) {
                 v.sel = selectable(&rows, v.sel, true);
             }
-            term.draw(|f| paint(f, &srcs, &v, &rows, &total))?;
+            term.draw(|f| paint(f, &srcs, &v, &rows, &total, &side))?;
             if !event::poll(Duration::from_millis(500))? {
                 if last.elapsed() >= Duration::from_secs(2) {
                     srcs = load(root)?;
@@ -720,6 +852,7 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                     if let Some(o) = v.overlay.as_mut() {
                         o.refresh(&srcs, user);
                     }
+                    side.refresh(&srcs, user);
                     last = std::time::Instant::now();
                 }
                 continue;
@@ -729,6 +862,22 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                 continue;
             }
             v.note = None;
+            let tabs = srcs.len() + 1;
+            // h/l change the tab also under an overlay, which follows it
+            let step = match k.code {
+                KeyCode::Char('l') | KeyCode::Right | KeyCode::Tab => Some(1),
+                KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => Some(tabs - 1),
+                _ => None,
+            };
+            if let (Some(step), true) = (step, v.overlay.is_some()) {
+                v.tab = (v.tab + step) % tabs;
+                let only = (v.tab > 0).then(|| v.tab - 1);
+                let o = v.overlay.as_mut().unwrap();
+                (o.only, o.zoom, o.sel) = (only, only, 0);
+                o.refresh(&srcs, user);
+                side.retab(only, &srcs, user);
+                continue;
+            }
             if let Some(o) = v.overlay.as_mut() {
                 let count = o.slices(&srcs).len();
                 match k.code {
@@ -775,8 +924,11 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
             match k.code {
                 KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                 KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => return Ok(()),
-                KeyCode::Char('l') | KeyCode::Right | KeyCode::Tab => (v.tab, v.sel) = ((v.tab + 1) % tabs, 0),
-                KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => (v.tab, v.sel) = ((v.tab + tabs - 1) % tabs, 0),
+                KeyCode::Char('l') | KeyCode::Right | KeyCode::Tab | KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => {
+                    let step = if matches!(k.code, KeyCode::Char('l') | KeyCode::Right | KeyCode::Tab) { 1 } else { tabs - 1 };
+                    (v.tab, v.sel) = ((v.tab + step) % tabs, 0);
+                    side.retab((v.tab > 0).then(|| v.tab - 1), &srcs, user);
+                }
                 KeyCode::Char('j') | KeyCode::Down => v.sel = selectable(&rows, v.sel, true),
                 KeyCode::Char('k') | KeyCode::Up => v.sel = selectable(&rows, v.sel, false),
                 KeyCode::Enter => match rows.get(v.sel).and_then(|r| r.store.zip(r.module)) {

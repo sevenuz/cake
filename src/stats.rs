@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Period {
     Day,
+    /// today and the 6 days before
+    Days7,
     Week,
     Month,
     Year,
@@ -23,6 +25,7 @@ impl Period {
     pub fn parse(s: &str) -> Option<Period> {
         match s {
             "day" | "d" | "today" => Some(Period::Day),
+            "7d" | "7days" | "7 days" => Some(Period::Days7),
             "week" | "w" => Some(Period::Week),
             "month" | "m" => Some(Period::Month),
             "year" | "y" => Some(Period::Year),
@@ -33,7 +36,8 @@ impl Period {
     /// day → week → month → year → day
     pub fn next(self) -> Period {
         match self {
-            Period::Day => Period::Week,
+            Period::Day => Period::Days7,
+            Period::Days7 => Period::Week,
             Period::Week => Period::Month,
             Period::Month => Period::Year,
             Period::Year => Period::Day,
@@ -43,6 +47,7 @@ impl Period {
     pub fn name(self) -> &'static str {
         match self {
             Period::Day => "day",
+            Period::Days7 => "7 days",
             Period::Week => "week",
             Period::Month => "month",
             Period::Year => "year",
@@ -60,6 +65,10 @@ impl Period {
             Period::Day => {
                 let start = at(today);
                 (start, (0..24).map(|h| start + h * 3600).filter(|t| *t < now).collect())
+            }
+            Period::Days7 => {
+                let from = today - Duration::days(6);
+                (at(from), days(from))
             }
             Period::Week => {
                 let from = today - Duration::days(today.weekday().num_days_from_monday() as i64);
@@ -117,7 +126,7 @@ pub struct Numbers {
 }
 
 impl Numbers {
-    fn add(&mut self, o: &Numbers) {
+    pub fn add(&mut self, o: &Numbers) {
         self.you += o.you;
         self.agents += o.agents;
         self.tokens += o.tokens;
@@ -128,7 +137,7 @@ impl Numbers {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct Goal {
     /// "" for items under no goal
     pub id: String,
@@ -137,7 +146,7 @@ pub struct Goal {
     pub numbers: Numbers,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct StoreStats {
     pub period: &'static str,
     pub from: i64,
@@ -283,6 +292,28 @@ pub fn of_store(store: &Store, log: &[Line], user: &str, period: Period, now: i6
     StoreStats { period: period.name(), from, to: now, numbers: total, goals, buckets, overdue, review, questions, streak }
 }
 
+/// the numbers of all of `store` in [from, to]
+pub fn window(store: &Store, log: &[Line], user: &str, from: i64, to: i64) -> Numbers {
+    let all: Vec<&str> = store.get().keys().map(String::as_str).collect();
+    let mine: Vec<(i64, i64)> = log.iter().filter(|l| l.who == user).filter_map(|l| l.span()).collect();
+    numbers(store, &all, &mine, user, from, to)
+}
+
+/// you + agents seconds for each of the last `n` days (today last)
+pub fn days(store: &Store, log: &[Line], user: &str, n: usize, now: i64) -> Vec<i64> {
+    let mut out = vec![];
+    let (mut start, _) = Period::Day.range(now);
+    let mut end = now;
+    for _ in 0..n {
+        let x = window(store, log, user, start, end);
+        out.push(x.you + x.agents);
+        end = start;
+        start = Period::Day.range(start - 3600).0;
+    }
+    out.reverse();
+    out
+}
+
 /// sum of several stores' numbers
 pub fn sum<'a>(stats: impl IntoIterator<Item = &'a StoreStats>) -> Numbers {
     let mut n = Numbers::default();
@@ -362,6 +393,7 @@ mod tests {
         let (from, days) = Period::Week.range(now);
         assert_eq!((from, days.len()), (at(2026, 11, 9), 7));
         assert_eq!(Period::Month.range(now).1.len(), 15);
+        assert_eq!(Period::Days7.range(now), (at(2026, 11, 9), Period::Week.range(now).1), "a Sunday: the same days");
         assert_eq!(Period::Year.range(now).1.len(), 11);
     }
 }

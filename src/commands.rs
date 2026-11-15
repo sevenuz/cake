@@ -459,7 +459,7 @@ pub(crate) fn spark(values: &[i64]) -> String {
 /// numbers for a period: this store, or all known stores with `all`
 pub fn stats(config: &Config, store: &Store, period: &str, all: bool) -> Result<Report, Box<dyn Error>> {
     use crate::stats::{self, Period};
-    let period = Period::parse(period).ok_or_else(|| error::invalid(format!("'{}' is no period: day, week, month, year", period)))?;
+    let period = Period::parse(period).ok_or_else(|| error::invalid(format!("'{}' is no period: day, 7d, week, month, year", period)))?;
     let now = util::timestamp();
     let user = config.user(store.root());
     let (from, _) = period.range(now);
