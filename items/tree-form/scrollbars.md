@@ -19,3 +19,5 @@ time:
 - done when: scrollbar only on overflow, thumb follows the cursor/scroll; render test; checked in tmux
 
 changed: scrollbar at the right of the tree and on the box's right border, only when the content is longer than the room; thumb of the focused pane in the hint color; help overlay not yet (it does not scroll, see help-per-module); test; commits: 1fb0799; try: cake, all tab, tab into a long text
+
+comment (claude-code, 2026-11-15): thumb barely visible: wider indicator, no track line, more expressive color; focus color more visible
