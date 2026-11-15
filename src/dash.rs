@@ -509,7 +509,7 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
     f.render_widget(Paragraph::new(body).wrap(Wrap { trim: false }).block(block), card_area);
     let keys_line = match &v.note {
         Some(n) => Line::from(Span::styled(n.clone(), Style::default().fg(t.error))),
-        None => Line::from(Span::styled("h/l store  j/k  <cr> form here  e edit  F form  p pie  s stats  q quit", dim())),
+        None => Line::from(Span::styled("h/l store  j/k  <cr> form here  a add  e edit  F form  p pie  s stats  q quit", dim())),
     };
     f.render_widget(Paragraph::new(keys_line), keys);
 }
@@ -630,6 +630,12 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                     }
                     None => v.note = Some("no item on this line".into()),
                 },
+                KeyCode::Char('a') => {
+                    // into the inbox of this tab's store (all: the nearest)
+                    let n = tab.unwrap_or(0);
+                    suspend(&mut term, &srcs[n].root.clone(), &["add"])?;
+                    srcs = load(root)?;
+                }
                 KeyCode::Char('p') => v.overlay = Some(Overlay::new(Kind::Pie, &srcs, user)),
                 KeyCode::Char('s') => v.overlay = Some(Overlay::new(Kind::Stats, &srcs, user)),
                 KeyCode::Char('F') => {
