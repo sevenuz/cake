@@ -6,6 +6,7 @@ created: 2026-11-16T00:42:21+01:00
 by: claude-code
 commits: [4ed9ba7]
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
+usage: {claude-opus-5-5: {in: 9, out: 2664, cache_read: 1845954, cache_write: 3472}}
 assignee: claude-code
 owner: sevenuz
 time:
