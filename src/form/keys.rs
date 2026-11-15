@@ -48,8 +48,6 @@ pub enum Act {
     Command,
     Help,
     Quit,
-    /// q without a binding: says how to quit
-    QuitHint,
     /// a digit without a binding: choose option n
     Choose(u8),
 }
@@ -88,7 +86,7 @@ pub const ACTIONS: &[(&str, Act, &str, &str)] = &[
     ("feedback", Act::Feedback, "F", "feedback on this screen"),
     ("command", Act::Command, ":", "command line: due, deadline, who, prio, move, all, w, q"),
     ("help", Act::Help, "?", "all keys"),
-    ("quit", Act::Quit, "", "quit; no key by default, use :q (<c-c> always quits)"),
+    ("quit", Act::Quit, "q", "close the form (back to the dashboard); :q too, <c-c> always"),
 ];
 
 /// escape in text input, the config name `escape`
@@ -353,9 +351,6 @@ impl Keymap {
                 if seq.len() == 1 {
                     if let KeyCode::Char(c @ '1'..='9') = first.code {
                         return Ok(Act::Choose(c as u8 - b'0'));
-                    }
-                    if first == K::char('q') {
-                        return Ok(Act::QuitHint);
                     }
                 }
                 break;

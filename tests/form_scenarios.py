@@ -154,10 +154,9 @@ if back is None:
 else:
     check("sticky: still shown after h/l", "✓ sticky one" in back and "sticky two" in back)
 
-# a stray q does not close the form, it says how
-stray = tmux_screen(["q"])
-if stray is not None:
-    check("q: form stays open with the :q hint", "type :q to close" in stray)
+# q closes the form (form() fails if it hangs)
+form(["q"])
+check("q: closes the form", True)
 
 # config sort_who "-": a task from sort gets nobody
 os.makedirs(f"{TMP}/config/cake", exist_ok=True)
@@ -221,6 +220,13 @@ check("last tab: q quits", True)
 check("review: :prio 2 set the priority", item("rv")["priority"] == 2)
 form([":", "tag doc,x\r", ":", "tag ~x\r", ":q\r"], args=("form", "review"))
 check("review: :tag adds and removes tags", item("rv")["tags"] == ["doc"])
+cake("add", "tk", "--task", "--assignee", "claude-code", "-m", "# talk about me", agent=True)
+cake("edit", "tk", "--owner", "jul")
+cake("review", "tk", "-m", "changed: stuff; commits: abc", agent=True)
+form(["t", "q"], args=("form", "review"))
+tk = item("tk")
+check("review: t sends it back to talk", tk["status"] == "task" and "discuss" in tk["tags"] and tk["assignee"] == "jul"
+      and "changed: stuff" in tk["body"] and "discuss (jul" in tk["body"])
 
 # nothing waits: the form opens at dump anyway, esc goes on to the last tab
 empty = tmux_screen(["\x1b"], args=("form", "answer"))

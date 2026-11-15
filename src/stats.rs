@@ -301,6 +301,42 @@ pub fn of_store(store: &Store, log: &[Line], user: &str, period: Period, now: i6
     StoreStats { period: period.name(), from, to: now, numbers: total, goals, buckets, overdue, review, questions, streak }
 }
 
+/// a pause this long ends a work day
+pub const DAY_BREAK: i64 = 5 * 3600;
+
+/// where the current work day began: the first activity after the last
+/// pause of DAY_BREAK or more; `now` when that pause is going on (a new
+/// day starts clean)
+pub fn workday_start(mut spans: Vec<(i64, i64)>, now: i64) -> i64 {
+    spans.retain(|(s, e)| e > s && *s <= now);
+    spans.sort();
+    let mut merged: Vec<(i64, i64)> = vec![];
+    for (s, e) in spans {
+        match merged.last_mut() {
+            Some(last) if s <= last.1 => last.1 = last.1.max(e),
+            _ => merged.push((s, e)),
+        }
+    }
+    let Some(&(mut start, end)) = merged.last() else { return now };
+    if now - end.min(now) >= DAY_BREAK {
+        return now;
+    }
+    for &(s, e) in merged.iter().rev().skip(1) {
+        if start - e >= DAY_BREAK {
+            break;
+        }
+        start = s;
+    }
+    start
+}
+
+/// every span of activity in `store`: timers and session log lines
+pub fn activity(store: &Store, log: &[Line]) -> Vec<(i64, i64)> {
+    let mut v: Vec<(i64, i64)> = store.get().values().flat_map(|i| i.intervals()).collect();
+    v.extend(log.iter().filter_map(|l| l.span()));
+    v
+}
+
 /// the numbers of all of `store` in [from, to]
 pub fn window(store: &Store, log: &[Line], user: &str, from: i64, to: i64) -> Numbers {
     let all: Vec<&str> = store.get().keys().map(String::as_str).collect();
@@ -345,6 +381,18 @@ mod tests {
         let mut i = Item::new(id.into(), vec![], parent.map(String::from), vec![]);
         i.set_content(format!("# {}\n", id));
         i
+    }
+
+    #[test]
+    fn the_work_day_starts_after_the_last_long_pause() {
+        let h = 3600;
+        // yesterday 18-23, a night, today 08-10 and 10:30-11
+        let spans = vec![(18 * h, 23 * h), (32 * h, 34 * h), (34 * h + h / 2, 35 * h)];
+        assert_eq!(workday_start(spans.clone(), 35 * h), 32 * h);
+        // past midnight without a long pause: still the same day
+        assert_eq!(workday_start(vec![(18 * h, 23 * h), (24 * h, 25 * h)], 25 * h), 18 * h);
+        // nothing for 5 h: a clean start
+        assert_eq!(workday_start(spans, 41 * h), 41 * h);
     }
 
     #[test]

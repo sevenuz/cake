@@ -5,6 +5,7 @@
 
 mod keys;
 mod list;
+pub(crate) use list::fields;
 mod tree;
 
 use keys::{Act, Buf, Keymap, Text as TextKey};
@@ -19,9 +20,6 @@ use serde_json::Value;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
-/// what a plain q says: only :q quits, so a stray q keeps the form open
-const QUIT_HINT: &str = "q does not quit: type :q to close the form";
 
 /// set for the form's own cake calls: built-ins without alias overrides
 pub const PLAIN_ENV: &str = "CAKE_PLAIN";
@@ -690,7 +688,7 @@ enum Leave {
 /// the modules a form can run, in their default order
 pub const MODULES: &[&str] = &["news", "inbox", "answer", "review", "mine"];
 /// all known modules (dump is optional)
-const KNOWN: &[&str] = &["news", "inbox", "answer", "review", "mine", "dump"];
+const KNOWN: &[&str] = &["news", "inbox", "answer", "review", "mine", "dump", "all"];
 
 /// when the form last ran in a store (for news), in the local state dir
 fn last_run_file(root: &Path) -> Option<PathBuf> {
@@ -712,7 +710,7 @@ fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str))
     let parts = [
         (format!("{}/{}", k(Act::PrevModule), k(Act::NextModule)), "module".to_string()),
         (k(Act::Add), "new".to_string()),
-        (":q".to_string(), "quit".to_string()),
+        ("q".to_string(), "quit".to_string()),
         (k(Act::Help), "keys".to_string()),
     ];
     let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
@@ -743,7 +741,6 @@ fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str))
             Act::PrevModule => return Ok(Leave::Prev),
             Act::NextModule => return Ok(Leave::Next),
             Act::Quit => return Ok(Leave::Quit),
-            Act::QuitHint => note = Some((QUIT_HINT.to_string(), false)),
             Act::Command => match ui.input(&mut screen, ":", "q")?.as_deref() {
                 None | Some("") => (),
                 Some("q" | "q!" | "wq" | "x") => return Ok(Leave::Quit),
@@ -756,7 +753,7 @@ fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str))
 }
 
 /// the last tab: every open item of `root` as one tree, details below;
-/// h goes back, :q quits
+/// h goes back, q quits
 fn last_tab(ui: &mut Ui, root: &Path, user: &str, store: &str) -> Result<Leave, Box<dyn Error>> {
     ui.step = ui.names.len() - 1;
     let cake = Cake { root };
@@ -860,7 +857,8 @@ pub fn run(root: &Path, user: &str, mut o: Options) -> Result<(), Box<dyn Error>
     // nothing to decide: the form opens anyway, at dump, with a hint on
     // what waits for agents; the modules and the last tab stay reachable
     let mut hint = vec![];
-    if waiting == 0 && !o.modules.iter().any(|m| m == "dump") {
+    let only_tree = o.modules.iter().all(|m| m == "all");
+    if waiting == 0 && !only_tree && !o.modules.iter().any(|m| m == "dump") {
         let mut others = 0;
         for (_, r) in &stores {
             let store = crate::store::Store::new_except(r, &[])?;
@@ -879,11 +877,17 @@ pub fn run(root: &Path, user: &str, mut o: Options) -> Result<(), Box<dyn Error>
         per_module.insert(0, 0);
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.iter().cloned().chain(["all".to_string()]).collect(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), all_filter: 0, show_tags: true, tag_filter: None, done: vec![false; o.modules.len() + 1], changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.iter().filter(|m| *m != "all").cloned().chain(["all".to_string()]).collect(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), all_filter: 0, show_tags: true, tag_filter: None, done: vec![false; o.modules.len() + 1], changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the
         // direction of travel
+        // `cake form all`: straight to the tree
+        if only_tree {
+            ui.summary = String::new();
+            last_tab(&mut ui, root, user, &stores[0].0)?;
+            return Ok(());
+        }
         let mut n = 0usize;
         let mut back = false;
         let mut walked = false;

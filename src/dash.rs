@@ -100,12 +100,20 @@ fn cut(s: &str, n: usize) -> String {
     }
 }
 
-fn item_row(srcs: &[Src], n: usize, all: bool, mark: &str, i: &Item, after: String, module: Option<&'static str>) -> Row {
+fn item_row(user: &str, srcs: &[Src], n: usize, all: bool, mark: &str, i: &Item, after: String, module: Option<&'static str>) -> Row {
     let mut spans = vec![Span::raw("  ")];
     spans.extend(prefix(srcs, n, all));
     spans.push(Span::raw(format!("{} {}", mark, i.title())));
     if !after.is_empty() {
         spans.push(Span::styled(format!("  {}", after), dim()));
+    }
+    // who, prio, estimate, dates: as in the form's tree
+    if let Some(v) = srcs[n].store.item_json(i.id()) {
+        let f = crate::form::fields(&v, user, 0, false, false);
+        if !f.is_empty() {
+            spans.push(Span::raw("  "));
+            spans.extend(f);
+        }
     }
     Row { store: Some(n), id: Some(i.id().clone()), module, line: Line::from(spans) }
 }
@@ -139,8 +147,7 @@ fn rows(srcs: &[Src], tab: Option<usize>, user: &str) -> Vec<Row> {
         let mut run: Vec<&Item> = items.iter().copied().filter(|i| i.is_started()).collect();
         run.sort_by_key(|i| (std::cmp::Reverse(i.running_seconds().unwrap_or(0)), i.id().clone()));
         for i in run {
-            let who = i.assignee().cloned().unwrap_or_default();
-            running.push(item_row(srcs, n, all, g.doing, i, format!("{}  {}", who, hm(i.running_seconds().unwrap_or(0))), Some("mine")));
+            running.push(item_row(user, srcs, n, all, g.doing, i, hm(i.running_seconds().unwrap_or(0)), Some("mine")));
         }
         // focus: what unblocks agents first
         let blocking: Vec<&Item> =
@@ -153,6 +160,10 @@ fn rows(srcs: &[Src], tab: Option<usize>, user: &str) -> Vec<Row> {
             let full = reviews_full(s, &srcs[n].config).is_some();
             let text = format!("{} {} review(s){}", g.review, review.len(), if full { ", limit hit: agents stopped" } else { "" });
             focus.push(info_row(srcs, n, all, text, Some("review")));
+        }
+        let talk = items.iter().filter(|i| i.is_open() && mine(i) && i.tags().iter().any(|t| t == "discuss")).count();
+        if talk > 0 {
+            focus.push(info_row(srcs, n, all, format!("# {} to discuss (bring up in a chat)", talk), Some("mine")));
         }
         let inbox = items.iter().filter(|i| i.status() == Some(Status::Inbox)).count();
         if inbox > 0 {
@@ -169,7 +180,7 @@ fn rows(srcs: &[Src], tab: Option<usize>, user: &str) -> Vec<Row> {
         for (i, d) in dated {
             let what = if i.deadline().is_some() { "deadline" } else { "due" };
             let late = if d < today { " (late)" } else { "" };
-            focus.push(item_row(srcs, n, all, "!", i, format!("{} {}{}", what, d, late), Some("mine")));
+            focus.push(item_row(user, srcs, n, all, "!", i, format!("{} {}{}", what, d, late), Some("mine")));
         }
         // goals whose critical path misses the deadline
         for (g, deadline) in crate::gantt::goals_with_deadline(s) {
@@ -177,21 +188,21 @@ fn rows(srcs: &[Src], tab: Option<usize>, user: &str) -> Vec<Row> {
             let finish = plan.iter().filter(|p| p.on_path).map(|p| p.end).max().unwrap_or(now);
             if finish > deadline {
                 if let Some(i) = s.get_item(&g) {
-                    focus.push(item_row(srcs, n, all, "!", i, format!("critical path {} over the deadline (g, v v v)", hm(finish - deadline)), None));
+                    focus.push(item_row(user, srcs, n, all, "!", i, format!("critical path {} over the deadline (g, v v v)", hm(finish - deadline)), None));
                 }
             }
         }
         let mut own: Vec<&Item> = items.iter().copied().filter(|i| mine(i) && s.is_ready(i.id())).collect();
         own.sort_by_key(|i| (std::cmp::Reverse(s.score(i.id(), now)), i.id().clone()));
         for i in own.into_iter().take(OWN) {
-            focus.push(item_row(srcs, n, all, g.todo, i, "your task".into(), Some("mine")));
+            focus.push(item_row(user, srcs, n, all, g.todo, i, String::new(), Some("mine")));
         }
         // ai queue: ready tasks of others by score
         let mut ai: Vec<&Item> = items.iter().copied().filter(|i| !mine(i) && i.assignee().is_some() && s.is_ready(i.id()) && !i.is_started()).collect();
         ai.sort_by_key(|i| (std::cmp::Reverse(s.score(i.id(), now)), i.id().clone()));
         queue_more += ai.len().saturating_sub(QUEUE);
         for i in ai.into_iter().take(QUEUE) {
-            queue.push(item_row(srcs, n, all, g.todo, i, format!("{}", s.score(i.id(), now)), None));
+            queue.push(item_row(user, srcs, n, all, g.todo, i, String::new(), None));
         }
         if let Some(msg) = reviews_full(s, &srcs[n].config) {
             stops.push(format!("{}: {}", srcs[n].name, msg.split(';').next().unwrap_or("")));
@@ -220,14 +231,23 @@ fn rows(srcs: &[Src], tab: Option<usize>, user: &str) -> Vec<Row> {
 }
 
 /// today across all stores: "5h20 · 1.2M tok · 0.4 kg CO2e"
+/// this work day across all stores (from the first activity after a
+/// pause of 5 h): "since 08:10 · 5:20 you · 1:10 agents · 1.2M tok · 40 g"
 fn totals(srcs: &[Src], user: &str) -> String {
     let now = util::timestamp();
-    let (from, _) = Period::Day.range(now);
-    let all: Vec<stats::StoreStats> =
-        srcs.iter().map(|s| stats::of_store(&s.store, &crate::log::read(&s.root, from, now), user, Period::Day, now)).collect();
-    let n = stats::sum(&all);
+    let logs: Vec<Vec<crate::log::Line>> = srcs.iter().map(|s| crate::log::read(&s.root, now - 3 * 86400, now)).collect();
+    let spans: Vec<(i64, i64)> = srcs.iter().zip(&logs).flat_map(|(s, l)| stats::activity(&s.store, l)).collect();
+    let from = stats::workday_start(spans, now);
+    if from >= now {
+        return "a new day: nothing yet".into();
+    }
+    let mut n = stats::Numbers::default();
+    for (s, l) in srcs.iter().zip(&logs) {
+        n.add(&stats::window(&s.store, l, user, from, now));
+    }
     let co2 = if n.co2_g >= 1000.0 { format!("{:.1} kg", n.co2_g / 1000.0) } else { format!("{:.0} g", n.co2_g) };
-    format!("today {} you · {} agents · {} tok · {} CO2e", hm(n.you), hm(n.agents), crate::footprint::human(n.tokens), co2)
+    let since = chrono::TimeZone::timestamp_opt(&chrono::Local, from, 0).single().map_or(String::new(), |t| t.format("%H:%M").to_string());
+    format!("since {} · {} you · {} agents · {} tok · {} CO2e", since, hm(n.you), hm(n.agents), crate::footprint::human(n.tokens), co2)
 }
 
 /// the card of the selected row: title, a meta line, the body
@@ -795,7 +815,7 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
     f.render_widget(Paragraph::new(body).wrap(Wrap { trim: false }).block(block), card_area);
     let keys_line = match &v.note {
         Some(n) => Line::from(Span::styled(n.clone(), Style::default().fg(t.error))),
-        None => Line::from(Span::styled("h/l store  j/k  <cr> form here  a add  e edit  F form  p pie  s stats  g gantt  q quit", dim())),
+        None => Line::from(Span::styled("h/l store  j/k  <cr> open  a add  e edit  F form  T tree  D dump  p pie  s stats  g gantt  q quit", dim())),
     };
     f.render_widget(Paragraph::new(keys_line), keys);
 }
@@ -964,11 +984,18 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                 KeyCode::Char('p') => v.overlay = Some(Overlay::new(Kind::Pie, &srcs, user, tab)),
                 KeyCode::Char('s') => v.overlay = Some(Overlay::new(Kind::Stats, &srcs, user, tab)),
                 KeyCode::Char('g') => v.overlay = Some(Overlay::new(Kind::Gantt, &srcs, user, tab)),
-                KeyCode::Char('F') => {
+                // the form: what waits (F), the whole tree (T), a dump (D)
+                KeyCode::Char(c @ ('F' | 'T' | 'D')) => {
                     let n = tab.unwrap_or(0);
-                    suspend(&mut term, &srcs[n].root.clone(), &["form"])?;
+                    let args: &[&str] = match c {
+                        'F' => &["form", "news", "inbox", "answer", "review"],
+                        'T' => &["form", "all"],
+                        _ => &["form", "dump"],
+                    };
+                    suspend(&mut term, &srcs[n].root.clone(), args)?;
                     srcs = load(root)?;
                     total = totals(&srcs, user);
+                    side.refresh(&srcs, user);
                 }
                 _ => (),
             }
@@ -1017,7 +1044,7 @@ mod tests {
         assert!(at("1 review(s)") < at("ai queue"));
         assert!(at("ai queue") < at("○ next"), "ready agent task in the queue");
         assert!(!t.iter().any(|l| l.contains("○ work")), "blocked work waits");
-        assert!(at("○ mine  your task") < at("ai queue"));
+        assert!(at("○ mine") < at("ai queue"), "own ready task in the focus");
         assert_eq!(rows[at("answer(s) block")].module, Some("answer"));
     }
 

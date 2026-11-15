@@ -265,7 +265,7 @@ fn card_of(kind: Kind, item: &Value, all: &[Value]) -> (String, Vec<String>) {
                 .map(|c| format!("- {} {}", if str_of(c, "status") == "done" { g.check } else { g.dropped }, str_of(c, "title")))
                 .collect();
             let text = if parts.is_empty() { body } else { format!("{}\n\nparts:\n{}", body, parts.join("\n")) };
-            (text, vec!["ok, done".into(), "drop".into()])
+            (text, vec!["ok, done".into(), "drop".into(), "talk about it again (back to you, #discuss)".into()])
         }
     };
     options.push(format!("{} {}", g.ellipsis, if kind == Kind::Answer { "own words" } else { "change something" }));
@@ -289,6 +289,8 @@ enum Change {
     Answer(String),
     /// review: what should change
     Comment(String),
+    /// review: back to the user as a task tagged discuss
+    Talk,
     Undo(Before),
 }
 
@@ -318,6 +320,14 @@ fn apply(cake: &Cake, item: &Value, change: &Change, user: &str, sort_who: Optio
             to_task(cake)?;
             cake.call(&["edit", id, "--assignee", &opt(w)])?;
             String::new()
+        }
+        Change::Talk => {
+            // the body keeps the work so far (the review note above); this
+            // line says why it is back
+            let line = format!("discuss ({}, {}): back for a talk before more work", user, chrono::Local::now().format("%Y-%m-%d"));
+            cake.call(&["set", "task", id, "-m", &line])?;
+            cake.call(&["edit", id, "--tag", "discuss", "--assignee", user])?;
+            "to discuss".into()
         }
         Change::Tags(t) => {
             cake.call(&["edit", id, "--tag", t])?;
@@ -379,7 +389,7 @@ fn apply(cake: &Cake, item: &Value, change: &Change, user: &str, sort_who: Optio
 /// colors of the `:` hint: what (news), status when the mark does not say
 /// enough, who, prio, due, deadline; late dates red, near ones yellow;
 /// context rows all dim
-fn fields(i: &Value, user: &str, since: i64, news: bool, context: bool) -> Vec<Span<'static>> {
+pub(crate) fn fields(i: &Value, user: &str, since: i64, news: bool, context: bool) -> Vec<Span<'static>> {
     let t = theme::t();
     let today = chrono::Local::now().date_naive();
     let date = |name: &str, d: &str| -> (String, Style) {
@@ -421,6 +431,15 @@ fn fields(i: &Value, user: &str, since: i64, news: bool, context: bool) -> Vec<S
             if let Some(p) = i["inherited"]["priority"].as_u64() {
                 parts.push((format!("p{}", p), dim().add_modifier(Modifier::ITALIC)));
             }
+        }
+    }
+    // expected work of open items: own estimate, ~ from history (dim)
+    let hours = |s: i64| if s >= 3600 { format!("{}h{}", s / 3600, if s % 3600 >= 60 { format!("{:02}", s % 3600 / 60) } else { String::new() }) } else { format!("{}m", (s / 60).max(1)) };
+    if matches!(str_of(i, "status"), "inbox" | "task" | "doing") {
+        if let Some(e) = i["estimate"].as_i64() {
+            parts.push((hours(e), Style::default()));
+        } else if let Some(e) = i["inherited"]["estimate"].as_i64() {
+            parts.push((format!("~{}", hours(e)), dim().add_modifier(Modifier::ITALIC)));
         }
     }
     if let Some(d) = i["due"].as_str() {
@@ -643,6 +662,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                 Kind::Review => vec![
                     (ks(Act::Complete), "ok".into()),
                     (ks(Act::Drop), "drop".into()),
+                    (ks(Act::Task), "talk".into()),
                     (ks(Act::Insert), "change".into()),
                 ],
             }
@@ -657,9 +677,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             (ks(Act::Editor), "edit".into()),
             (format!("{}/{}", ks(Act::PrevModule), ks(Act::NextModule)), "module".into()),
         ]);
-        if kind == Kind::All {
-            parts.push(("q".into(), "quit".into()));
-        }
+        parts.push((ks(Act::Quit), "quit".into()));
         // ? keys always last: kept when the line is cut
         parts.push((ks(Act::Help), "keys".into()));
         let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
@@ -797,8 +815,6 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             Act::NextModule => return Ok((decided, Leave::Next)),
             Act::Quit => return Ok((decided, Leave::Quit)),
             // the last tab: nothing left to lose, q quits
-            Act::QuitHint if kind == Kind::All => return Ok((decided, Leave::Quit)),
-            Act::QuitHint => st.note = Some((QUIT_HINT.into(), false)),
             Act::Feedback => {
                 feedback(ui, &mut screen, cake, store, &format!("{} tree, row {}", kind.name(), st.cur_id))?;
                 st.note = screen.note.take();
@@ -848,6 +864,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             Act::Timer if kind == Kind::Mine => change = Some(Change::Timer(str_of(&item, "status") != "doing")),
             Act::Timer if kind == Kind::News => (change, then_next) = (Some(Change::Hold), true),
             Act::Task if matches!(kind, Kind::Sort | Kind::All) => change = Some(Change::Status("task")),
+            Act::Task if kind == Kind::Review && editable => (change, then_next) = (Some(Change::Talk), true),
             Act::Note if kind == Kind::Sort => (change, then_next) = (Some(Change::Status("note")), true),
             // ALL: park a task right where it is
             Act::Note if kind == Kind::All => change = Some(Change::Status("note")),
@@ -978,7 +995,8 @@ fn choose(ui: &mut Ui, screen: &mut Screen, kind: Kind, item: &Value, all: &[Val
     Ok(Some(match kind {
         Kind::Answer => Change::Answer(answer_text(&body_of(item), &((b'a' + pick as u8) as char).to_string())),
         _ if pick == 0 => Change::Status("done"),
-        _ => Change::Status("dropped"),
+        _ if pick == 1 => Change::Status("dropped"),
+        _ => Change::Talk,
     }))
 }
 
@@ -1114,7 +1132,7 @@ mod tests {
         assert_eq!(ctx, "Why.");
         assert_eq!(opts, ["always", "with -d (recommended)", "… own words"]);
         let (_, opts) = card_of(Kind::Review, &q, &[]);
-        assert_eq!(opts, ["ok, done", "drop", "… change something"]);
+        assert_eq!(opts, ["ok, done", "drop", "talk about it again (back to you, #discuss)", "… change something"]);
     }
 
     #[test]

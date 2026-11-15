@@ -94,7 +94,13 @@ Per store (`cake --store <path> … --json`), when asked to triage or work:
 3. Answers and comments: `cake ls -l --assignee <you>,ai --status task
    --json`. A new `comment (…)` line at the end of a body is a change
    request; a `blocked_by` item that is now `done` carries the user's
-   answer at the end of its body. Rework accordingly.
+   answer at the end of its body. Rework accordingly. Items tagged
+   `discuss` (assigned to the user, `discuss (…)` line at the end) were
+   sent back from review for a talk: the work so far stays as described
+   above that line. Bring them up first in the next chat, never rework
+   them unasked; after the talk either the user closes them, or you
+   rework and remove the tag (`cake edit <id> --tag ~discuss --assignee
+   <you>`).
 4. Garden (triage and agent runs): keep the tree filed and lean.
    - top-level items that are not goal notes (sorted feedback, loose
      tasks): move under the matching goal, `cake edit <id> --parent
