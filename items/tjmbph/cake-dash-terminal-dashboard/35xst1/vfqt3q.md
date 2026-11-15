@@ -1,6 +1,5 @@
 ---
 id: vfqt3q
-status: task
 tags: [stats]
 parent: "[[35xst1]]"
 created: 2026-10-27T13:29:58+01:00
