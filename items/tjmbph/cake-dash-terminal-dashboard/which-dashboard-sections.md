@@ -4,7 +4,7 @@ status: done
 parent: "[[cake-dash-terminal-dashboard]]"
 created: 2026-11-13T19:05:26+01:00
 by: claude-code
-sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, eb1412a2-56ac-4478-9717-6ebac99000ac]
 closed: 2026-11-13T19:39:54+01:00
 ---
 # Which dashboard sections matter most to you?

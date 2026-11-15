@@ -2,7 +2,7 @@
 id: cake-dash-terminal-dashboard
 status: task
 tags: [plan]
-parent: "[[ai-workflow]]"
+parent: "[[tjmbph]]"
 blocked_by: ["[[deadline-field-asks-score]]"]
 created: 2026-11-13T17:35:30+01:00
 by: claude-code

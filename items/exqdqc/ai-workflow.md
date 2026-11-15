@@ -1,6 +1,6 @@
 ---
 id: ai-workflow
-status: task
+status: review
 tags: [plan]
 parent: "[[exqdqc]]"
 created: 2026-11-13T17:35:30+01:00
