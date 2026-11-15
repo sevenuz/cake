@@ -1,12 +1,14 @@
 ---
 id: scrollbars
-status: task
+status: doing
 parent: "[[tree-form]]"
 created: 2026-11-15T17:36:37+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-15T17:37:45+01:00/
 ---
 # Scrollbars on the tree and the details box
 
