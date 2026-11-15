@@ -299,6 +299,10 @@ pub enum Commands {
         #[arg(long, value_name = "DATE")]
         deadline: Option<String>,
 
+        /// add git commits of the work (comma separated)
+        #[arg(long, value_name = "HASHES")]
+        commit: Option<String>,
+
         /// expected work (2h30m, 45m), - clears
         #[arg(long, value_name = "DURATION")]
         est: Option<String>,
@@ -385,6 +389,10 @@ pub enum Commands {
         /// appended to the body, - reads stdin
         #[arg(short, long)]
         message: Option<String>,
+
+        /// git commits of the work (comma separated), e.g. on review
+        #[arg(long, value_name = "HASHES")]
+        commit: Option<String>,
     },
     /// the form (also plain `cake`): config `form` modules, or only these:
     /// news sort answer review mine dump; -g: all stores
@@ -782,6 +790,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             prio: None,
             due: None,
             deadline: None,
+            commit: None,
             est: None,
             assignee: None,
             owner: None,
@@ -1037,6 +1046,19 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    // --commit on set and edit: the hashes go to every changed item
+    let commit = match &cli.command {
+        Some(Commands::Set { commit, .. }) | Some(Commands::Edit { commit, .. }) => commit.clone(),
+        _ => None,
+    };
+    if let (Some(c), commands::Report::Items(ids) | commands::Report::Brief(ids)) = (commit, &report) {
+        let hashes: Vec<String> = c.split(',').map(|h| h.trim().to_string()).filter(|h| !h.is_empty()).collect();
+        for id in ids {
+            if let Some(i) = store.get_item_mut(id) {
+                i.add_commits(&hashes);
+            }
+        }
+    }
     if cli.command.as_ref().is_some_and(Commands::writes) {
         usage::fold(&mut store)?;
         store.settle();
@@ -1146,7 +1168,7 @@ mod tests {
             cli.command.unwrap()
         };
         match parse(&["cake", "set", "done", "a", "b,c", "-m", "x", "-t", "~z", "--or"]) {
-            Commands::Set { to, selector, message } => {
+            Commands::Set { to, selector, message, .. } => {
                 assert_eq!(to, "done");
                 assert_eq!(selector.ids.as_deref(), Some("a,b,c"));
                 assert_eq!(selector.tags.as_deref(), Some("~z"));

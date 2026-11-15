@@ -819,3 +819,16 @@ fn stats_count_done_items_per_goal_and_period() {
     assert!(env.cake_err(&d, &["stats", "-p", "decade"]).contains("no period"));
     assert!(env.cake_ok(&d, &["stats"]).contains("streak 1 d"));
 }
+
+#[test]
+fn commits_attach_on_review_and_edit() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "work", "--todo", "-m", "# Work"]);
+    env.cake_ok(&d, &["review", "work", "--commit", "abc123,def456", "-m", "changed: x"]);
+    env.cake_ok(&d, &["edit", "work", "--commit", "abc123,0aa"]);
+    let v = json_value(&env, &d, &["show", "work"]);
+    assert_eq!(v["items"][0]["commits"], serde_json::json!(["abc123", "def456", "0aa"]));
+    assert!(read_item(&d, "work").contains("commits: [abc123, def456, 0aa]"));
+    assert!(env.cake_ok(&d, &["show", "work"]).contains("commits abc123 def456 0aa"));
+}

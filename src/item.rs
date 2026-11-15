@@ -62,6 +62,7 @@ pub struct Item {
     timestamp: i64, // creation timestamp
     by: Option<String>, // creator, set once
     sessions: Vec<String>, // agent sessions that changed the item
+    commits: Vec<String>, // git commits of the work
     usage: BTreeMap<String, Usage>, // tokens by model
     closed: Option<i64>,
     due: Option<String>,
@@ -156,6 +157,7 @@ impl Item {
             timestamp: util::timestamp(),
             by: None,
             sessions: vec![],
+            commits: vec![],
             usage: BTreeMap::new(),
             closed: None,
             due: None,
@@ -201,6 +203,7 @@ impl Item {
         let timestamp = take_time(&mut m, "created")?.unwrap_or(fallback_created);
         let by = take_str(&mut m, "by")?;
         let sessions = take_list(&mut m, "sessions")?;
+        let commits = take_list(&mut m, "commits")?;
         let usage = match m.shift_remove("usage") {
             None | Some(Value::Null) => BTreeMap::new(),
             Some(v) => serde_yaml_ng::from_value(v).map_err(|e| err(format!("'usage': {}", e)))?,
@@ -238,6 +241,7 @@ impl Item {
             timestamp,
             by,
             sessions,
+            commits,
             usage,
             closed,
             due,
@@ -270,6 +274,9 @@ impl Item {
         s += &format!("created: {}\n", util::format_timestamp(self.timestamp));
         if let Some(b) = &self.by {
             s += &format!("by: {}\n", yaml_str(b));
+        }
+        if !self.commits.is_empty() {
+            s += &format!("commits: {}\n", list(&self.commits, yaml_str));
         }
         if !self.sessions.is_empty() {
             s += &format!("sessions: {}\n", list(&self.sessions, yaml_str));
@@ -357,6 +364,9 @@ impl Item {
         }
         if let Some(e) = self.estimate {
             meta.push(format!("est {}", util::timestamp_to_hms(e)));
+        }
+        if !self.commits.is_empty() {
+            meta.push(format!("commits {}", self.commits.join(" ")));
         }
         if let Some(d) = &self.due {
             meta.push(format!("due {}", d));
@@ -450,6 +460,19 @@ impl Item {
     /// tracked intervals as (start, end), a running one ends now
     pub fn add_usage(&mut self, model: &str, u: Usage) {
         *self.usage.entry(model.to_string()).or_default() += u;
+    }
+
+    pub fn commits(&self) -> &Vec<String> {
+        &self.commits
+    }
+
+    /// adds commit hashes, each once
+    pub fn add_commits(&mut self, hashes: &[String]) {
+        for h in hashes {
+            if !h.is_empty() && !self.commits.contains(h) {
+                self.commits.push(h.clone());
+            }
+        }
     }
 
     pub fn sessions(&self) -> &Vec<String> {
@@ -663,6 +686,7 @@ impl Item {
             "created": util::format_timestamp(self.timestamp),
             "by": self.by,
             "sessions": self.sessions,
+            "commits": self.commits,
             "usage": self.usage,
             "footprint": crate::footprint::estimate(&self.usage),
             "closed": self.closed.map(util::format_timestamp),

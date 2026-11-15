@@ -124,7 +124,7 @@ Per store (`cake --store <path> … --json`), when asked to triage or work:
      then continue with the next ready item;
    - otherwise `cake start <id>`, do the work (code on a branch per item,
      never push to main), then
-     `cake review <id> -m "changed: …; commits: …; try: …" --json`.
+     `cake review <id> --commit <hashes> -m "changed: …; try: …" --json`.
 6. Your own findings and docs: `cake add --note -t doc …`, never the inbox.
 7. `cake sync --json`, then a short summary: reviews, questions, blocked,
    what you filed or found to merge.
@@ -174,9 +174,9 @@ cake ls --json [selectors]              # tree: matches with children; -l adds b
 cake ready --json                       # = ls --ready: ready tasks (agents: yours and ai)
 cake show <id> --json                   # one item with body
 cake add [ID] --json [--task|--note] [-p ID] [--assignee WHO] [-t TAGS] [--blocked-by IDS] [--prio N] [--due D] [--deadline D] [--est 2h] -m TEXT
-cake set <status> <ids> [-m TEXT] --json   # inbox note task doing review done dropped; -m appends
+cake set <status> <ids> [-m TEXT] [--commit H1,H2] --json   # inbox note task doing review done dropped; -m appends
 # aliases: done, drop, do (task), note, review: `cake review <id> -m "changed …"`
-cake edit <ids> --json [-m BODY] [--prio N] [--due D] [--deadline D] [--est 2h|-] [--assignee WHO] [--owner WHO]
+cake edit <ids> --json [-m BODY] [--prio N] [--due D] [--deadline D] [--est 2h|-] [--commit H1,H2] [--assignee WHO] [--owner WHO]
           [--tag a,~b] [--blocked-by x,~y] [--parent ID|-] [--comment TEXT]
 # -m replaces the body (your items only); --comment appends and gives it back to the assignee
 # dates: 2026-11-30, 30.11., today, tomorrow, mon..sun, +3d, 2w; stored as YYYY-MM-DD

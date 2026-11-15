@@ -273,6 +273,9 @@ fn card(srcs: &[Src], row: &Row, width: u16) -> (String, Vec<Line<'static>>) {
     if let Some((e, guess)) = srcs[n].store.expected(id) {
         meta.push(format!("est {}{}", if guess { "~" } else { "" }, hm(e)));
     }
+    if !i.commits().is_empty() {
+        meta.push(format!("commits {}", i.commits().join(" ")));
+    }
     let mut lines = vec![Line::from(Span::styled(meta.join(" · "), dim()))];
     if !i.tags().is_empty() {
         lines.push(Line::from(Span::styled(i.tags().iter().map(|t| format!("#{}", t)).collect::<Vec<_>>().join(" "), Style::default().fg(t.tag))));

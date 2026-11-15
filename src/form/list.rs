@@ -484,6 +484,10 @@ impl View<'_> {
         if !tags.is_empty() {
             lines.push(Line::from(Span::styled(tags.join(" "), Style::default().fg(t.tag))));
         }
+        let commits: Vec<&str> = item["commits"].as_array().into_iter().flatten().filter_map(|c| c.as_str()).collect();
+        if !commits.is_empty() {
+            lines.push(Line::from(Span::styled(format!("commits {}", commits.join(" ")), dim())));
+        }
         if let Some(what) = news_what(item, self.user, self.since).filter(|_| self.kind == Kind::News) {
             lines.push(Line::from(vec![Span::styled("what ", dim()), Span::raw(what)]));
         }
