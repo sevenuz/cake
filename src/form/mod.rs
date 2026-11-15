@@ -835,11 +835,13 @@ pub fn run(root: &Path, user: &str, mut o: Options) -> Result<(), Box<dyn Error>
             };
         }
     }
-    let total = per_module.iter().sum();
+    // the progress counts what needs a decision; news is only read
+    let total = o.modules.iter().zip(&per_module).filter(|(m, _)| *m != "news").map(|(_, c)| c).sum();
+    let waiting: usize = per_module.iter().sum();
     // nothing to decide: the form opens anyway, at dump, with a hint on
     // what waits for agents; the modules and the last tab stay reachable
     let mut hint = vec![];
-    if total == 0 && !o.modules.iter().any(|m| m == "dump") {
+    if waiting == 0 && !o.modules.iter().any(|m| m == "dump") {
         let mut others = 0;
         for (_, r) in &stores {
             let store = crate::store::Store::new_except(r, &[])?;

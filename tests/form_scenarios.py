@@ -107,8 +107,8 @@ print(f"keys: {decisions} for 6 decisions ({decisions / 6:.1f} per decision)")
 # the next day: what the agent did since, held back to the user
 time.sleep(1.1)
 cake("add", "new", "--task", "-p", "sync", "--assignee", "claude-code", "-m", "# a new subtask", agent=True)
-form(["w", "\r"] + ["l"] * 7 + [":q\r"])
-check("news: hold gives it back to the user", item("new")["assignee"] == "jul")
+form(["s"] + ["l"] * 7 + [":q\r"])
+check("news: s stops the agent, back to the user", item("new")["assignee"] == "jul")
 
 # h and l: leave sort without deciding, come back over the empty modules
 cake("add", "zz", "-m", "# idea for later")

@@ -57,7 +57,7 @@ impl Kind {
 
     /// modules where the edit line shows and fields can be set
     fn edits(self) -> bool {
-        matches!(self, Kind::Sort | Kind::Mine | Kind::News | Kind::All)
+        matches!(self, Kind::Sort | Kind::Mine | Kind::All)
     }
 
     /// the `:` commands of the module besides w and q: the item's fields
@@ -65,8 +65,9 @@ impl Kind {
     fn commands(self) -> &'static [&'static str] {
         match self {
             Kind::Sort => &["due", "deadline", "who", "prio", "move", "all"],
-            Kind::Mine | Kind::News | Kind::Review | Kind::All => &["due", "deadline", "who", "prio"],
-            Kind::Answer => &[],
+            Kind::Mine | Kind::Review | Kind::All => &["due", "deadline", "who", "prio"],
+            // news is read only, answer has its options
+            Kind::Answer | Kind::News => &[],
         }
     }
 
@@ -157,7 +158,8 @@ fn matches(kind: Kind, i: &Value, all: &[Value], user: &str, since: i64) -> bool
     let open = |id: &str| find(all, id).is_some_and(|x| matches!(str_of(x, "status"), "inbox" | "task" | "doing" | "review"));
     let blocks_open = i["blocks"].as_array().is_some_and(|b| b.iter().any(|b| open(b.as_str().unwrap_or(""))));
     match kind {
-        Kind::News => news_what(i, user, since).is_some(),
+        // read only: what agents did; finished work is in review instead
+        Kind::News => status != "review" && news_what(i, user, since).is_some(),
         Kind::Sort => status == "inbox" || (status == "task" && i["assignee"].is_null()),
         // a task for you that someone else's work waits on
         Kind::Answer => status == "task" && str_of(i, "assignee") == user && blocks_open,
@@ -326,7 +328,7 @@ fn apply(cake: &Cake, item: &Value, change: &Change, user: &str, sort_who: Optio
             if str_of(item, "status") == "doing" {
                 cake.call(&["set", "task", id])?;
             }
-            "held: back to you".into()
+            "stopped: back to you".into()
         }
         Change::Answer(text) => {
             cake.call(&["set", "done", id, "-m", &format!("answer: {}", text)])?;
@@ -523,7 +525,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         }
         // the last open item decided: the module stays, the header marks it
         // done and the note line says how to go on
-        let all_done = kind != Kind::All && !rows.iter().any(|r| r.editable && !r.changed);
+        // news is read only: nothing to decide, never "done"
+        let all_done = !matches!(kind, Kind::All | Kind::News) && !rows.iter().any(|r| r.editable && !r.changed);
         if let Some(d) = ui.done.get_mut(ui.step) {
             *d = all_done;
         }
@@ -565,7 +568,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                     (ks(Act::Prio), "prio".into()),
                     (":due".into(), String::new()),
                 ],
-                Kind::News => vec![(ks(Act::Who), "hold".into()), (ks(Act::Drop), "drop".into())],
+                Kind::News => vec![("read only:".into(), String::new()), (ks(Act::Timer), "stop agent".into()), (ks(Act::Drop), "drop".into())],
                 Kind::All => vec![
                     (format!("{}/{}", ks(Act::Complete), ks(Act::Drop)), "done drop".into()),
                     (ks(Act::Who), "who".into()),
@@ -726,7 +729,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             Act::PrevModule => return Ok((decided, Leave::Prev)),
             Act::NextModule if kind == Kind::All => st.note = Some(("the last tab: q closes the form".into(), false)),
             // all done: on like the flow goes, past empty modules
-            Act::NextModule if all_done => return Ok((decided, Leave::Done)),
+            Act::NextModule if all_done || kind == Kind::News => return Ok((decided, Leave::Done)),
             Act::NextModule => return Ok((decided, Leave::Next)),
             Act::Quit => return Ok((decided, Leave::Quit)),
             // the last tab: nothing left to lose, q quits
@@ -779,7 +782,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             Act::Complete if matches!(kind, Kind::Review | Kind::Mine | Kind::All) => (change, then_next) = (Some(Change::Status("done")), true),
             Act::Drop if kind != Kind::Answer => (change, then_next) = (Some(Change::Status("dropped")), true),
             Act::Timer if kind == Kind::Mine => change = Some(Change::Timer(str_of(&item, "status") != "doing")),
-            Act::Who if kind == Kind::News => (change, then_next) = (Some(Change::Hold), true),
+            Act::Timer if kind == Kind::News => (change, then_next) = (Some(Change::Hold), true),
             Act::Task if kind == Kind::Sort => change = Some(Change::Status("task")),
             Act::Note if kind == Kind::Sort => (change, then_next) = (Some(Change::Status("note")), true),
             Act::Who if kind.edits() => {
@@ -936,13 +939,18 @@ fn commit(
         ui.before.remove(&key);
         ui.results.remove(&key);
         *decided = decided.saturating_sub(1);
-        ui.handled = ui.handled.saturating_sub(1);
+        if ui.module != "news" {
+            ui.handled = ui.handled.saturating_sub(1);
+        }
     } else {
         if !ui.before.contains_key(&key) {
             changed.insert(id);
             ui.before.insert(key.clone(), before(item));
             *decided += 1;
-            ui.handled += 1;
+            // news is read only: not in the progress
+            if ui.module != "news" {
+                ui.handled += 1;
+            }
         }
         if !result.is_empty() {
             ui.results.insert(key, result);
@@ -973,6 +981,8 @@ mod tests {
         assert_eq!(ids(Kind::Mine), ["m"]);
         assert_eq!(ids(Kind::Review), ["r"]);
         assert_eq!(ids(Kind::News), ["n"]);
+        let finished = vec![json!({"id": "f", "status": "review", "by": "claude-code", "created": "2026-11-14T10:00:00Z"})];
+        assert!(!matches(Kind::News, &finished[0], &finished, "jul", 1), "finished work is in review, not news");
     }
 
     #[test]
