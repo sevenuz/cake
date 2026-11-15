@@ -11,6 +11,11 @@ fn json_ids(env: &Env, dir: &std::path::Path, args: &[&str]) -> Vec<String> {
     v["items"].as_array().unwrap().iter().map(|i| i["id"].as_str().unwrap().to_string()).collect()
 }
 
+/// the json a command prints
+fn json_value(env: &Env, dir: &std::path::Path, args: &[&str]) -> serde_json::Value {
+    serde_json::from_str(&env.cake_ok(dir, &[args, &["--json"]].concat())).unwrap()
+}
+
 #[test]
 fn done_drop_reopen_set_status_and_closed() {
     let env = Env::new();
@@ -710,4 +715,35 @@ fn rename_by_prefix_keeps_tree_and_blockers() {
     assert!(env.cake_err(&d, &["rename", "agents", "kid"]).contains("already exists"));
     assert_eq!(env.cake_ok(&d, &["ls"]), "○ ag goal\n└─ ○ ki kid\n○ ot other, see [[agents]]\n");
     assert!(read_item(&d, "other").contains("[[agents]]"));
+}
+
+#[test]
+fn archive_moves_old_closed_subtrees_and_show_still_finds_them() {
+    let env = Env::new();
+    let d = env.plain_store();
+    let items = d.join(".cake/items");
+    env.cake_ok(&d, &["add", "cli", "--note", "-m", "# cli"]);
+    env.cake_ok(&d, &["add", "old", "--todo", "-p", "cli", "-m", "# old work"]);
+    env.cake_ok(&d, &["add", "sub", "--todo", "-p", "old", "-m", "# sub"]);
+    env.cake_ok(&d, &["add", "doc", "--note", "-p", "old", "-m", "# doc"]);
+    env.cake_ok(&d, &["add", "mixed", "--todo", "-p", "cli", "-m", "# mixed"]);
+    env.cake_ok(&d, &["add", "kid", "--todo", "-p", "mixed", "-m", "# kid"]);
+    env.cake_ok(&d, &["done", "sub", "old", "mixed"]);
+    // closed just now: not older than 3 months
+    assert_eq!(json_value(&env, &d, &["archive"])["archived"], serde_json::json!([]));
+    // a closed parent with an open child stays; notes go along
+    let out = json_value(&env, &d, &["archive", "--older", "0d"]);
+    assert_eq!(out["archived"], serde_json::json!(["doc", "old", "sub"]));
+    assert!(items.join("archive/cli/old.md").is_file());
+    assert!(items.join("archive/cli/old/sub.md").is_file());
+    assert!(!items.join("cli/old").exists());
+    assert_eq!(env.cake_ok(&d, &["ls", "-A"]), "· cl cli\n└─ ✓ mi mixed\n   └─ ○ ki kid\n");
+    assert!(env.cake_ok(&d, &["ls", "--archive"]).contains("old work"));
+    assert!(env.cake_ok(&d, &["show", "ol"]).contains("old work"));
+    assert!(env.cake_err(&d, &["add", "old", "-m", "# again"]).contains("archive"));
+    assert!(env.cake_err(&d, &["add", "archive", "-m", "# reserved"]).contains("reserved"));
+    // opened again: back among the open items
+    env.cake_ok(&d, &["set", "task", "old"]);
+    assert!(items.join("cli/old.md").is_file());
+    assert!(env.cake_ok(&d, &["ls"]).contains("old work"));
 }

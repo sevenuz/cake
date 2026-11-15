@@ -324,6 +324,10 @@ pub enum Commands {
         /// all fields and the body, also in json
         #[arg(short, long)]
         long: bool,
+
+        /// also the archived items (implies -A)
+        #[arg(long)]
+        archive: bool,
     },
     /// one line for prompts and tmux: your timers, others' timers, ready, today
     Status {},
@@ -368,6 +372,13 @@ pub enum Commands {
     Usage {
         #[command(subcommand)]
         action: UsageAction,
+    },
+    /// move done and dropped subtrees closed long ago to items/archive/;
+    /// views skip them, `ls --archive` and `show` find them
+    Archive {
+        /// closed at least this long ago: 3m (months), 2w, 10d, 1y
+        #[arg(long, default_value = "3m")]
+        older: String,
     },
     /// give an item a new id; children, blockers and [[links]] follow
     Rename {
@@ -449,7 +460,9 @@ impl Commands {
                     one(p)?;
                 }
             }
-            Commands::Show { target } if store.resolve(target).map_or(false, |t| store.get_item(&t).is_some()) => {
+            Commands::Show { target }
+                if store.resolve(target).map_or(false, |t| store.get_item(&t).is_some() || store.is_archived(&t)) =>
+            {
                 one(target)?
             }
             Commands::Usage { action: UsageAction::Add { id, .. } } => one(id)?,
@@ -501,6 +514,7 @@ impl Commands {
                 | Commands::Stop { .. }
                 | Commands::Mv { .. }
                 | Commands::Rename { .. }
+                | Commands::Archive { .. }
                 | Commands::Usage { .. }
                 | Commands::Migrate { apply: true }
         )
@@ -787,6 +801,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let mut store = Store::new_except(&root, &skip)?;
     if let Some(command) = cli.command.as_mut() {
         command.resolve_ids(&store, &config.user(&root))?;
+        // an archived id named, or the archive asked for
+        if store.archive_hit() || matches!(command, Commands::List { archive: true, .. }) {
+            store.include_archive();
+        }
     }
 
     let report = match &cli.command {
@@ -910,6 +928,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         )?,
         Some(Commands::Mv { .. }) => unreachable!("clap requires a parent or --to-store"),
         Some(Commands::Rename { id, new }) => commands::rename(debug, &mut store, id, new)?,
+        Some(Commands::Archive { older }) => commands::archive(debug, &mut store, older)?,
         Some(Commands::Set { to, selector, .. }) => {
             let selector = selector.selector(&selector.ids)?;
             let name = if to == "drop" { "dropped" } else { to.as_str() };
@@ -923,7 +942,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 Some(st) => commands::set_status(debug, &mut store, selector, st, message)?,
             }
         }
-        Some(Commands::List { selector, long, all }) => {
+        Some(Commands::List { selector, long, all, archive }) => {
+            let all = &(*all || *archive);
             let mut selector = selector.selector(&selector.ids)?;
             if selector.ready {
                 // an agent sees its own tasks and those for any agent, and

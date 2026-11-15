@@ -421,6 +421,10 @@ impl Item {
         self.content = content;
     }
 
+    pub fn closed(&self) -> Option<i64> {
+        self.closed
+    }
+
     pub fn timestamp(&self) -> i64 {
         self.timestamp
     }

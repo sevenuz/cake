@@ -59,7 +59,7 @@ where
     let content = content.ok_or_else(|| error::invalid("No content, use -m TEXT (- for stdin)."))?;
     let id = match selector.ids.first() {
         Some(id) => id.to_string(),
-        None => util::slug_id(&crate::item::title_of(&content), |id| store.get_item(id).is_some()),
+        None => util::slug_id(&crate::item::title_of(&content), |id| store.get_item(id).is_some() || store.is_archived(id) || id == crate::store::inner::ARCHIVE),
     };
     util::check_id(&id)?;
     let mut item = Item::new(
@@ -280,6 +280,17 @@ where
     store.rename(id, new)?;
     say!("{} is now {}.", id, new);
     Ok(Report::Items(vec![new.to_owned()]))
+}
+
+/// moves closed subtrees closed for at least `older` into items/archive/
+pub fn archive<F>(debug: F, store: &mut Store, older: &str) -> Result<Report, Box<dyn Error>>
+where
+    F: Fn(&str),
+{
+    debug(&format!("archive --older {:?}", older));
+    let ids = store.archive(util::parse_age(older)?, util::timestamp());
+    say!("{} archived (closed longer than {}).", ids.len(), older);
+    Ok(Report::Value(serde_json::json!({ "archived": ids })))
 }
 
 /// moves `id` and its subtree to the store at `target`, top-level there;

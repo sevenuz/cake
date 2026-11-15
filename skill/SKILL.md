@@ -177,13 +177,15 @@ cake start|stop <id> --json             # timer; start sets doing
 cake mv <id> --to-store <name|global|path> --json   # with subtree, top-level there
 cake rename <id> <new> --json           # new id; children, blockers, [[links]] follow
 cake rm <ids> --json
+cake archive [--older 3m] --json        # closed subtrees → items/archive/ (only when asked)
 ```
 
 Ids: any unique prefix (≥ 2 chars); several ids space or comma separated.
 Selectors (and; `--or`): `-s TEXT`,
 `--status inbox,note,task,doing,review,done,dropped`, `-t tag,~not`,
 `-p PARENT`, `--assignee WHO`, `--mine`, `--by NAME`, `--ready`,
-`--blocked`, `--childless`, `-A` (with done/dropped).
+`--blocked`, `--childless`, `-A` (with done/dropped), `--archive` (also
+archived items; `show` finds them by id anyway).
 
 ## Output
 

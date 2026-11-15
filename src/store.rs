@@ -14,6 +14,9 @@ pub mod inner {
     use serde::{Deserialize, Serialize};
     use std::sync::OnceLock;
 
+    /// directory below items/ for old closed items, a reserved id
+    pub const ARCHIVE: &str = "archive";
+
     /// points of the score, config `score`
     #[derive(Serialize, Deserialize, Clone, Debug)]
     #[serde(default)]
@@ -73,12 +76,23 @@ pub mod inner {
         dirty: HashSet<String>,
         /// where each item currently is on disk
         paths: HashMap<String, PathBuf>,
+        /// items under items/archive/, kept out of the views until
+        /// `include_archive`
+        archive: HashMap<String, Item>,
+        /// ids that live in the archive (loaded or not)
+        archived: HashSet<String>,
+        /// set when `resolve` found an id only in the archive
+        archive_hit: std::cell::Cell<bool>,
+        /// files to move without content changes (archive)
+        relayout: bool,
     }
 
     impl Store {
         pub fn check_id(&self, id: &String, itself: bool) -> Result<(), Box<dyn Error>> {
             if itself && !self.items.contains_key(id) {
                 return Err(error::not_found(id));
+            } else if !itself && self.archived.contains(id) {
+                return Err(error::invalid(format!("{} already exists in the archive.", id)));
             } else if !itself && self.items.contains_key(id) {
                 return Err(error::invalid(format!("{} already exists, use cake edit.", id)));
             }
@@ -132,6 +146,10 @@ pub mod inner {
             root.join("items")
         }
 
+        fn archive_dir(root: &Path) -> PathBuf {
+            Self::items_dir(root).join(ARCHIVE)
+        }
+
         /// loads all items/**/*.md, an empty store if the directory does not exist
         #[cfg(test)]
         pub fn new(root: &Path) -> Result<Store, Box<dyn Error>> {
@@ -143,14 +161,25 @@ pub mod inner {
             let mut items = HashMap::new();
             let mut paths = HashMap::new();
             let dir = Self::items_dir(root);
+            let archive_dir = Self::archive_dir(root);
+            let mut skip_all = skip.to_vec();
+            skip_all.push(archive_dir.clone());
             if dir.is_dir() {
-                Self::load_dir(&dir, None, skip, &mut items, &mut paths)?;
+                Self::load_dir(&dir, None, &skip_all, &mut items, &mut paths)?;
+            }
+            let mut archive = HashMap::new();
+            if archive_dir.is_dir() {
+                Self::load_dir(&archive_dir, None, skip, &mut archive, &mut paths)?;
             }
             let mut store = Store {
                 root: root.to_path_buf(),
                 items,
                 dirty: HashSet::new(),
                 paths,
+                archived: archive.keys().cloned().collect(),
+                archive,
+                archive_hit: std::cell::Cell::new(false),
+                relayout: false,
             };
             // a parent that does not exist (e.g. a directory left by a merge) detaches
             let dangling: Vec<String> = store
@@ -223,7 +252,7 @@ pub mod inner {
                 chain.push(p);
                 cur = self.items.get(p).and_then(|i| i.parents().first());
             }
-            let mut path = Self::items_dir(&self.root);
+            let mut path = if self.archived.contains(id) { Self::archive_dir(&self.root) } else { Self::items_dir(&self.root) };
             for p in chain.iter().rev() {
                 path.push(p);
             }
@@ -254,7 +283,8 @@ pub mod inner {
         /// writes changed items, removes deleted ones and moves files whose
         /// parent changed (with their subtree); returns touched paths
         pub fn save(&mut self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-            if self.dirty.is_empty() {
+            self.reopen_archived();
+            if self.dirty.is_empty() && !std::mem::take(&mut self.relayout) {
                 return Ok(vec![]);
             }
             let mut touched = vec![];
@@ -349,6 +379,8 @@ pub mod inner {
         /// blockers everywhere and `[[old]]` links in every body
         pub fn rename(&mut self, old: &str, new: &str) -> Result<(), Box<dyn Error>> {
             crate::util::check_id(new)?;
+            // archived children, blockers and links follow too
+            self.include_archive();
             let Some(mut item) = self.items.remove(old) else { return Err(error::not_found(old)) };
             if self.items.contains_key(new) {
                 self.items.insert(old.to_owned(), item);
@@ -356,6 +388,9 @@ pub mod inner {
             }
             item.set_id(new.to_owned());
             self.items.insert(new.to_owned(), item);
+            if self.archived.remove(old) {
+                self.archived.insert(new.to_owned());
+            }
             // the old path is removed on save, the new one written
             self.dirty.insert(old.to_owned());
             self.dirty.insert(new.to_owned());
@@ -602,6 +637,9 @@ pub mod inner {
             if !inherited.is_empty() {
                 m.insert("inherited".into(), inherited.into());
             }
+            if self.archived.contains(id) {
+                m.insert("archived".into(), true.into());
+            }
             let path = self.item_path(id);
             m.insert("path".into(), path.to_string_lossy().into());
             Some(serde_json::Value::Object(m))
@@ -613,7 +651,18 @@ pub mod inner {
             if self.items.contains_key(input) || input.chars().count() < 2 {
                 return Ok(input.to_string());
             }
+            if self.archive.contains_key(input) {
+                self.archive_hit.set(true);
+                return Ok(input.to_string());
+            }
             let mut matches: Vec<&String> = self.items.keys().filter(|k| k.starts_with(input)).collect();
+            // archived ids only when no open one matches
+            if matches.is_empty() {
+                matches = self.archive.keys().filter(|k| k.starts_with(input)).collect();
+                if matches.len() == 1 {
+                    self.archive_hit.set(true);
+                }
+            }
             matches.sort();
             match matches.len() {
                 0 => Ok(input.to_string()),
@@ -647,6 +696,89 @@ pub mod inner {
 
         pub fn root(&self) -> &Path {
             &self.root
+        }
+
+        /// true if `id` lives in items/archive/
+        pub fn is_archived(&self, id: &str) -> bool {
+            self.archived.contains(id)
+        }
+
+        /// true if `resolve` found an id only in the archive
+        pub fn archive_hit(&self) -> bool {
+            self.archive_hit.get()
+        }
+
+        /// loads the archived items into the views (ls --archive, show,
+        /// rename); their files stay where they are until they change
+        pub fn include_archive(&mut self) {
+            let archive = std::mem::take(&mut self.archive);
+            let ids: Vec<String> = archive.keys().cloned().collect();
+            self.items.extend(archive);
+            for id in ids {
+                if let Some(p) = self.items[&id].parents().first().cloned() {
+                    if let Some(p) = self.items.get_mut(&p) {
+                        p.add_child(&id);
+                    }
+                }
+            }
+        }
+
+        /// moves closed items closed for at least `older` seconds into the
+        /// archive, whole subtrees only: every item below must be closed
+        /// that long too, or a note; returns the archived ids, sorted
+        pub fn archive(&mut self, older: i64, now: i64) -> Vec<String> {
+            let old = |i: &Item| {
+                matches!(i.status(), Some(Status::Done) | Some(Status::Dropped))
+                    && now - i.closed().unwrap_or(i.timestamp()) >= older
+            };
+            // ok: the item may go along with an archived ancestor
+            fn ok(store: &Store, id: &str, old: &dyn Fn(&Item) -> bool, seen: &mut HashSet<String>) -> bool {
+                let Some(i) = store.items.get(id) else { return true };
+                if !seen.insert(id.to_owned()) {
+                    return true;
+                }
+                (old(i) || i.status().is_none()) && i.children().iter().all(|c| ok(store, c, old, seen))
+            }
+            let mut ids: Vec<String> = self
+                .items
+                .values()
+                .filter(|i| !self.archived.contains(i.id()) && old(i))
+                .filter(|i| ok(self, i.id(), &old, &mut HashSet::new()))
+                .map(|i| i.id().to_owned())
+                .collect();
+            // with their subtrees (notes below too)
+            let mut todo = ids.clone();
+            while let Some(id) = todo.pop() {
+                for c in self.items[&id].children().clone() {
+                    if !ids.contains(&c) && self.items.contains_key(&c) {
+                        ids.push(c.clone());
+                        todo.push(c);
+                    }
+                }
+            }
+            ids.retain(|id| !self.archived.contains(id));
+            ids.sort();
+            for id in &ids {
+                self.archived.insert(id.clone());
+            }
+            // save moves the files
+            self.relayout |= !ids.is_empty();
+            ids
+        }
+
+        /// archived items opened again leave the archive with their
+        /// archived ancestors
+        fn reopen_archived(&mut self) {
+            let open: Vec<String> = self.archived.iter().filter(|id| self.items.get(*id).is_some_and(|i| i.is_open())).cloned().collect();
+            for id in open {
+                let mut cur = Some(id);
+                while let Some(c) = cur {
+                    if !self.archived.remove(&c) {
+                        break;
+                    }
+                    cur = self.items.get(&c).and_then(|i| i.parents().first().cloned());
+                }
+            }
         }
 
         pub fn get_item(&self, id: &str) -> Option<&Item> {

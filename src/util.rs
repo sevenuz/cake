@@ -111,6 +111,9 @@ mod tests {
         assert_eq!(parse_date("Tomorrow").unwrap(), fmt(today + Duration::days(1)));
         assert_eq!(parse_date("+3d").unwrap(), fmt(today + Duration::days(3)));
         assert_eq!(parse_date("2w").unwrap(), fmt(today + Duration::days(14)));
+        assert_eq!(parse_age("3m").unwrap(), 90 * 86400);
+        assert_eq!(parse_age("2w").unwrap(), 14 * 86400);
+        assert!(parse_age("3").is_err() && parse_age("xm").is_err() && parse_age("3h").is_err());
         assert_eq!(parse_date("1w2d").unwrap(), fmt(today + Duration::days(9)));
         let fri = parse_date("fri").unwrap();
         let fri = chrono::NaiveDate::parse_from_str(&fri, "%Y-%m-%d").unwrap();
@@ -203,7 +206,26 @@ pub fn check_id(id: &str) -> Result<(), Box<dyn Error>> {
     if id.trim().is_empty() || id.starts_with('.') || id.contains(['/', '\\']) {
         return Err(error::invalid(format!("'{}' is not a valid id (no '/', '\\', leading '.').", id)));
     }
+    if id == crate::store::inner::ARCHIVE {
+        return Err(error::invalid(format!("'{}' is reserved for the archive directory.", id)));
+    }
     Ok(())
+}
+
+/// an age like 3m (months of 30 days), 2w, 10d or 1y, in seconds
+pub fn parse_age(s: &str) -> Result<i64, Box<dyn Error>> {
+    let s = s.trim();
+    let bad = || error::invalid(format!("'{}' is no age, e.g. 3m (months), 2w, 10d, 1y.", s));
+    let unit = s.chars().last().ok_or_else(bad)?;
+    let n: i64 = s[..s.len() - unit.len_utf8()].parse().map_err(|_| bad())?;
+    let day = 24 * 60 * 60;
+    Ok(n * match unit {
+        'd' => day,
+        'w' => 7 * day,
+        'm' => 30 * day,
+        'y' => 365 * day,
+        _ => return Err(bad()),
+    })
 }
 
 /// a date (end of that day, local) or an RFC 3339 datetime as unix seconds
