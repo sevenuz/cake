@@ -1,6 +1,6 @@
 ---
 id: if-nothing-todo-then
-status: task
+status: review
 created: 2026-11-14T01:59:15+01:00
 by: sevenuz
 assignee: ai
