@@ -84,12 +84,12 @@ cake("add", "land", "--task", "--assignee", "me", "-m", "# call landlord")
 
 keys = [
     # inbox: first row a task (sort_who: ai), due friday; second row a
-    # note; the last one done goes on by itself (form_auto_next)
-    "t", ":", "due fri\r", "j", "n",
+    # note (N); a module stays after its last item, l goes on
+    "t", ":", "due fri\r", "j", "N", "l",
     # answer: start typing, leave with jk (typed fast), then option 2
-    "i", "may", "jk", "2",
+    "i", "may", "jk", "2", "l",
     # review: c is done
-    "c",
+    "c", "l",
     # mine: hand the task to ai; the end screen stays on l
     "w", "l", ":q\r",
 ]
@@ -101,7 +101,7 @@ check("inbox: the other one a note", note["status"] is None)
 check("answer: jk left the text, option 2 saved", item("raw")["status"] == "done" and "answer: b) with -d" in item("raw")["body"])
 check("review: c closed it", item("feat")["status"] == "done")
 check("mine: handed to ai", item("land")["assignee"] == "ai")
-decisions = len(keys) - 2  # the last two only stay on the end screen
+decisions = len(keys) - 5  # l to the next module (4) and :q
 print(f"keys: {decisions} for 6 decisions ({decisions / 6:.1f} per decision)")
 
 # the next day: what the agent did since, held back to the user
@@ -185,15 +185,20 @@ os.waitpid(pid, 0)
 check("answer tree: <cr> j <cr> gave option 2", "answer: b) two" in item("qb")["body"])
 check("answer tree: p and 1 answered the first", "answer: a) one" in item("qa")["body"])
 
-# after the last answer: answered items stay in answer only, the form
-# passes the empty review and lands in mine
+# after the last answer the module stays and says so; l passes the empty
+# review (answered items stay in answer only) and lands in mine
 cake("add", "w2", "--task", "--assignee", "claude-code", "-m", "# more work", agent=True)
 cake("add", "qc", "--task", "-p", "w2", "--assignee", "jul", "-m", "# third?\n\n- a) one\n- b) two", agent=True)
 cake("edit", "w2", "--blocked-by", "qc", agent=True)
 cake("add", "mine2", "--task", "--assignee", "me", "-m", "# a task of mine")
-landed = tmux_screen(["1"], args=("form", "answer", "review", "mine"))
+stays = tmux_screen(["1"], args=("form", "answer", "review", "mine"))
+if stays is not None:
+    check("answer done: the module stays with all done", "questions for you" in stays and "all done here" in stays)
+cake("add", "qd", "--task", "-p", "w2", "--assignee", "jul", "-m", "# fourth?\n\n- a) one\n- b) two", agent=True)
+cake("edit", "w2", "--blocked-by", "qd", agent=True)
+landed = tmux_screen(["1", "l"], args=("form", "answer", "review", "mine"))
 if landed is not None:
-    check("answer done: on to mine, not review with the answers", "your tasks" in landed and "third?" not in landed)
+    check("answer done: on to mine, not review with the answers", "your tasks" in landed and "fourth?" not in landed)
 
 # the last tab: the whole open tree with the details box
 end = tmux_screen(["l"], args=("form", "mine"))
@@ -212,6 +217,11 @@ form([":", "prio 2\r", ":q\r"], args=("form", "review"))
 form(["l", "q"], args=("form", "review"))
 check("last tab: q quits", True)
 check("review: :prio 2 set the priority", item("rv")["priority"] == 2)
+
+# nothing waits: the form opens at dump anyway, esc goes on to the last tab
+empty = tmux_screen(["\x1b"], args=("form", "answer"))
+if empty is not None:
+    check("nothing waits: dump, then the last tab", "everything open" in empty and "dump" in empty)
 
 subprocess.run(["rm", "-rf", TMP])
 sys.exit(1 if failures else 0)

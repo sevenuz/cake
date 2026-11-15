@@ -64,7 +64,7 @@ impl Kind {
     /// (and move in the inbox); answer has none
     fn commands(self) -> &'static [&'static str] {
         match self {
-            Kind::Sort => &["due", "deadline", "who", "prio", "move"],
+            Kind::Sort => &["due", "deadline", "who", "prio", "move", "all"],
             Kind::Mine | Kind::News | Kind::Review | Kind::All => &["due", "deadline", "who", "prio"],
             Kind::Answer => &[],
         }
@@ -78,6 +78,7 @@ impl Kind {
             "who" => "who ai",
             "prio" => "prio 1",
             "move" => "move <store>",
+            "all" => "all",
             _ => "",
         };
         let mut parts: Vec<&str> = self.commands().iter().map(|c| example(c)).collect();
@@ -213,29 +214,6 @@ fn short_date(d: &str) -> String {
 
 fn who_of(i: &Value, user: &str) -> Option<String> {
     i["assignee"].as_str().map(|w| if w == user { "me".to_string() } else { w.to_string() })
-}
-
-/// `status · who · prio · due · deadline` of an item, set values bright
-fn edit_line(i: &Value, user: &str) -> Vec<Span<'static>> {
-    let fields = [
-        ("", Some(i["status"].as_str().unwrap_or("note").to_string())),
-        ("who ", who_of(i, user)),
-        ("prio ", i["priority"].as_u64().map(|p| p.to_string())),
-        ("due ", i["due"].as_str().map(short_date)),
-        ("deadline ", i["deadline"].as_str().map(short_date)),
-    ];
-    let mut spans = vec![];
-    for (n, (name, value)) in fields.into_iter().enumerate() {
-        if n > 0 {
-            spans.push(Span::styled(style::g().sep, dim()));
-        }
-        spans.push(Span::styled(name.to_string(), dim()));
-        match value {
-            Some(v) => spans.push(Span::styled(v, Style::default().fg(theme::t().hint))),
-            None => spans.push(Span::styled("–", dim())),
-        }
-    }
-    spans
 }
 
 /// who `w` cycles through: you, ai, agents and people of the store config
@@ -443,7 +421,8 @@ impl View<'_> {
         let (t, g) = (theme::t(), style::g());
         let with_options = actions && self.kind.cards() && matches(self.kind, item, all, self.user, self.since);
         let (text, options) = if with_options { card_of(self.kind, item, all) } else { (body_of(item), vec![]) };
-        let mut lines = vec![Line::from(edit_line(item, self.user))];
+        // the fields are in the tree row, not repeated here
+        let mut lines: Vec<Line<'static>> = vec![];
         if let Some(what) = news_what(item, self.user, self.since).filter(|_| self.kind == Kind::News) {
             lines.push(Line::from(vec![Span::styled("what ", dim()), Span::raw(what)]));
         }
@@ -451,7 +430,9 @@ impl View<'_> {
             lines.push(Line::from(vec![Span::styled("this run ", dim()), Span::styled(r.clone(), Style::default().fg(t.ok))]));
         }
         if !text.trim().is_empty() {
-            lines.push(Line::default());
+            if !lines.is_empty() {
+                lines.push(Line::default());
+            }
             lines.extend(markdown::render(&text, width.saturating_sub(4)));
         }
         let choices = options
@@ -498,6 +479,8 @@ fn hanging(lead: Span<'static>, text: &str, style: Style, width: usize) -> Vec<L
 /// the state of one module run
 struct State {
     cur_id: String,
+    /// added this run (a, A): shown as open items of the module
+    added: HashSet<String>,
     opened: HashSet<String>,
     /// the detail box has the focus
     in_box: bool,
@@ -507,8 +490,6 @@ struct State {
     scroll: u16,
     help: bool,
     note: Option<(String, bool)>,
-    /// something was saved since the last draw (for form_auto_next)
-    saved: bool,
 }
 
 /// runs one module in one store; returns (items changed, how it left)
@@ -521,7 +502,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
     let stores: Vec<String> = crate::stores::all()?.into_iter().map(|(n, _)| n).filter(|n| n != store).collect();
     let whos = who_cycle(root, user);
     ui.module = kind.name();
-    let mut st = State { cur_id: String::new(), opened: HashSet::new(), in_box: false, sel: 0, scroll: 0, help: false, note: None, saved: false };
+    let mut st = State { cur_id: String::new(), added: HashSet::new(), opened: HashSet::new(), in_box: false, sel: 0, scroll: 0, help: false, note: None };
     let mut decided = 0;
     let page = 10usize;
     loop {
@@ -530,7 +511,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             ui.results.iter().filter(|((r, _), _)| r == root).map(|((_, id), v)| (id.clone(), v.clone())).collect();
         let mut all = load(ui, cake, root, &changed)?;
         keep_order(ui.order.entry(root.to_path_buf()).or_default(), &mut all);
-        let matched: Vec<String> = all.iter().filter(|i| matches(kind, i, &all, user, since)).map(|i| str_of(i, "id").to_string()).collect();
+        let mut matched: Vec<String> = all.iter().filter(|i| matches(kind, i, &all, user, since)).map(|i| str_of(i, "id").to_string()).collect();
+        matched.extend(st.added.iter().filter(|id| !matched.contains(id)).cloned().collect::<Vec<_>>());
         let mut tree = Tree::new(&all, matched, ui.tree_depth);
         tree.changed = changed.clone();
         tree.opened = st.opened.clone();
@@ -539,9 +521,14 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         if rows.is_empty() {
             return Ok((decided, Leave::Empty));
         }
-        // the last open item done: on to the next module
-        if std::mem::take(&mut st.saved) && ui.auto_next && kind != Kind::All && !rows.iter().any(|r| r.editable && !r.changed) {
-            return Ok((decided, Leave::Done));
+        // the last open item decided: the module stays, the header marks it
+        // done and the note line says how to go on
+        let all_done = kind != Kind::All && !rows.iter().any(|r| r.editable && !r.changed);
+        if let Some(d) = ui.done.get_mut(ui.step) {
+            *d = all_done;
+        }
+        if all_done && st.note.is_none() {
+            st.note = Some((format!("{} all done here · {} next module", style::g().check, ui.keys.keys_of(Act::NextModule)), false));
         }
         // the cursor stays on its item; at first the first open module item
         let cur = rows
@@ -589,9 +576,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                     (ks(Act::Who), "who".into()),
                     (ks(Act::Prio), "prio".into()),
                 ],
-                Kind::Answer => vec![(format!("{}/{}", ks(Act::Note), ks(Act::Prio)), "question".into()), ("1-9".into(), "pick".into()), (ks(Act::Insert), "own words".into())],
+                Kind::Answer => vec![("1-9".into(), "pick".into()), (ks(Act::Insert), "own words".into())],
                 Kind::Review => vec![
-                    (format!("{}/{}", ks(Act::Note), ks(Act::Prio)), "next prev".into()),
                     (ks(Act::Complete), "ok".into()),
                     (ks(Act::Drop), "drop".into()),
                     (ks(Act::Insert), "change".into()),
@@ -599,7 +585,9 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             }
         };
         if !st.in_box {
-            parts.push((ks(Act::Open), "children".into()));
+            parts.insert(0, (format!("{}/{}", ks(Act::Next), ks(Act::Previous)), "next prev".into()));
+            parts.push((ks(Act::Open), "open".into()));
+            parts.push((format!("{}/{}", ks(Act::Add), ks(Act::AddChild)), "new".into()));
         }
         parts.extend([
             (ks(Act::Focus), if st.in_box { "tree".into() } else { "details".into() }),
@@ -720,8 +708,6 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             Act::Next => st.cur_id = goto(step(cur, true)),
             Act::Previous => st.cur_id = goto(step(cur, false)),
             // answer, review: n and p walk the questions
-            Act::Note if kind.cards() => st.cur_id = goto(step(cur, true)),
-            Act::Prio if kind.cards() => st.cur_id = goto(step(cur, false)),
             Act::Help => st.help = true,
             Act::Open => toggle(&mut st.opened, &st.cur_id),
             Act::Back => st.opened.clear(),
@@ -737,6 +723,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             }
             Act::PrevModule => return Ok((decided, Leave::Prev)),
             Act::NextModule if kind == Kind::All => st.note = Some(("the last tab: q closes the form".into(), false)),
+            // all done: on like the flow goes, past empty modules
+            Act::NextModule if all_done => return Ok((decided, Leave::Done)),
             Act::NextModule => return Ok((decided, Leave::Next)),
             Act::Quit => return Ok((decided, Leave::Quit)),
             // the last tab: nothing left to lose, q quits
@@ -746,11 +734,23 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                 feedback(ui, &mut screen, cake, store, &format!("{} tree, row {}", kind.name(), st.cur_id))?;
                 st.note = screen.note.take();
             }
+            Act::Add | Act::AddChild => {
+                let parent = (act == Act::AddChild).then(|| st.cur_id.clone());
+                if let Some(id) = add_item(ui, &mut screen, cake, store, parent.as_deref())? {
+                    // shown as an open item of this module, the cursor on it
+                    st.added.insert(id.clone());
+                    if let Some(p) = parent {
+                        st.opened.insert(p);
+                    }
+                    st.cur_id = id;
+                }
+                st.note = screen.note.take();
+            }
             Act::Undo => match ui.before.get(&(root.to_path_buf(), st.cur_id.clone())) {
                 Some(b) => change = Some(Change::Undo(b.clone())),
                 None => st.note = Some(("nothing to undo here".into(), false)),
             },
-            Act::Task | Act::Note | Act::Drop | Act::Who | Act::Prio | Act::Subtree | Act::Timer | Act::Complete | Act::Insert | Act::Choose(_) | Act::Confirm
+            Act::Task | Act::Note | Act::Drop | Act::Who | Act::Prio | Act::Timer | Act::Complete | Act::Insert | Act::Choose(_) | Act::Confirm
                 if !editable =>
             {
                 st.note = Some((format!("context: not in {}, no actions here", kind.name()), true));
@@ -791,31 +791,6 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                     Some(p) => Some(p + 1),
                 }))
             }
-            Act::Subtree if kind == Kind::Sort => {
-                // this row's status and who for every inbox item below it
-                let below: Vec<Value> = all
-                    .iter()
-                    .filter(|i| matches(kind, i, &all, user, since) && str_of(i, "id") != st.cur_id && has_ancestor(&all, i, &st.cur_id))
-                    .cloned()
-                    .collect();
-                let status: &'static str = match str_of(&item, "status") {
-                    "task" => "task",
-                    "dropped" => "dropped",
-                    "" | "note" => "note",
-                    _ => "inbox",
-                };
-                for b in &below {
-                    commit(ui, &mut screen, cake, root, b, &Change::Status(status), user, sort_who.as_deref(), &mut decided, &mut st.note)?;
-                    if status == "task" {
-                        let w = Change::Who(item["assignee"].as_str().map(String::from));
-                        commit(ui, &mut screen, cake, root, b, &w, user, sort_who.as_deref(), &mut decided, &mut st.note)?;
-                    }
-                }
-                st.saved = !below.is_empty();
-                if st.note.is_none() {
-                    st.note = Some((format!("{} items below took this row's status", below.len()), false));
-                }
-            }
             Act::Command => {
                 let Some(line) = ui.input(&mut screen, ":", &kind.command_hint())? else { continue };
                 let (cmd, arg) = line.split_once(' ').map_or((line.as_str(), ""), |(c, a)| (c, a.trim()));
@@ -844,6 +819,30 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                     },
                     "move" if ours && stores.iter().any(|s| s == arg) => change = Some(Change::Move(arg.to_string())),
                     "move" if ours => st.note = Some((format!("no store '{}': {}", arg, stores.join(", ")), true)),
+                    "all" if ours => {
+                        // this row's status and who for every inbox item below it
+                        let below: Vec<Value> = all
+                            .iter()
+                            .filter(|i| matches(kind, i, &all, user, since) && str_of(i, "id") != st.cur_id && has_ancestor(&all, i, &st.cur_id))
+                            .cloned()
+                            .collect();
+                        let status: &'static str = match str_of(&item, "status") {
+                            "task" => "task",
+                            "dropped" => "dropped",
+                            "" | "note" => "note",
+                            _ => "inbox",
+                        };
+                        for b in &below {
+                            commit(ui, &mut screen, cake, root, b, &Change::Status(status), user, sort_who.as_deref(), &mut decided, &mut st.note)?;
+                            if status == "task" {
+                                let w = Change::Who(item["assignee"].as_str().map(String::from));
+                                commit(ui, &mut screen, cake, root, b, &w, user, sort_who.as_deref(), &mut decided, &mut st.note)?;
+                            }
+                        }
+                        if st.note.is_none() {
+                            st.note = Some((format!("{} items below took this row's status", below.len()), false));
+                        }
+                    }
                     other => st.note = Some((format!("unknown command :{} in {}; here: {}", other, kind.name(), kind.command_hint()), true)),
                 }
             }
@@ -851,7 +850,6 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         }
         if let Some(c) = change {
             let ok = commit(ui, &mut screen, cake, root, &item, &c, user, sort_who.as_deref(), &mut decided, &mut st.note)?;
-            st.saved = ok;
             if ok && then_next {
                 st.cur_id = goto(step(cur, true));
                 st.in_box = false;
@@ -957,15 +955,6 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn edit_line_shows_values_and_dashes() {
-        style::init("unicode");
-        let i = json!({"id": "a", "status": "task", "assignee": "jul", "priority": 2, "due": "2026-11-20"});
-        assert_eq!(Line::from(edit_line(&i, "jul")).to_string(), "task · who me · prio 2 · due 20.11. · deadline –");
-        let i = json!({"id": "a", "status": "inbox"});
-        assert_eq!(Line::from(edit_line(&i, "jul")).to_string(), "inbox · who – · prio – · due – · deadline –");
-    }
-
-    #[test]
     fn module_items() {
         let all = vec![
             json!({"id": "in", "status": "inbox"}),
@@ -987,7 +976,7 @@ mod tests {
     #[test]
     fn command_hints_list_only_what_works() {
         assert_eq!(Kind::Review.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · w · q");
-        assert_eq!(Kind::Sort.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · move <store> · w · q");
+        assert_eq!(Kind::Sort.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · move <store> · all · w · q");
         assert_eq!(Kind::Answer.command_hint(), "w · q");
     }
 

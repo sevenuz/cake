@@ -699,7 +699,9 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 Some(Commands::Form { modules }) if !modules.is_empty() => modules.clone(),
                 _ => config.form.clone(),
             };
-            let options = form::Options { modules, all: cli.global, width: config.form_width, keys: config.keys.clone(), tree_depth: config.tree_depth, sort_who: config.sort_who.clone(), auto_next: config.form_auto_next };
+            let aliases = config.aliases(&root)?;
+            let agent_commands = ["triage", "work"].iter().filter(|c| aliases.contains_key(**c)).map(|c| c.to_string()).collect();
+            let options = form::Options { modules, all: cli.global, width: config.form_width, keys: config.keys.clone(), tree_depth: config.tree_depth, sort_who: config.sort_who.clone(), agent_commands };
             return form::run(&root, &config.user(&root), options);
         }
         _ => (),

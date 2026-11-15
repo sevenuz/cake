@@ -69,16 +69,19 @@ impl<'a> Tree<'a> {
                 cur = str_of(self.item(cur).unwrap(), "parent");
             }
         }
-        // opened rows show all children and one more parent; a shown row
-        // may be open as well
+        // opened rows show all children, one more parent and that parent's
+        // other children (the row's siblings); a shown row may be open as well
         loop {
             let mut more: Vec<&str> = vec![];
             for id in shown.iter().filter(|id| self.opened.contains(**id)) {
                 more.extend(children.get(*id).into_iter().flatten().copied().filter(|c| !shown.contains(c)));
                 let up = str_of(self.item(id).unwrap(), "parent");
-                if exists(up) && !shown.contains(up) {
-                    more.push(up);
-                    parents.insert(up);
+                if exists(up) {
+                    if !shown.contains(up) {
+                        more.push(up);
+                        parents.insert(up);
+                    }
+                    more.extend(children.get(up).into_iter().flatten().copied().filter(|c| !shown.contains(c)));
                 }
             }
             if more.is_empty() {
@@ -243,6 +246,21 @@ mod tests {
         let mut tree = Tree::new(&all, ["c".to_string()], 0);
         tree.opened.extend(["c".to_string(), "d".to_string()]);
         assert_eq!(ids(&tree.rows()), ["b", "c", "d", "e"]);
+    }
+
+    #[test]
+    fn open_shows_the_parent_and_the_siblings_with_their_hidden_counts() {
+        let mut all = all();
+        all.push(item("g", "e"));
+        let mut tree = Tree::new(&all, ["d".to_string()], 0);
+        assert_eq!(ids(&tree.rows()), ["d"]);
+        tree.opened.insert("d".into());
+        let rows = tree.rows();
+        assert_eq!(ids(&rows), ["c", "d", "e"], "parent and sibling");
+        assert!(rows[2].revealed && rows[2].hidden == 1, "e hides g: +1");
+        assert!(rows[0].cut_above && rows[0].hidden == 0);
+        tree.opened.clear();
+        assert_eq!(ids(&tree.rows()), ["d"], "o again closes");
     }
 
     #[test]

@@ -37,7 +37,8 @@ pub enum Act {
     Undo,
     Next,
     Previous,
-    Subtree,
+    Add,
+    AddChild,
     Focus,
     Editor,
     Feedback,
@@ -58,27 +59,28 @@ pub const ACTIONS: &[(&str, Act, &str, &str)] = &[
     ("bottom", Act::Bottom, "G <end>", "last"),
     ("half_down", Act::HalfDown, "<c-d> <pagedown>", "scroll the text, half a page down"),
     ("half_up", Act::HalfUp, "<c-u> <pageup>", "scroll the text, half a page up"),
-    ("prev_module", Act::PrevModule, "h <left>", "previous module (saves the table)"),
-    ("next_module", Act::NextModule, "l <right>", "next module (saves the table)"),
-    ("open", Act::Open, "o <space>", "show or hide the hidden children"),
+    ("prev_module", Act::PrevModule, "h <left>", "previous module"),
+    ("next_module", Act::NextModule, "l <right>", "next module"),
+    ("open", Act::Open, "o <space>", "show or hide parent, siblings and children"),
     ("back", Act::Back, "<esc>", "close, cancel"),
-    ("confirm", Act::Confirm, "<cr>", "confirm (cards), save (tables)"),
+    ("confirm", Act::Confirm, "<cr>", "confirm: save the option, open the box"),
     ("insert", Act::Insert, "i", "own words, comment, change request"),
     ("task", Act::Task, "t", "make it a task"),
-    ("note", Act::Note, "n", "keep it as a note"),
+    ("note", Act::Note, "N", "keep it as a note"),
     ("drop", Act::Drop, "dd x", "drop"),
     ("complete", Act::Complete, "c", "done"),
     ("timer", Act::Timer, "s", "start or stop the timer"),
     ("who", Act::Who, "w", "who: you, ai, agents, people"),
-    ("prio", Act::Prio, "p", "priority 1, 2, 3, none"),
+    ("prio", Act::Prio, "P", "priority 1, 2, 3, none"),
     ("undo", Act::Undo, "u", "undo the row's decision"),
-    ("next", Act::Next, "J", "next item without deciding"),
-    ("previous", Act::Previous, "K", "previous item"),
-    ("subtree", Act::Subtree, "A", "sort: this row's decision for the rows below"),
+    ("next", Act::Next, "n J", "next item that waits for a decision"),
+    ("previous", Act::Previous, "p K", "previous item that waits for a decision"),
+    ("add", Act::Add, "a", "new item into the inbox"),
+    ("add_child", Act::AddChild, "A", "new item under the hovered row"),
     ("focus", Act::Focus, "<tab>", "switch between the tree and the details"),
     ("editor", Act::Editor, "e", "open the item in the editor"),
     ("feedback", Act::Feedback, "F", "feedback on this screen"),
-    ("command", Act::Command, ":", "command line: due, deadline, who, prio, move, w, q"),
+    ("command", Act::Command, ":", "command line: due, deadline, who, prio, move, all, w, q"),
     ("help", Act::Help, "?", "all keys"),
     ("quit", Act::Quit, "", "quit; no key by default, use :q (<c-c> always quits)"),
 ];
@@ -415,6 +417,15 @@ impl Keymap {
             })
             .collect();
         out.insert(8, ("1-9".into(), "cards: choose option n".into()));
+        // the legend of the marks in the tree, first
+        let g = crate::style::g();
+        let legend = [
+            (format!("{} {} {} {}", g.inbox, g.todo, g.doing, g.review), "marks: inbox, task, doing, review".to_string()),
+            (format!("{} {} {}", g.note, g.done, g.dropped), format!("marks: note, done, dropped; {} before a title: changed this run", g.check)),
+            (format!("? +N {} {}", g.ellipsis, g.select), "a question for you; N children hidden (o shows); parents above cut".to_string()),
+            (String::new(), String::new()),
+        ];
+        out.splice(0..0, legend);
         out.push(("<esc> jk".into(), "text: leave without saving".into()));
         out.push(("<left> <right>".into(), "text: move; with <c-…> a word; <home> <end> <c-a> <c-e>".into()));
         out.push(("<del> <c-w>".into(), "text: delete the char under the cursor, the word before it".into()));

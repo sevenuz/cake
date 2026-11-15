@@ -193,8 +193,8 @@ struct Ui {
     tree_depth: usize,
     /// who a task from the inbox module gets (config sort_who)
     sort_who: String,
-    /// go on after the last open item (config form_auto_next)
-    auto_next: bool,
+    /// per step: nothing left to decide (a check in the header)
+    done: Vec<bool>,
     /// items changed this run per store and module: they stay in that module
     changed: std::collections::HashMap<(PathBuf, &'static str), std::collections::HashSet<String>>,
     /// `cake ls -l -A` per store with the disk stamp it was read at
@@ -270,7 +270,7 @@ fn keys(parts: &[(&str, &str)]) -> Line<'static> {
 
 /// step names (done ones ✓, the current one big in its color) and the
 /// progress bar over all items
-fn header(names: &[String], counts: &[usize], step: usize, handled: usize, total: usize, width: u16) -> Vec<Line<'static>> {
+fn header(names: &[String], counts: &[usize], done: &[bool], step: usize, handled: usize, total: usize, width: u16) -> Vec<Line<'static>> {
         let g = style::g();
         let mut steps = vec![];
         for (n, name) in names.iter().enumerate() {
@@ -279,6 +279,8 @@ fn header(names: &[String], counts: &[usize], step: usize, handled: usize, total
             }
             // the count says where something waits; dump has none
             let count = counts.get(n).filter(|_| name != "dump").map_or(String::new(), |c| format!(" {}", c));
+            // nothing left to decide there this run
+            let count = if done.get(n) == Some(&true) { format!("{} {}", count, g.check) } else { count };
             steps.push(if n == step {
                 Span::styled(format!("{}{}", name.to_uppercase(), count), bold().fg(step_color(n)))
             } else if counts.get(n) == Some(&0) && name != "dump" {
@@ -302,7 +304,7 @@ impl Ui {
     fn draw(&mut self, screen: &Screen) -> Result<(), Box<dyn Error>> {
         let size = self.term.size()?;
         let col_w = column_width(size.width, self.max_width);
-        let header_lines = header(&self.names, &self.counts, self.step, self.handled, self.total, col_w.saturating_sub(4));
+        let header_lines = header(&self.names, &self.counts, &self.done, self.step, self.handled, self.total, col_w.saturating_sub(4));
         let (step, max) = (self.step, self.max_width);
         let mut box_max = 0;
         self.term.draw(|f| box_max = paint_max(f, &header_lines, screen, step, max))?;
@@ -402,7 +404,8 @@ fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Sc
     }
     let input_h = height(&input, inner);
     let sep = u16::from(!screen.choices.is_empty() && body_h > 0);
-    let has_card = !screen.card_title.is_empty() || !screen.card.is_empty() || !screen.choices.is_empty() || !screen.input.is_empty();
+    // tree screens always have the box, so nothing jumps
+    let has_card = screen.tree_focus.is_some() || !screen.card_title.is_empty() || !screen.card.is_empty() || !screen.choices.is_empty() || !screen.input.is_empty();
     let natural = if has_card { body_h + sep + choices_h + input_h + 2 } else { 0 };
     let (tree_h, tree_scroll, card_h) = match screen.tree_focus {
         // tree modules: the tree takes the room, a card at most half of it
@@ -450,7 +453,10 @@ fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Sc
         None => screen.scroll.min(max_scroll),
     };
     let title = Span::styled(format!(" {} ", screen.card_title), bold().fg(step_color(step)));
-    let mut card_block = block.clone().title(title).padding(Padding::horizontal(1));
+    let mut card_block = block.clone().padding(Padding::horizontal(1));
+    if !screen.card_title.is_empty() {
+        card_block = card_block.title(title);
+    }
     if max_scroll > 0 {
         let more = match (scroll > 0, scroll < max_scroll) {
             (true, true) => " ↑↓ more <c-u> <c-d> ",
@@ -537,6 +543,32 @@ fn feedback(ui: &mut Ui, screen: &mut Screen, cake: &Cake, store: &str, place: &
     Ok(())
 }
 
+/// a: a new item into the inbox of `cake` (with `parent`: under that row);
+/// the new id, None when cancelled or failed (then a note says why)
+fn add_item(ui: &mut Ui, screen: &mut Screen, cake: &Cake, store: &str, parent: Option<&str>) -> Result<Option<String>, Box<dyn Error>> {
+    let title = match parent {
+        Some(p) => format!("new item under {}", p),
+        None => format!("new item · inbox of {}", store),
+    };
+    let Some(text) = ui.overlay(screen, &title)?.filter(|t| !t.is_empty()) else { return Ok(None) };
+    let body = format!("# {}", text);
+    let mut args = vec!["add", "-m", &body];
+    if let Some(p) = parent {
+        args.extend(["-p", p]);
+    }
+    match ui.save(screen, || cake.call(&args))? {
+        Ok(items) => {
+            let id = items.first().map(|i| str_of(i, "id").to_string());
+            screen.note = Some((format!("{} added {}", style::g().check, id.as_deref().unwrap_or("")), false));
+            Ok(id)
+        }
+        Err(e) => {
+            screen.note = Some((e.to_string(), true));
+            Ok(None)
+        }
+    }
+}
+
 /// how a module ended
 #[derive(Clone, Copy, PartialEq)]
 enum Leave {
@@ -572,13 +604,20 @@ fn last_run(root: &Path) -> i64 {
 /// module move or quit
 fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str)) -> Result<Leave, Box<dyn Error>> {
     let k = |a: Act| ui.keys.keys_of(a);
-    let parts = [(format!("{}/{}", k(Act::PrevModule), k(Act::NextModule)), "module".to_string()), (":q".to_string(), "quit".to_string())];
+    let parts = [
+        (format!("{}/{}", k(Act::PrevModule), k(Act::NextModule)), "module".to_string()),
+        (k(Act::Add), "new".to_string()),
+        (k(Act::Help), "keys".to_string()),
+        (":q".to_string(), "quit".to_string()),
+    ];
     let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
     let mut help = false;
     let mut note = None;
     loop {
+        // the same layout as the tree modules: title line on top, box below
         let mut screen = Screen {
-            card_title: title.to_string(),
+            tree: vec![Line::from(Span::styled(title.to_string(), bold().fg(step_color(ui.step))))],
+            tree_focus: Some(0),
             card: lines.clone(),
             keys: keys(&parts),
             help: if help { ui.keys.help() } else { vec![] },
@@ -590,6 +629,10 @@ fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str))
         match ui.keys.act()? {
             Act::Feedback => {
                 feedback(ui, &mut screen, fb.0, fb.1, title)?;
+                note = screen.note.take();
+            }
+            Act::Add | Act::AddChild => {
+                add_item(ui, &mut screen, fb.0, fb.1, None)?;
                 note = screen.note.take();
             }
             Act::PrevModule => return Ok(Leave::Prev),
@@ -626,28 +669,30 @@ fn last_tab(ui: &mut Ui, root: &Path, user: &str, store: &str) -> Result<Leave, 
     Ok(leave)
 }
 
-/// dump: one new item per line into the inbox of `root`
-fn dump(ui: &mut Ui, here: &Cake, store: &str) -> Result<usize, Box<dyn Error>> {
+/// dump: one new item per line into the inbox of `root`; `hint` (dim)
+/// above the added ones, e.g. what waits for agents
+fn dump(ui: &mut Ui, here: &Cake, store: &str, hint: &[String]) -> Result<usize, Box<dyn Error>> {
     let mut added: Vec<String> = vec![];
     let mut note = None;
     loop {
-        let mut card = vec![
-            Line::from("Whatever is on your mind; it goes into the inbox."),
-            Line::from(Span::styled("Enter adds one, an empty enter goes on.", dim())),
-        ];
-        if !added.is_empty() {
-            card.push(Line::default());
-        }
+        // the same layout as the tree modules: added items as the tree,
+        // the box below takes the text
+        let mut tree = vec![Line::from(Span::styled(format!("dump: whatever is on your mind · {}", store), bold().fg(step_color(ui.step))))];
+        tree.extend(hint.iter().map(|h| Line::from(Span::styled(h.clone(), dim()))));
         for a in &added {
-            card.push(Line::from(vec![
+            tree.push(Line::from(vec![
+                Span::raw("  "),
                 Span::styled(format!("{} ", style::g().check), Style::default().fg(theme::t().ok)),
                 Span::raw(a.clone()),
             ]));
         }
+        let focus = tree.len() - 1;
         let mut screen = Screen {
-            card_title: format!("dump · {}", store),
-            card,
-            keys: keys(&[("enter", "add / go on"), ("esc", "go on")]),
+            tree,
+            tree_focus: Some(focus),
+            card_title: "new item into the inbox".into(),
+            card: vec![Line::from(Span::styled("Enter adds one, an empty enter or esc goes on.", dim()))],
+            keys: keys(&[("<cr>", "add / go on"), ("<esc>", "go on")]),
             note: note.take(),
             ..Default::default()
         };
@@ -674,13 +719,14 @@ pub struct Options {
     pub tree_depth: usize,
     /// who a task from the inbox module gets: me, ai, a name, - nobody
     pub sort_who: String,
-    /// after the last open item of a module, go on
-    pub auto_next: bool,
+    /// own commands that start agents (aliases triage, work), for the hint
+    /// when nothing waits
+    pub agent_commands: Vec<String>,
 }
 
 /// runs the modules on `root` (with `all`: every known store); dump goes
 /// to `root`
-pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
+pub fn run(root: &Path, user: &str, mut o: Options) -> Result<(), Box<dyn Error>> {
     if let Some(bad) = o.modules.iter().find(|m| !KNOWN.contains(&m.as_str())) {
         return Err(error::invalid(format!("unknown form module '{}', use {}", bad, KNOWN.join(", "))));
     }
@@ -704,21 +750,29 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
         }
     }
     let total = per_module.iter().sum();
-    // nothing to decide (dump always has something to do): no screen at all
+    // nothing to decide: the form opens anyway, at dump, with a hint on
+    // what waits for agents; the modules and the last tab stay reachable
+    let mut hint = vec![];
     if total == 0 && !o.modules.iter().any(|m| m == "dump") {
         let mut others = 0;
         for (_, r) in &stores {
             let store = crate::store::Store::new_except(r, &[])?;
             others += store.get().iter().filter(|(id, i)| store.is_ready(id) && i.assignee().is_some_and(|a| a != user)).count();
         }
-        println!("Nothing waits for you.");
+        hint.push("Nothing waits for you.".to_string());
         if others > 0 {
-            println!("{} ready task(s) wait for agents or others (cake ready); an agent run or `cake triage` turns them into reviews and questions.", others);
+            let mut how = vec!["tell Claude 'go' in a session".to_string()];
+            let cmds: Vec<String> = o.agent_commands.iter().map(|c| format!("`cake {}`", c)).collect();
+            if !cmds.is_empty() {
+                how.push(format!("run {}", cmds.join(" / ")));
+            }
+            hint.push(format!("{} task(s) ready for agents: {}.", others, how.join(", or ")));
         }
-        return Ok(());
+        o.modules.insert(0, "dump".to_string());
+        per_module.insert(0, 0);
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.iter().cloned().chain(["all".to_string()]).collect(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), auto_next: o.auto_next, changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.iter().cloned().chain(["all".to_string()]).collect(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), done: vec![false; o.modules.len() + 1], changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the
@@ -731,7 +785,7 @@ pub fn run(root: &Path, user: &str, o: Options) -> Result<(), Box<dyn Error>> {
             ui.step = n;
             let leave = match m.as_str() {
                 "dump" => {
-                    counts[n] += dump(&mut ui, &Cake { root }, &stores[0].0)?;
+                    counts[n] += dump(&mut ui, &Cake { root }, &stores[0].0, &hint)?;
                     Leave::Done
                 }
                 _ => {
@@ -820,7 +874,7 @@ mod tests {
 
     fn render(screen: &Screen, w: u16, h: u16) -> Vec<String> {
         let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).unwrap();
-        term.draw(|f| paint(f, &header(&["news".into(), "sort".into(), "answer".into()], &[0, 2, 3], 2, 2, 5, w - 8), screen, 2, 100)).unwrap();
+        term.draw(|f| paint(f, &header(&["news".into(), "sort".into(), "answer".into()], &[0, 2, 3], &[], 2, 2, 5, w - 8), screen, 2, 100)).unwrap();
         let buf = term.backend().buffer().clone();
         (0..buf.area.height).map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string()).collect()
     }
@@ -846,9 +900,11 @@ mod tests {
         assert!(!lines[pos("row 0")].contains('│'), "the tree has no box");
         let lines = render(&Screen { tree_focus: Some(35), ..screen }, 60, 30);
         assert!(lines.iter().any(|l| l.trim() == "row 35") && lines.iter().any(|l| l.trim() == "row 36"), "cursor and the row under it in view");
-        // no card: the tree takes the whole height
-        let lines = render(&Screen { tree, tree_focus: Some(0), ..Default::default() }, 60, 30);
-        assert!(lines.iter().any(|l| l.trim() == "row 21"));
+        // no card: the box stays empty at its place, nothing jumps
+        let with = render(&Screen { tree: tree.clone(), tree_focus: Some(0), card_title: "x".into(), ..Default::default() }, 60, 30);
+        let without = render(&Screen { tree, tree_focus: Some(0), ..Default::default() }, 60, 30);
+        let last_row = |ls: &[String]| ls.iter().rposition(|l| l.trim_start().starts_with("row ")).unwrap();
+        assert_eq!(last_row(&with), last_row(&without), "same tree height with and without a card");
     }
 
     /// the box keeps half the screen whatever it shows
@@ -895,7 +951,7 @@ mod tests {
         };
         let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 20)).unwrap();
         let names: Vec<String> = vec!["sort".into()];
-        term.draw(|f| paint(f, &header(&names, &[1], 0, 0, 1, 52), &screen, 0, 100)).unwrap();
+        term.draw(|f| paint(f, &header(&names, &[1], &[], 0, 0, 1, 52), &screen, 0, 100)).unwrap();
         let buf = term.backend().buffer().clone();
         let row = (0..buf.area.height)
             .find(|y| (0..buf.area.width).map(|x| buf[(x, *y)].symbol().to_string()).collect::<String>().contains(":prio 2"))
@@ -929,7 +985,7 @@ mod screens {
         let names: Vec<String> = MODULES.iter().map(|m| m.to_string()).collect();
         let col = column_width(width, 100);
         let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 26)).unwrap();
-        term.draw(|f| paint(f, &header(&names, &[1, 4, 1, 1, 2, 0], step, 3, 9, col.saturating_sub(4)), screen, step, 100)).unwrap();
+        term.draw(|f| paint(f, &header(&names, &[1, 4, 1, 1, 2, 0], &[], step, 3, 9, col.saturating_sub(4)), screen, step, 100)).unwrap();
         let buf = term.backend().buffer().clone();
         let mut lines: Vec<String> = (0..buf.area.height)
             .map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string())

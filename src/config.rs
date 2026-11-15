@@ -26,7 +26,6 @@ pub struct Config {
     pub form_width: u16,
     pub tree_depth: usize,
     pub sort_who: String,
-    pub form_auto_next: bool,
     pub keys: BTreeMap<String, String>,
     pub usage_tracking: bool,
     pub score: crate::store::ScoreWeights,
@@ -51,7 +50,6 @@ impl Default for Config {
             form_width: 100,
             tree_depth: 2,
             sort_who: "ai".to_string(),
-            form_auto_next: true,
             keys: BTreeMap::new(),
             usage_tracking: true,
             score: Default::default(),
@@ -109,16 +107,14 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   tree_depth: 2
   // who a task from the inbox module gets: "ai", "me", a name, "-" nobody
   sort_who: "ai"
-  // after the last open item of a module, go on to the next one
-  form_auto_next: true
   // form keys, vim notation, several per action; defaults:
   //   down "j <down>", up "k <up>", top "gg <home>", bottom "G <end>",
   //   half_down "<c-d> <pagedown>", half_up "<c-u> <pageup>",
   //   prev_module "h <left>", next_module "l <right>",
   //   open "o <space>", back "<esc>", confirm "<cr>", insert "i",
-  //   task "t", note "n", drop "dd x", complete "c", timer "s", who "w",
-  //   prio "p", undo "u", next "J", previous "K",
-  //   subtree "A", focus "<tab>", editor "e", feedback "F", command ":",
+  //   task "t", note "N", drop "dd x", complete "c", timer "s", who "w",
+  //   prio "P", undo "u", next "n J", previous "p K",
+  //   add "a", add_child "A", focus "<tab>", editor "e", feedback "F", command ":",
   //   help "?", quit "q",
   //   escape (leaving text input) "<esc> jk"; cards choose with 1-9
   keys: {}
