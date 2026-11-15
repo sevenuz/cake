@@ -83,7 +83,7 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   // A line starting with ! is a shell command, like in git, e.g. for
   // Claude Code (run them yourself, `cake triage`, or from cron):
   //   triage: plans only, the AI may use nothing but cake:
-  //     "!claude -p 'Triage this cake store with the cake skill: for tasks assigned to ai without subtasks, split them into subtasks or ask questions; apply answers and comments; do not implement anything; end with a short summary.' --max-turns 40 --allowedTools 'Bash(cake *)'"
+  //     "!claude -p 'Triage this cake store with the cake skill: for tasks assigned to ai without subtasks, split them into subtasks or ask questions; apply answers and comments; garden the tree (file top-level items under goals, ask about overlaps); do not implement anything; end with a short summary.' --max-turns 40 --allowedTools 'Bash(cake *)'"
   //   work: the full agent run; it edits code, so it needs Read, Edit,
   //   Write and the build tools of the project, e.g.
   //     "!claude -p 'Run the agent run of the cake skill for this store until nothing is ready or the reviews are full, then a short summary.' --max-turns 80 --allowedTools 'Bash(cake *)' 'Bash(cargo *)' 'Bash(git *)' Read Edit Write"

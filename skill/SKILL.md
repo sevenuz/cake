@@ -46,7 +46,10 @@ name. Ids never change.
 
 - Title starts with the topic: `Merge driver for sync conflicts`.
 - No tool, project or parent name, no status or dates in the title.
-- Bad slug → pass an id: `cake add merge-driver …`, 2–4 words.
+- Always pass an id, the slug is rarely good: topic first, 1–3 words,
+  easy to type (`cake add sync-merge …`). Goals and plans get one word
+  (`dashboard`, `form`, `sync`) so the user can file with `-p dashboard`;
+  children start with the parent's topic (`dash-period`, `dash-pie`).
 - Trees at most 3 levels; cross links with `[[id]]` or `--blocked-by`.
 
 ## States
@@ -91,7 +94,19 @@ Per store (`cake --store <path> … --json`), when asked to triage or work:
    --json`. A new `comment (…)` line at the end of a body is a change
    request; a `blocked_by` item that is now `done` carries the user's
    answer at the end of its body. Rework accordingly.
-4. Loop until `cake ready --json` is empty:
+4. Garden (triage and agent runs): keep the tree filed and lean.
+   - top-level items that are not goal notes (sorted feedback, loose
+     tasks): move under the matching goal, `cake edit <id> --parent
+     <goal>`; only the parent changes, never the user's text; no goal
+     fits → name it in the summary;
+   - open items that overlap or repeat each other: never merge on your
+     own, ask "Merge <a> into <b>?" (a: merge, b: keep both, c: drop one);
+   - ready tasks without `why`/`done when` that are not yours to plan
+     (old ideas, vague dumps): ask "Plan or park <id>?" (park = `cake
+     note`, `cake do` brings it back);
+   - a parent that only collects leftovers (many done children, few open):
+     propose a small `<topic>-polish` task for the rest so it can close.
+5. Loop until `cake ready --json` is empty:
    - take the highest `score`, `cake show <id> --json`;
    - a task without children that is too big → split: subtasks with
      `cake add --task -p <id> --assignee <you> -m …` (they inherit the
@@ -101,8 +116,9 @@ Per store (`cake --store <path> … --json`), when asked to triage or work:
    - otherwise `cake start <id>`, do the work (code on a branch per item,
      never push to main), then
      `cake review <id> -m "changed: …; commits: …; try: …" --json`.
-5. Your own findings and docs: `cake add --note -t doc …`, never the inbox.
-6. `cake sync --json`, then a short summary: reviews, questions, blocked.
+6. Your own findings and docs: `cake add --note -t doc …`, never the inbox.
+7. `cake sync --json`, then a short summary: reviews, questions, blocked,
+   what you filed or found to merge.
 
 ## Chat mode
 
