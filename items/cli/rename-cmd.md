@@ -5,6 +5,7 @@ parent: "[[cli]]"
 created: 2026-11-15T18:19:20+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
+usage: {claude-opus-5-5: {in: 14, out: 3729, cache_read: 1643261, cache_write: 6405}}
 assignee: ai
 owner: sevenuz
 time:
