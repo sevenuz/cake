@@ -727,6 +727,17 @@ pub mod inner {
         /// archive, whole subtrees only: every item below must be closed
         /// that long too, or a note; returns the archived ids, sorted
         pub fn archive(&mut self, older: i64, now: i64) -> Vec<String> {
+            let ids = self.archive_candidates(older, now);
+            for id in &ids {
+                self.archived.insert(id.clone());
+            }
+            // save moves the files
+            self.relayout |= !ids.is_empty();
+            ids
+        }
+
+        /// what `archive` would move, sorted
+        pub fn archive_candidates(&self, older: i64, now: i64) -> Vec<String> {
             let old = |i: &Item| {
                 matches!(i.status(), Some(Status::Done) | Some(Status::Dropped))
                     && now - i.closed().unwrap_or(i.timestamp()) >= older
@@ -758,11 +769,6 @@ pub mod inner {
             }
             ids.retain(|id| !self.archived.contains(id));
             ids.sort();
-            for id in &ids {
-                self.archived.insert(id.clone());
-            }
-            // save moves the files
-            self.relayout |= !ids.is_empty();
             ids
         }
 

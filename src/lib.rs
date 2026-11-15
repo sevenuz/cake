@@ -379,6 +379,9 @@ pub enum Commands {
         /// closed at least this long ago: 3m (months), 2w, 10d, 1y
         #[arg(long, default_value = "3m")]
         older: String,
+        /// only list what would move
+        #[arg(short = 'n', long)]
+        dry_run: bool,
     },
     /// give an item a new id; children, blockers and [[links]] follow
     Rename {
@@ -514,7 +517,7 @@ impl Commands {
                 | Commands::Stop { .. }
                 | Commands::Mv { .. }
                 | Commands::Rename { .. }
-                | Commands::Archive { .. }
+                | Commands::Archive { dry_run: false, .. }
                 | Commands::Usage { .. }
                 | Commands::Migrate { apply: true }
         )
@@ -928,7 +931,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         )?,
         Some(Commands::Mv { .. }) => unreachable!("clap requires a parent or --to-store"),
         Some(Commands::Rename { id, new }) => commands::rename(debug, &mut store, id, new)?,
-        Some(Commands::Archive { older }) => commands::archive(debug, &mut store, older)?,
+        Some(Commands::Archive { older, dry_run }) => commands::archive(debug, &mut store, older, *dry_run)?,
         Some(Commands::Set { to, selector, .. }) => {
             let selector = selector.selector(&selector.ids)?;
             let name = if to == "drop" { "dropped" } else { to.as_str() };

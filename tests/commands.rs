@@ -732,6 +732,9 @@ fn archive_moves_old_closed_subtrees_and_show_still_finds_them() {
     // closed just now: not older than 3 months
     assert_eq!(json_value(&env, &d, &["archive"])["archived"], serde_json::json!([]));
     // a closed parent with an open child stays; notes go along
+    let dry = json_value(&env, &d, &["archive", "--older", "0d", "--dry-run"]);
+    assert_eq!(dry["archived"], serde_json::json!(["doc", "old", "sub"]));
+    assert!(items.join("cli/old.md").is_file());
     let out = json_value(&env, &d, &["archive", "--older", "0d"]);
     assert_eq!(out["archived"], serde_json::json!(["doc", "old", "sub"]));
     assert!(items.join("archive/cli/old.md").is_file());

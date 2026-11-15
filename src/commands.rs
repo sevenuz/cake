@@ -283,12 +283,25 @@ where
 }
 
 /// moves closed subtrees closed for at least `older` into items/archive/
-pub fn archive<F>(debug: F, store: &mut Store, older: &str) -> Result<Report, Box<dyn Error>>
+/// (with `dry_run` only lists them)
+pub fn archive<F>(debug: F, store: &mut Store, older: &str, dry_run: bool) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
-    debug(&format!("archive --older {:?}", older));
-    let ids = store.archive(util::parse_age(older)?, util::timestamp());
+    debug(&format!("archive --older {:?} dry_run {}", older, dry_run));
+    let (age, now) = (util::parse_age(older)?, util::timestamp());
+    if dry_run {
+        let ids = store.archive_candidates(age, now);
+        if !out::json() {
+            let short = store.short_ids();
+            for id in &ids {
+                println!("{}", line(store.get_item(id).unwrap(), &short[id], style::color()));
+            }
+        }
+        say!("{} would be archived (closed longer than {}).", ids.len(), older);
+        return Ok(Report::Value(serde_json::json!({ "archived": ids, "dry_run": true })));
+    }
+    let ids = store.archive(age, now);
     say!("{} archived (closed longer than {}).", ids.len(), older);
     Ok(Report::Value(serde_json::json!({ "archived": ids })))
 }
