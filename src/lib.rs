@@ -9,6 +9,7 @@ mod log;
 mod markdown;
 mod migrate;
 mod form;
+mod gantt;
 mod out;
 mod selector;
 mod stats;
