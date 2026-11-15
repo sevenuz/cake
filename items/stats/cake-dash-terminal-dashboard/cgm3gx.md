@@ -1,6 +1,6 @@
 ---
 id: cgm3gx
-status: task
+status: review
 tags: [tui]
 parent: "[[cake-dash-terminal-dashboard]]"
 blocked_by: ["[[dash-overlays]]"]

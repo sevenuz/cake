@@ -1,6 +1,6 @@
 ---
 id: dashboard-we-should-have
-status: task
+status: review
 parent: "[[cake-dash-terminal-dashboard]]"
 blocked_by: ["[[last-day-section-time]]"]
 created: 2026-11-13T19:36:11+01:00
