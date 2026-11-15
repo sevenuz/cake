@@ -171,6 +171,16 @@ fn rows(srcs: &[Src], tab: Option<usize>, user: &str) -> Vec<Row> {
             let late = if d < today { " (late)" } else { "" };
             focus.push(item_row(srcs, n, all, "!", i, format!("{} {}{}", what, d, late), Some("mine")));
         }
+        // goals whose critical path misses the deadline
+        for (g, deadline) in crate::gantt::goals_with_deadline(s) {
+            let plan = crate::gantt::plan(s, &g, user, now);
+            let finish = plan.iter().filter(|p| p.on_path).map(|p| p.end).max().unwrap_or(now);
+            if finish > deadline {
+                if let Some(i) = s.get_item(&g) {
+                    focus.push(item_row(srcs, n, all, "!", i, format!("critical path {} over the deadline (g, v v)", hm(finish - deadline)), None));
+                }
+            }
+        }
         let mut own: Vec<&Item> = items.iter().copied().filter(|i| mine(i) && s.is_ready(i.id())).collect();
         own.sort_by_key(|i| (std::cmp::Reverse(s.score(i.id(), now)), i.id().clone()));
         for i in own.into_iter().take(OWN) {
@@ -313,8 +323,10 @@ struct Overlay {
     only: Option<usize>,
     /// per store, for `period`
     stats: Vec<stats::StoreStats>,
-    /// gantt: lanes per session (false: per store)
-    by_session: bool,
+    /// gantt: 0 lanes per session, 1 per store, 2 critical paths
+    view: u8,
+    /// gantt view 2: (store, goal, deadline, plan) of goals with deadlines
+    plans: Vec<(usize, String, i64, Vec<crate::gantt::Planned>)>,
     /// gantt: lanes and their time span
     lanes: Vec<crate::gantt::Lane>,
     span: (i64, i64),
@@ -324,7 +336,7 @@ impl Overlay {
     /// on a store's tab the overlay shows that store (its goals), on the all
     /// tab every store
     fn new(kind: Kind, srcs: &[Src], user: &str, only: Option<usize>) -> Overlay {
-        let mut o = Overlay { kind, period: Period::Day, measure: Measure::Time, zoom: only, sel: 0, only, stats: vec![], by_session: true, lanes: vec![], span: (0, 0) };
+        let mut o = Overlay { kind, period: Period::Day, measure: Measure::Time, zoom: only, sel: 0, only, stats: vec![], view: 0, plans: vec![], lanes: vec![], span: (0, 0) };
         o.refresh(srcs, user);
         o
     }
@@ -337,7 +349,15 @@ impl Overlay {
         // the gantt: the tab's store or all, from the first hour with work
         let picked: Vec<usize> = self.only.map_or((0..srcs.len()).collect(), |n| vec![n]);
         let gsrcs: Vec<crate::gantt::Src> = picked.iter().map(|n| crate::gantt::Src { name: &srcs[*n].name, store: &srcs[*n].store, log: &logs[*n] }).collect();
-        let mut lanes = if self.by_session { crate::gantt::sessions(&gsrcs, user, from, now) } else { crate::gantt::stores(&gsrcs, user, from, now) };
+        self.plans = picked
+            .iter()
+            .flat_map(|n| crate::gantt::goals_with_deadline(&srcs[*n].store).into_iter().map(move |(g, d)| (*n, g, d)))
+            .map(|(n, g, d)| {
+                let p = crate::gantt::plan(&srcs[n].store, &g, user, now);
+                (n, g, d, p)
+            })
+            .collect();
+        let mut lanes = if self.view == 0 { crate::gantt::sessions(&gsrcs, user, from, now) } else { crate::gantt::stores(&gsrcs, user, from, now) };
         // store indices of the lanes refer to `picked`; map back for colors
         for l in lanes.iter_mut() {
             for b in l.bars.iter_mut() {
@@ -444,11 +464,64 @@ fn paint_pie(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     f.render_widget(Paragraph::new(lines), legend);
 }
 
+/// gantt view 2: a goal's open tasks from now to its deadline, the
+/// critical path in the `mine` color
+fn paint_path(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
+    let t = theme::t();
+    let scope = o.only.map_or("all stores".to_string(), |n| srcs[n].name.clone());
+    let block = boxed(format!(" gantt · critical path · {} ", scope));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let Some((n, goal, deadline, plan)) = o.plans.get(o.sel.min(o.plans.len().saturating_sub(1))) else {
+        f.render_widget(Paragraph::new(Span::styled("no goal with a deadline here (cake edit <goal> --deadline 30.11.)", dim())), inner);
+        return;
+    };
+    let now = util::timestamp();
+    let title = srcs[*n].store.get_item(goal).map_or(goal.clone(), |i| i.title());
+    let left = deadline - now;
+    let end = plan.iter().map(|p| p.end).max().unwrap_or(now).max(*deadline).max(now + 3600);
+    let name_w = plan.iter().map(|p| p.id.chars().count()).max().unwrap_or(4).clamp(4, 22) + 6;
+    let width = (inner.width as usize).saturating_sub(name_w + 2).max(10);
+    let col = |x: i64| (((x - now) as f64 / (end - now) as f64) * width as f64) as usize;
+    let dl = col(*deadline).min(width - 1);
+    let mut lines = vec![Line::from(vec![
+        Span::styled(format!("{} ", title), Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(format!("· deadline {} · {} left · goal {}/{} (j/k)", util::format_timestamp(*deadline)[..10].to_string(), if left > 86400 { format!("{} d", left / 86400) } else { hm(left.max(0)) }, o.sel.min(o.plans.len() - 1) + 1, o.plans.len()), dim()),
+    ])];
+    let mut axis = vec![' '; width];
+    axis[0] = '┊';
+    axis[dl] = '│';
+    lines.push(Line::from(Span::styled(format!("{:w$}  now{}", "", axis.iter().skip(3).collect::<String>(), w = name_w), dim())));
+    for p in plan {
+        let len = if p.question { "◆".to_string() } else { format!("{}{}", if p.guess { "~" } else { "" }, hm(p.end - p.start)) };
+        let mut cells: Vec<Span> = vec![Span::styled(format!("{:w$}  ", format!("{} {}", cut(&p.id, name_w - 6), len), w = name_w), dim())];
+        let (a, b) = (col(p.start), col(p.end).max(col(p.start) + 1).min(width));
+        let color = if p.question { t.question } else if p.on_path { t.mine } else { t.hint };
+        for c in 0..width {
+            let ch = if p.question && c == a { "◆" } else if c >= a && c < b && !p.question { "█" } else if c == dl { "│" } else { " " };
+            cells.push(if ch == "│" { Span::styled(ch, dim()) } else { Span::styled(ch, Style::default().fg(color)) });
+        }
+        lines.push(Line::from(cells));
+    }
+    lines.push(Line::default());
+    let path: Vec<&crate::gantt::Planned> = plan.iter().filter(|p| p.on_path).collect();
+    let total: i64 = path.iter().map(|p| p.end - p.start).sum();
+    let finish = path.iter().map(|p| p.end).max().unwrap_or(now);
+    let names: Vec<&str> = path.iter().map(|p| p.id.as_str()).collect();
+    let (verdict, style) = if finish <= *deadline { ("fits ✓".to_string(), Style::default().fg(t.ok)) } else { (format!("{} over", hm(finish - deadline)), Style::default().fg(t.error)) };
+    lines.push(Line::from(vec![Span::styled(format!("critical path: {} = {} · ", names.join(" → "), hm(total)), dim()), Span::styled(verdict, style)]));
+    lines.push(Line::from(Span::styled("estimates from --est, ~ = history median or 1 h; questions ◆ hold the chain", dim())));
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
 fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     use crate::gantt;
+    if o.view == 2 {
+        return paint_path(f, area, srcs, o);
+    }
     let (from, to) = o.span;
     let scope = o.only.map_or("all stores".to_string(), |n| srcs[n].name.clone());
-    let block = boxed(format!(" gantt · {} · {} · {} ", o.period.name(), if o.by_session { "who" } else { "stores" }, scope));
+    let block = boxed(format!(" gantt · {} · {} · {} ", o.period.name(), if o.view == 0 { "who" } else { "stores" }, scope));
     let inner = block.inner(area);
     f.render_widget(block, area);
     let name_w = o.lanes.iter().map(|l| l.name.chars().count()).max().unwrap_or(4).clamp(4, 22);
@@ -461,7 +534,7 @@ fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     }
     for l in &visible {
         let mut spans = vec![Span::styled(format!("{:w$}  ", cut(&l.name, name_w), w = name_w), dim())];
-        spans.extend(gantt::render(l, from, to, width, &colors, !o.by_session, style::ascii()).spans);
+        spans.extend(gantt::render(l, from, to, width, &colors, o.view == 1, style::ascii()).spans);
         lines.push(Line::from(spans));
     }
     lines.push(Line::default());
@@ -472,7 +545,7 @@ fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
         legend.push(Span::styled("■ ", Style::default().fg(colors[n % colors.len()])));
         legend.push(Span::styled(format!("{}  ", srcs[n].name), dim()));
     }
-    let marks = if o.by_session { "█ working  ▒ in cake  · waits on you" } else { "░ 1 at once  ▒ 2  ▓ 3  █ 4+  ⁚ waits on you" };
+    let marks = if o.view == 0 { "█ working  ▒ in cake  · waits on you" } else { "░ 1 at once  ▒ 2  ▓ 3  █ 4+  ⁚ waits on you" };
     legend.push(Span::styled(marks, dim()));
     lines.push(Line::from(legend));
     let (max, avg, waited) = gantt::summary(&o.lanes, from, to);
@@ -549,7 +622,7 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
         let k = match o.kind {
             Kind::Pie => "m measure  d period  j/k slice  <cr> goals  <bs> stores  s stats  g gantt  q back",
             Kind::Stats => "d period  p pie  g gantt  q back",
-            Kind::Gantt => "v who/stores  d day/week  p pie  s stats  q back",
+            Kind::Gantt => "v who/stores/path  d day/week  j/k goal  p pie  s stats  q back",
         };
         f.render_widget(Paragraph::new(Line::from(Span::styled(k, dim()))), keys);
         return;
@@ -671,7 +744,8 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                         o.refresh(&srcs, user);
                     }
                     KeyCode::Char('v') if o.kind == Kind::Gantt => {
-                        o.by_session = !o.by_session;
+                        o.view = (o.view + 1) % 3;
+                        o.sel = 0;
                         o.refresh(&srcs, user);
                     }
                     KeyCode::Char('g') => {
@@ -682,6 +756,7 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                         o.refresh(&srcs, user);
                     }
                     KeyCode::Char('m') => o.measure = o.measure.next(),
+                    KeyCode::Char('j') | KeyCode::Down if o.kind == Kind::Gantt => o.sel = (o.sel + 1).min(o.plans.len().saturating_sub(1)),
                     KeyCode::Char('j') | KeyCode::Down => o.sel = (o.sel + 1).min(count.saturating_sub(1)),
                     KeyCode::Char('k') | KeyCode::Up => o.sel = o.sel.saturating_sub(1),
                     KeyCode::Enter if o.kind == Kind::Pie && o.zoom.is_none() => {

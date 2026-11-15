@@ -205,6 +205,104 @@ pub fn render(lane: &Lane, from: i64, to: i64, width: usize, colors: &[Color], s
     Line::from(spans)
 }
 
+/// an open task of a goal, scheduled from now: after its blockers
+#[derive(Clone, Debug, PartialEq)]
+pub struct Planned {
+    pub id: String,
+    pub start: i64,
+    pub end: i64,
+    /// a question to the user (no duration of its own, shown as ◆)
+    pub question: bool,
+    pub on_path: bool,
+    /// the duration is a guess from history (no estimate)
+    pub guess: bool,
+}
+
+/// open tasks below `goal`, each after its blockers (earliest start from
+/// `now`, its estimate long, else the history median, else 1 h; questions
+/// take no time); the critical path is the chain that ends last
+pub fn plan(store: &Store, goal: &str, user: &str, now: i64) -> Vec<Planned> {
+    use std::collections::{HashMap, HashSet};
+    let mut ids: Vec<String> = vec![];
+    let mut todo = vec![goal.to_string()];
+    let mut seen = HashSet::new();
+    while let Some(id) = todo.pop() {
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        if let Some(i) = store.get_item(&id) {
+            if id != goal && i.is_open() && i.status().is_some() {
+                ids.push(id.clone());
+            }
+            todo.extend(i.children().iter().cloned());
+        }
+    }
+    ids.sort();
+    let set: HashSet<&String> = ids.iter().collect();
+    let question = |id: &str| store.get_item(id).is_some_and(|i| i.assignee().is_some_and(|a| a == user) && store.get().values().any(|o| o.blocked_by().iter().any(|b| b == id)));
+    let length = |id: &str| -> (i64, bool) {
+        if question(id) {
+            return (0, false);
+        }
+        store.expected(id).unwrap_or((3600, true))
+    };
+    // earliest end of each, through its blockers inside the goal
+    fn end(id: &str, store: &Store, set: &HashSet<&String>, length: &dyn Fn(&str) -> (i64, bool), now: i64, memo: &mut HashMap<String, (i64, Option<String>)>, depth: usize) -> i64 {
+        if let Some((e, _)) = memo.get(id) {
+            return *e;
+        }
+        let mut start = now;
+        let mut before = None;
+        if depth < 64 {
+            for b in store.get_item(id).map(|i| i.blocked_by().clone()).unwrap_or_default() {
+                if set.contains(&b) {
+                    let e = end(&b, store, set, length, now, memo, depth + 1);
+                    if e > start {
+                        start = e;
+                        before = Some(b.clone());
+                    }
+                }
+            }
+        }
+        let e = start + length(id).0;
+        memo.insert(id.to_string(), (e, before));
+        e
+    }
+    let mut memo = HashMap::new();
+    for id in &ids {
+        end(id, store, &set, &length, now, &mut memo, 0);
+    }
+    // the path: back from the latest end
+    let mut path = HashSet::new();
+    let mut cur = ids.iter().max_by_key(|id| (memo[*id].0, std::cmp::Reverse((*id).clone()))).cloned();
+    while let Some(c) = cur {
+        path.insert(c.clone());
+        cur = memo[&c].1.clone();
+    }
+    let mut out: Vec<Planned> = ids
+        .iter()
+        .map(|id| {
+            let (len, guess) = length(id);
+            let e = memo[id].0;
+            Planned { id: id.clone(), start: e - len, end: e, question: question(id), on_path: path.contains(id), guess }
+        })
+        .collect();
+    out.sort_by_key(|p| (p.start, p.end, p.id.clone()));
+    out
+}
+
+/// goals (notes tagged goal) with a deadline: (id, deadline end of day)
+pub fn goals_with_deadline(store: &Store) -> Vec<(String, i64)> {
+    let mut v: Vec<(String, i64)> = store
+        .get()
+        .values()
+        .filter(|i| i.status().is_none() && i.tags().iter().any(|t| t == "goal"))
+        .filter_map(|i| i.deadline().and_then(|d| crate::util::date_timestamp(d)).map(|t| (i.id().clone(), t)))
+        .collect();
+    v.sort_by_key(|(id, t)| (*t, id.clone()));
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,6 +356,33 @@ mod tests {
         let src = Src { name: "cake", store: &s, log: &[] };
         let lanes = stores(&[src], "jul", 0, 2 * h);
         assert_eq!(render(&lanes[0], 0, 2 * h, 4, &[Color::Reset], true, false).to_string(), "░░▒▒");
+    }
+
+    #[test]
+    fn the_critical_path_is_the_chain_that_ends_last() {
+        let h = 3600;
+        let mut s = store();
+        let mut goal = Item::new("g".into(), vec![], None, vec!["goal".into()]);
+        goal.set_content("# g\n".into());
+        s.add(goal).unwrap();
+        let mut add = |id: &str, est: &str, blocked: Vec<&str>, who: &str| {
+            let mut i = task(id, who, vec![]);
+            i.set_parent(Some("g".into()));
+            if !est.is_empty() {
+                i.set_estimate(Some(est.into())).unwrap();
+            }
+            i.set_blocked_by(blocked.into_iter().map(String::from).collect());
+            s.add(i).unwrap();
+        };
+        add("a", "2h", vec![], "cc");
+        add("b", "3h", vec!["a", "q"], "cc");
+        add("side", "1h", vec![], "cc");
+        add("q", "", vec![], "jul");
+        let p = plan(&s, "g", "jul", 0);
+        let get = |id: &str| p.iter().find(|x| x.id == id).unwrap().clone();
+        assert_eq!((get("b").start, get("b").end), (2 * h, 5 * h));
+        assert!(get("a").on_path && get("b").on_path && !get("side").on_path);
+        assert!(get("q").question && get("q").end == 0);
     }
 
     #[test]
