@@ -1,10 +1,11 @@
 ---
 id: triage-garden
-status: review
+status: done
 parent: "[[ai-workflow]]"
 created: 2026-11-15T18:10:11+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
+closed: 2026-11-15T19:48:42+01:00
 assignee: ai
 owner: sevenuz
 time:

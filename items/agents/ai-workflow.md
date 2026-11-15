@@ -1,11 +1,12 @@
 ---
 id: ai-workflow
-status: review
+status: done
 tags: [plan]
 parent: "[[agents]]"
 created: 2026-11-13T17:35:30+01:00
 by: claude-code
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, eb1412a2-56ac-4478-9717-6ebac99000ac]
+closed: 2026-11-15T19:48:42+01:00
 assignee: claude-code
 owner: sevenuz
 ---

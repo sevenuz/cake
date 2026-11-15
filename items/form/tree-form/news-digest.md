@@ -1,11 +1,12 @@
 ---
 id: news-digest
-status: review
+status: done
 parent: "[[tree-form]]"
 created: 2026-11-15T17:47:55+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 8, out: 1807, cache_read: 764320, cache_write: 3816}}
+closed: 2026-11-15T19:48:42+01:00
 assignee: ai
 owner: sevenuz
 time:

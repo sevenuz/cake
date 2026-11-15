@@ -1,11 +1,12 @@
 ---
 id: prio-inherit
-status: review
+status: done
 parent: "[[cli]]"
 created: 2026-11-15T18:47:52+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 10, out: 3737, cache_read: 1219312, cache_write: 5475}}
+closed: 2026-11-15T19:48:42+01:00
 assignee: ai
 owner: sevenuz
 time:
