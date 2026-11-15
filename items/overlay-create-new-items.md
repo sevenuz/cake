@@ -1,9 +1,10 @@
 ---
 id: overlay-create-new-items
-status: review
+status: done
 created: 2026-11-15T16:41:13+01:00
 by: sevenuz
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
+closed: 2026-11-15T17:34:26+01:00
 assignee: ai
 owner: sevenuz
 ---
