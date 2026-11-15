@@ -1,12 +1,14 @@
 ---
 id: news-drop-w
-status: task
+status: doing
 parent: "[[what-does-do-assign]]"
 created: 2026-11-14T11:18:26+01:00
 by: claude-code
-sessions: [4fa59fcd-dfb0-420a-8037-705b420d66a2]
+sessions: [4fa59fcd-dfb0-420a-8037-705b420d66a2, eb1412a2-56ac-4478-9717-6ebac99000ac]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-15T17:47:55+01:00/
 ---
 # Remove w from the news table
 
