@@ -1,11 +1,12 @@
 ---
 id: colon-per-table
-status: review
+status: done
 parent: "[[tree-form]]"
 created: 2026-11-14T20:51:27+01:00
 by: claude-code
 sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10]
 usage: {claude-opus-5-5: {in: 16, out: 6050, cache_read: 1072647, cache_write: 9398}}
+closed: 2026-11-15T16:48:50+01:00
 assignee: ai
 owner: sevenuz
 time:
