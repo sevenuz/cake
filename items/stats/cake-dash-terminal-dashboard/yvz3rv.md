@@ -7,6 +7,7 @@ blocked_by: ["[[a3j36w]]", "[[dash-tabs]]"]
 created: 2026-10-27T12:19:28+01:00
 by: claude-code
 sessions: [69b1d969-f2c3-4f41-b58d-a996441f99e2, 81954e9f-9185-4d55-a366-5581de2aacd6, eb1412a2-56ac-4478-9717-6ebac99000ac]
+usage: {claude-opus-5-5: {in: 6, out: 1262, cache_read: 920521, cache_write: 2540}}
 assignee: claude-code
 owner: sevenuz
 time:
