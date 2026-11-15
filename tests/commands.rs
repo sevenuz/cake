@@ -698,3 +698,16 @@ fn mine_selects_your_items_with_what_grew_under_them() {
     // the agent runs cake for jul: --mine still means jul's items
     assert_eq!(run(&["ls", "--mine"], &agent), "◇ id idea\n└─ ◇ pl plan\n");
 }
+
+#[test]
+fn rename_by_prefix_keeps_tree_and_blockers() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "qwxyzk", "--todo", "-m", "# goal"]);
+    env.cake_ok(&d, &["add", "kid", "--todo", "-p", "qw", "-m", "# kid"]);
+    env.cake_ok(&d, &["add", "other", "--todo", "--blocked-by", "qw", "-m", "# other, see [[qwxyzk]]"]);
+    env.cake_ok(&d, &["rename", "qw", "agents"]);
+    assert!(env.cake_err(&d, &["rename", "agents", "kid"]).contains("already exists"));
+    assert_eq!(env.cake_ok(&d, &["ls"]), "○ ag goal\n└─ ○ ki kid\n○ ot other, see [[agents]]\n");
+    assert!(read_item(&d, "other").contains("[[agents]]"));
+}

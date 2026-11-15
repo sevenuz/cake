@@ -369,6 +369,11 @@ impl Item {
         &self.id
     }
 
+    /// a new id; the store fixes everything that points here (Store::rename)
+    pub fn set_id(&mut self, id: String) {
+        self.id = id;
+    }
+
     pub fn children(&self) -> &Vec<String> {
         &self.children
     }

@@ -369,6 +369,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: UsageAction,
     },
+    /// give an item a new id; children, blockers and [[links]] follow
+    Rename {
+        id: String,
+        new: String,
+    },
     /// move an item under a parent, or with its subtree to another store
     Mv {
         id: String,
@@ -448,6 +453,7 @@ impl Commands {
                 one(target)?
             }
             Commands::Usage { action: UsageAction::Add { id, .. } } => one(id)?,
+            Commands::Rename { id, .. } => one(id)?,
             Commands::Mv { id, parent, .. } => {
                 one(id)?;
                 if let Some(p) = parent.as_mut().filter(|p| *p != "-") {
@@ -494,6 +500,7 @@ impl Commands {
                 | Commands::Start { .. }
                 | Commands::Stop { .. }
                 | Commands::Mv { .. }
+                | Commands::Rename { .. }
                 | Commands::Usage { .. }
                 | Commands::Migrate { apply: true }
         )
@@ -902,6 +909,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             &commit_message(&args[1..], config.agent()),
         )?,
         Some(Commands::Mv { .. }) => unreachable!("clap requires a parent or --to-store"),
+        Some(Commands::Rename { id, new }) => commands::rename(debug, &mut store, id, new)?,
         Some(Commands::Set { to, selector, .. }) => {
             let selector = selector.selector(&selector.ids)?;
             let name = if to == "drop" { "dropped" } else { to.as_str() };

@@ -345,6 +345,48 @@ pub mod inner {
             false
         }
 
+        /// gives `old` the id `new`: its file, its children's parent,
+        /// blockers everywhere and `[[old]]` links in every body
+        pub fn rename(&mut self, old: &str, new: &str) -> Result<(), Box<dyn Error>> {
+            crate::util::check_id(new)?;
+            let Some(mut item) = self.items.remove(old) else { return Err(error::not_found(old)) };
+            if self.items.contains_key(new) {
+                self.items.insert(old.to_owned(), item);
+                return Err(error::invalid(format!("{} already exists.", new)));
+            }
+            item.set_id(new.to_owned());
+            self.items.insert(new.to_owned(), item);
+            // the old path is removed on save, the new one written
+            self.dirty.insert(old.to_owned());
+            self.dirty.insert(new.to_owned());
+            let link = (format!("[[{}]]", old), format!("[[{}]]", new));
+            for (id, i) in self.items.iter_mut() {
+                let mut changed = false;
+                if i.parents().first().is_some_and(|p| p == old) {
+                    i.set_parent(Some(new.to_owned()));
+                    changed = true;
+                }
+                if i.children().iter().any(|c| c == old) {
+                    i.retain_child(old);
+                    i.add_child(new);
+                }
+                if i.blocked_by().iter().any(|b| b == old) {
+                    let b = i.blocked_by().iter().map(|b| if b == old { new.to_owned() } else { b.clone() }).collect();
+                    i.set_blocked_by(b);
+                    changed = true;
+                }
+                if i.content().contains(&link.0) {
+                    let c = i.content().replace(&link.0, &link.1);
+                    i.set_content(c);
+                    changed = true;
+                }
+                if changed {
+                    self.dirty.insert(id.clone());
+                }
+            }
+            Ok(())
+        }
+
         /// re-parents `id` under `parent`, None detaches; refuses cycles
         pub fn move_item(&mut self, id: &str, parent: Option<&str>) -> Result<(), Box<dyn Error>> {
             if !self.items.contains_key(id) {
@@ -750,6 +792,31 @@ pub mod inner {
             store.move_item("c", None).unwrap();
             assert!(store.get_item("b").unwrap().children().is_empty());
             assert!(store.get_item("c").unwrap().parents().is_empty());
+        }
+
+        #[test]
+        fn rename_fixes_children_blockers_links_and_files() {
+            let dir = tempfile::tempdir().unwrap();
+            let mut s = Store::new(dir.path()).unwrap();
+            s.add(item("goal", None, vec![])).unwrap();
+            s.add(item("kid", Some("goal"), vec![])).unwrap();
+            let mut other = item("other", None, vec![]);
+            other.set_blocked_by(vec!["goal".into()]);
+            other.set_content("# other\n\nsee [[goal]] and [[goalie]]".into());
+            s.add(other).unwrap();
+            s.save().unwrap();
+            assert!(s.rename("goal", "kid").is_err(), "taken");
+            assert!(s.rename("nope", "x").is_err());
+            s.rename("goal", "agents").unwrap();
+            s.save().unwrap();
+            let s = Store::new(dir.path()).unwrap();
+            assert!(s.get_item("goal").is_none());
+            assert_eq!(s.get_item("kid").unwrap().parents(), ["agents".to_string()]);
+            assert_eq!(s.get_item("agents").unwrap().children(), &vec!["kid".to_string()]);
+            let o = s.get_item("other").unwrap();
+            assert_eq!(o.blocked_by(), &vec!["agents".to_string()]);
+            assert!(o.content().contains("[[agents]] and [[goalie]]"), "{}", o.content());
+            assert!(dir.path().join("items/agents/kid.md").exists() && !dir.path().join("items/goal.md").exists() && !dir.path().join("items/goal").exists());
         }
 
         #[test]

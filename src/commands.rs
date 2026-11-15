@@ -272,6 +272,16 @@ where
     Ok(Report::Items(vec![id.to_owned()]))
 }
 
+pub fn rename<F>(debug: F, store: &mut Store, id: &str, new: &str) -> Result<Report, Box<dyn Error>>
+where
+    F: Fn(&str),
+{
+    debug(&format!("rename {:?} {:?}", id, new));
+    store.rename(id, new)?;
+    say!("{} is now {}.", id, new);
+    Ok(Report::Items(vec![new.to_owned()]))
+}
+
 /// moves `id` and its subtree to the store at `target`, top-level there;
 /// the target is locked and committed on its own
 pub fn mv_to_store<F>(

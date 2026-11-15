@@ -42,7 +42,8 @@ changed items record your session in `sessions`, commits are tagged
 ## Names
 
 The id is a slug of the title (first 4 words without filler) and the file
-name. Ids never change.
+name. Ids change only through `cake rename <id> <new>` (links, blockers and
+children follow); rename only when the user asks.
 
 - Title starts with the topic: `Merge driver for sync conflicts`.
 - No tool, project or parent name, no status or dates in the title.
@@ -174,6 +175,7 @@ cake edit <ids> --json [-m BODY] [--prio N] [--due D] [--deadline D] [--assignee
 # who: me (the user), ai (any agent), an agent or person name, - nobody
 cake start|stop <id> --json             # timer; start sets doing
 cake mv <id> --to-store <name|global|path> --json   # with subtree, top-level there
+cake rename <id> <new> --json           # new id; children, blockers, [[links]] follow
 cake rm <ids> --json
 ```
 
