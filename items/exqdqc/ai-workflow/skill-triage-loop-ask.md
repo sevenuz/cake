@@ -5,7 +5,7 @@ tags: [plan]
 parent: "[[ai-workflow]]"
 created: 2026-11-13T17:35:30+01:00
 by: claude-code
-sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 8, out: 5688, cache_read: 504361, cache_write: 6477}}
 closed: 2026-11-13T18:07:29+01:00
 time:
