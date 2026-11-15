@@ -1,12 +1,14 @@
 ---
 id: nothing-waits-dump
-status: task
+status: doing
 parent: "[[if-nothing-todo-then]]"
 created: 2026-11-14T22:57:07+01:00
 by: claude-code
-sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10]
+sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-15T17:15:14+01:00/
 ---
 # Nothing waits: open dump with a hint
 
