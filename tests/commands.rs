@@ -750,3 +750,43 @@ fn archive_moves_old_closed_subtrees_and_show_still_finds_them() {
     assert!(items.join("cli/old.md").is_file());
     assert!(env.cake_ok(&d, &["ls"]).contains("old work"));
 }
+
+#[test]
+fn claude_hook_logs_session_time_split_by_the_running_timer() {
+    let env = Env::new();
+    let d = env.plain_store();
+    let s = [("AI_AGENT", "claude-code"), ("CLAUDE_CODE_SESSION_ID", "s1")];
+    env.cake_env(&d, &["add", "work", "--todo", "-m", "# Work"], &s);
+    env.cake_env(&d, &["start", "work"], &s);
+    std::thread::sleep(std::time::Duration::from_millis(2100));
+    let now = chrono::Utc::now();
+    let line = |kind: &str, t: chrono::DateTime<chrono::Utc>| {
+        format!("{{\"type\":\"{}\",\"timestamp\":\"{}\",\"message\":{{}}}}\n", kind, t.to_rfc3339())
+    };
+    let transcript = env.path("t.jsonl");
+    // the user asked 10 minutes ago, the agent answers now
+    std::fs::write(&transcript, line("user", now - chrono::Duration::minutes(10)) + &line("assistant", now)).unwrap();
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_cake"))
+        .args(["usage", "claude-hook"])
+        .current_dir(&d)
+        .env("XDG_CONFIG_HOME", env.path("config"))
+        .env("XDG_DATA_HOME", env.path("data"))
+        .env("XDG_STATE_HOME", env.path("state"))
+        .env("AI_AGENT", "claude-code")
+        .env("CAKE_AUTHOR", "jul")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let input = format!("{{\"session_id\":\"s1\",\"transcript_path\":\"{}\"}}", transcript.display());
+    std::io::Write::write_all(child.stdin.as_mut().unwrap(), input.as_bytes()).unwrap();
+    assert!(child.wait().unwrap().success());
+    let log = d.join(".cake/log");
+    let files: Vec<_> = std::fs::read_dir(&log).unwrap().map(|e| e.unwrap().path()).collect();
+    assert_eq!(files.len(), 1, "one file for this month and machine");
+    let lines: Vec<serde_json::Value> =
+        std::fs::read_to_string(&files[0]).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    assert_eq!(lines.len(), 2, "{:?}", lines);
+    assert!(lines.iter().all(|l| l["who"] == "jul" && l["kind"] == "chat" && l["session"] == "s1"));
+    assert!(lines[0].get("item").is_none(), "before the timer: the store only");
+    assert_eq!(lines[1]["item"], "work");
+}

@@ -5,6 +5,7 @@
 //! ones collect it in a local pending file until their timer stops.
 
 use crate::item::Usage;
+use crate::log;
 use crate::store::Store;
 use crate::util;
 use serde::{Deserialize, Serialize};
@@ -78,7 +79,14 @@ struct Answer {
 }
 
 /// complete new lines of `path` since the last call, as answers
+#[cfg(test)]
 fn new_answers(path: &Path) -> Result<Vec<Answer>, Box<dyn Error>> {
+    Ok(new_lines(path)?.0)
+}
+
+/// complete new lines of `path` since the last call: the answers and the
+/// time of every line (user and assistant), for the session log
+fn new_lines(path: &Path) -> Result<(Vec<Answer>, Vec<i64>), Box<dyn Error>> {
     let offsets_file = state_dir()?.join("claude-offsets.json");
     let mut offsets: BTreeMap<String, u64> = read_json(&offsets_file);
     let key = path.to_string_lossy().to_string();
@@ -94,8 +102,14 @@ fn new_answers(path: &Path) -> Result<Vec<Answer>, Box<dyn Error>> {
     let complete = text.rfind('\n').map_or(0, |i| i + 1);
     let mut seen = HashSet::new();
     let mut answers = vec![];
+    let mut times = vec![];
     for line in text[..complete].lines() {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        if matches!(v["type"].as_str(), Some("user" | "assistant")) {
+            if let Some(t) = v["timestamp"].as_str().and_then(|t| util::parse_timestamp(t).ok()) {
+                times.push(t);
+            }
+        }
         let m = &v["message"];
         if v["type"] != "assistant" || m["usage"].is_null() {
             continue;
@@ -121,15 +135,50 @@ fn new_answers(path: &Path) -> Result<Vec<Answer>, Box<dyn Error>> {
     }
     offsets.insert(key, offset + complete as u64);
     write_json(&offsets_file, &offsets)?;
-    Ok(answers)
+    Ok((answers, times))
 }
 
-/// the Stop hook: attribute the session's new answers, never fails loudly
-pub fn claude_hook(store: &mut Store) -> Result<(), Box<dyn Error>> {
+/// the session's activity since the last hook as log lines: stretches of
+/// the transcript's times (a pause up to log::GAP after the last stretch
+/// continues it), split by the timers of the session's items
+fn session_lines(store: &Store, session: &str, times: &[i64], who: &str) -> Result<Vec<log::Line>, Box<dyn Error>> {
+    let ends_file = state_dir()?.join("claude-session-ends.json");
+    let mut ends: BTreeMap<String, i64> = read_json(&ends_file);
+    let stretches = log::stretches(times, ends.get(session).copied());
+    let timers: Vec<(String, i64, i64)> = store
+        .get()
+        .values()
+        .filter(|i| i.sessions().iter().any(|s| s == session))
+        .flat_map(|i| i.intervals().into_iter().map(|(s, e)| (i.id().to_owned(), s, e)))
+        .collect();
+    let mut lines = vec![];
+    for (start, end) in &stretches {
+        for (s, e, item) in log::split(*start, *end, &timers) {
+            let mut l = log::Line::new(s, e, who, "chat");
+            l.agent = Some("claude-code".into());
+            l.session = Some(session.to_owned());
+            l.item = item;
+            lines.push(l);
+        }
+    }
+    if let Some((_, end)) = stretches.last() {
+        ends.insert(session.to_owned(), *end);
+        write_json(&ends_file, &ends)?;
+    }
+    Ok(lines)
+}
+
+/// the Stop hook: attribute the session's new answers and log its
+/// activity (with `log_as`: the user); returns the log files written
+pub fn claude_hook(store: &mut Store, log_as: Option<&str>) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     let mut stdin = String::new();
     std::io::stdin().read_to_string(&mut stdin)?;
     let input: HookInput = serde_json::from_str(&stdin)?;
-    let answers = new_answers(&input.transcript_path)?;
+    let (answers, times) = new_lines(&input.transcript_path)?;
+    let files = match log_as {
+        Some(who) => log::append(store.root(), &session_lines(store, &input.session_id, &times, who)?)?,
+        None => vec![],
+    };
     let file = pending_file(store.root())?;
     let mut pending: Pending = read_json(&file);
     for a in answers {
@@ -147,7 +196,7 @@ pub fn claude_hook(store: &mut Store) -> Result<(), Box<dyn Error>> {
     }
     write_json(&file, &pending)?;
     fold(store)?;
-    Ok(())
+    Ok(files)
 }
 
 #[cfg(test)]

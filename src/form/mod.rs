@@ -948,6 +948,10 @@ pub fn run(root: &Path, user: &str, mut o: Options) -> Result<(), Box<dyn Error>
     let summary: Vec<String> = o.modules.iter().zip(&counts).filter(|(_, c)| **c > 0).map(|(m, c)| format!("{} {}", m, c)).collect();
     let summary = if summary.is_empty() { "nothing waiting".to_string() } else { summary.join(", ") };
     ratatui::restore();
+    // time with the form open goes to the session log of this store
+    for (start, end) in crate::log::stretches(&ui.keys.active, None) {
+        let _ = Cake { root }.call(&["usage", "log", "--start", &start.to_string(), "--end", &end.to_string()]);
+    }
     for (_, r) in &stores {
         if let Some(f) = last_run_file(r) {
             let _ = std::fs::write(f, crate::util::timestamp().to_string());

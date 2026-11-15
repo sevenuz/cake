@@ -242,6 +242,8 @@ pub struct Keymap {
     escapes: Vec<Vec<K>>,
     /// keys read but not used yet (after a sequence did not match)
     pending: VecDeque<K>,
+    /// when keys were pressed, for the session log
+    pub active: Vec<i64>,
 }
 
 impl Keymap {
@@ -260,7 +262,7 @@ impl Keymap {
         }
         let escapes = parse_spec(config.get("escape").map(String::as_str).unwrap_or(ESCAPE_DEFAULT))
             .map_err(|e| format!("config keys.escape: {}", e))?;
-        Ok(Keymap { binds, escapes, pending: VecDeque::new() })
+        Ok(Keymap { binds, escapes, pending: VecDeque::new(), active: vec![crate::util::timestamp()] })
     }
 
     /// the keys of `act` as written in vim notation, for help and legends
@@ -300,6 +302,7 @@ impl Keymap {
             }
             if let Event::Key(e) = event::read()? {
                 if e.kind == KeyEventKind::Press {
+                    self.active.push(crate::util::timestamp());
                     return Ok(Some(K::from(e)));
                 }
             }
@@ -410,7 +413,7 @@ impl Keymap {
                     .iter()
                     .filter(|(_, a)| a == act)
                     .map(|(s, _)| {
-                        let tmp = Keymap { binds: vec![(s.clone(), *act)], escapes: vec![], pending: VecDeque::new() };
+                        let tmp = Keymap { binds: vec![(s.clone(), *act)], escapes: vec![], pending: VecDeque::new(), active: vec![] };
                         tmp.keys_of(*act)
                     })
                     .collect();

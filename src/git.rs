@@ -182,6 +182,11 @@ pub fn sync(dir: &Path) -> Result<(), Box<dyn Error>> {
     if merge_in_progress(dir)? {
         return Err(conflict_error(dir));
     }
+    // session log lines not committed yet (they wait for an item change)
+    let log = dir.join("log");
+    if log.is_dir() {
+        commit(dir, &[log], "cake session log")?;
+    }
     git(dir, &["fetch", "-q", &remote])?;
     if let Err(e) = git(dir, &["merge", "-q", "--no-edit", "@{u}"]) {
         return Err(if merge_in_progress(dir)? { conflict_error(dir) } else { e });

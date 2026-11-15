@@ -4,6 +4,7 @@ mod error;
 mod footprint;
 mod git;
 mod item;
+mod log;
 mod markdown;
 mod migrate;
 mod form;
@@ -199,8 +200,17 @@ pub enum UsageAction {
         cache_write: u64,
     },
     /// Claude Code Stop hook: hook JSON on stdin, attributes the session's
-    /// new answers to the items whose timer ran
+    /// new answers to the items whose timer ran and logs the session's time
     ClaudeHook {},
+    /// log time with cake open (the form and dashboard call it)
+    #[command(hide = true)]
+    Log {
+        /// unix seconds
+        #[arg(long)]
+        start: i64,
+        #[arg(long)]
+        end: i64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -980,7 +990,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
         Some(Commands::Usage { action: UsageAction::ClaudeHook {} }) => {
             if config.usage_tracking {
-                usage::claude_hook(&mut store)?;
+                usage::claude_hook(&mut store, Some(&config.user(&root)))?;
+            }
+            commands::Report::None
+        }
+        Some(Commands::Usage { action: UsageAction::Log { start, end } }) => {
+            if end > start {
+                log::append(&root, &[log::Line::new(*start, *end, &config.user(&root), "cake")])?;
             }
             commands::Report::None
         }
@@ -999,7 +1015,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     if let Some(session) = config.session() {
         store.add_session(&session);
     }
-    let changed = store.save()?;
+    let mut changed = store.save()?;
+    // the session log rides along with the next commit of items: a commit
+    // per hook call (every answer) would flood the history
+    let log_dir = root.join("log");
+    if !changed.is_empty() && log_dir.is_dir() {
+        changed.push(log_dir);
+    }
     if !config.disable_git && git::is_store_repo(&root) {
         let message = commit_message(&args[1..], config.agent());
         debug(&format!("git commit {:?}: {}", changed, message));
