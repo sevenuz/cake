@@ -1,11 +1,12 @@
 ---
 id: tag-filter
-status: review
+status: done
 parent: "[[form-polish]]"
 created: 2026-11-15T22:56:23+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 16, out: 4197, cache_read: 1862855, cache_write: 8655}}
+closed: 2026-11-15T23:17:24+01:00
 assignee: claude-code
 owner: sevenuz
 time:
