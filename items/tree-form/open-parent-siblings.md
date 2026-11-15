@@ -1,6 +1,6 @@
 ---
 id: open-parent-siblings
-status: doing
+status: review
 parent: "[[tree-form]]"
 created: 2026-11-15T17:12:06+01:00
 by: claude-code
@@ -8,7 +8,7 @@ sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 assignee: ai
 owner: sevenuz
 time:
-  - 2026-11-15T17:13:55+01:00/
+  - 2026-11-15T17:13:55+01:00/2026-11-15T17:23:59+01:00
 ---
 # o opens parent, siblings and children
 
@@ -16,3 +16,5 @@ time:
 - what: o on a row shows one parent up, all its children (with +N where they hide children) and the row's own children; o again closes
 - design: [[form-round-three]]
 - done when: tree test for siblings and +N; checked in tmux
+
+changed: o shows one parent up, all its children (siblings, +N where they hide children) and the row's own children; o again closes; tree test; commits: f32ada4; try: cake form, o on a module item whose parent has other children
