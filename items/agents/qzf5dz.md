@@ -2,7 +2,7 @@
 id: qzf5dz
 status: task
 tags: [workflow]
-parent: "[[exqdqc]]"
+parent: "[[agents]]"
 blocked_by: ["[[skill-load-hooks]]"]
 created: 2026-10-27T13:29:58+01:00
 by: claude-code

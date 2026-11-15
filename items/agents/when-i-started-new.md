@@ -1,7 +1,7 @@
 ---
 id: when-i-started-new
 status: task
-parent: "[[exqdqc]]"
+parent: "[[agents]]"
 created: 2026-11-14T11:24:57+01:00
 by: sevenuz
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]

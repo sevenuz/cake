@@ -1,10 +1,10 @@
 ---
 id: planning-tokens
 status: task
-parent: "[[exqdqc]]"
+parent: "[[agents]]"
 created: 2026-11-14T22:49:48+01:00
 by: claude-code
-sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10]
+sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac]
 assignee: ai
 owner: sevenuz
 ---
