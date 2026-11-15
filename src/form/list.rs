@@ -265,10 +265,10 @@ fn card_of(kind: Kind, item: &Value, all: &[Value]) -> (String, Vec<String>) {
                 .map(|c| format!("- {} {}", if str_of(c, "status") == "done" { g.check } else { g.dropped }, str_of(c, "title")))
                 .collect();
             let text = if parts.is_empty() { body } else { format!("{}\n\nparts:\n{}", body, parts.join("\n")) };
-            (text, vec!["ok, done".into(), "drop".into(), "talk about it again (back to you, #discuss)".into()])
+            (text, vec!["ok, done".into(), "drop".into(), "talk about it first: back to you, #discuss".into()])
         }
     };
-    options.push(format!("{} {}", g.ellipsis, if kind == Kind::Answer { "own words" } else { "change something" }));
+    options.push(format!("{} {}", g.ellipsis, if kind == Kind::Answer { "own words" } else { "change something: the agent reworks it" }));
     (context, options)
 }
 
@@ -662,8 +662,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                 Kind::Review => vec![
                     (ks(Act::Complete), "ok".into()),
                     (ks(Act::Drop), "drop".into()),
-                    (ks(Act::Task), "talk".into()),
-                    (ks(Act::Insert), "change".into()),
+                    (ks(Act::Task), "talk first".into()),
+                    (ks(Act::Insert), "rework".into()),
                 ],
             }
         };
@@ -1132,7 +1132,7 @@ mod tests {
         assert_eq!(ctx, "Why.");
         assert_eq!(opts, ["always", "with -d (recommended)", "… own words"]);
         let (_, opts) = card_of(Kind::Review, &q, &[]);
-        assert_eq!(opts, ["ok, done", "drop", "talk about it again (back to you, #discuss)", "… change something"]);
+        assert_eq!(opts, ["ok, done", "drop", "talk about it first: back to you, #discuss", "… change something: the agent reworks it"]);
     }
 
     #[test]
