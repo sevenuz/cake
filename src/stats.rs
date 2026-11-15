@@ -44,6 +44,15 @@ impl Period {
         }
     }
 
+    /// what one sparkline mark stands for
+    pub fn bucket(self) -> &'static str {
+        match self {
+            Period::Day => "per hour",
+            Period::Year => "per month",
+            _ => "per day",
+        }
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Period::Day => "day",

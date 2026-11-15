@@ -109,6 +109,28 @@ pub fn sessions(srcs: &[Src], user: &str, from: i64, to: i64) -> Vec<Lane> {
     lanes
 }
 
+/// G3: one lane per item worked in [from, to]: its timers, and the
+/// user's chat time on it (light), first started first
+pub fn items(srcs: &[Src], user: &str, from: i64, to: i64) -> Vec<Lane> {
+    let mut out: Vec<Lane> = vec![];
+    for (n, s) in srcs.iter().enumerate() {
+        let mut by_item: std::collections::BTreeMap<String, Vec<Bar>> = Default::default();
+        for i in s.store.get().values() {
+            for (a, b) in i.intervals().into_iter().filter(|(a, b)| overlaps(*a, *b, from, to)) {
+                by_item.entry(i.id().clone()).or_default().push(Bar { start: a, end: b, store: n, fill: Fill::Solid });
+            }
+        }
+        for l in s.log.iter().filter(|l| l.who == user) {
+            if let (Some(id), Some((a, b))) = (&l.item, l.span().filter(|(a, b)| overlaps(*a, *b, from, to))) {
+                by_item.entry(id.clone()).or_default().push(Bar { start: a, end: b, store: n, fill: Fill::Light });
+            }
+        }
+        out.extend(by_item.into_iter().map(|(name, bars)| Lane { name, bars }));
+    }
+    out.sort_by_key(|l| (l.bars.iter().map(|b| b.start).min().unwrap_or(0), l.name.clone()));
+    out
+}
+
 /// G2: one lane per store with everything that ran there; render shades
 /// it by how many bars overlap
 pub fn stores(srcs: &[Src], user: &str, from: i64, to: i64) -> Vec<Lane> {
@@ -345,6 +367,22 @@ mod tests {
         assert!(avg > 1.0);
         let line = render(&lanes[0], 0, 4 * h, 8, &[Color::Reset], false, false).to_string();
         assert_eq!(line, "██▒     ", "chat 0-1h, the form 1h-1h10");
+    }
+
+    #[test]
+    fn items_get_a_lane_each_with_the_users_chat_time() {
+        let h = 3600;
+        let mut s = store();
+        s.add(task("a", "cc", vec![h, 2 * h])).unwrap();
+        s.add(task("b", "cc", vec![0, h])).unwrap();
+        s.add(task("old", "cc", vec![-9 * h, -8 * h])).unwrap();
+        let mut l = LogLine::new(h, 3 * h, "jul", "chat");
+        l.item = Some("a".into());
+        let log = vec![l];
+        let lanes = items(&[Src { name: "cake", store: &s, log: &log }], "jul", 0, 4 * h);
+        let names: Vec<&str> = lanes.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, ["b", "a"], "first started first, nothing outside the window");
+        assert_eq!(render(&lanes[1], 0, 4 * h, 4, &[Color::Reset], false, false).to_string(), " █▒ ", "timer, then chat only");
     }
 
     #[test]

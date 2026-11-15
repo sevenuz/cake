@@ -177,7 +177,7 @@ fn rows(srcs: &[Src], tab: Option<usize>, user: &str) -> Vec<Row> {
             let finish = plan.iter().filter(|p| p.on_path).map(|p| p.end).max().unwrap_or(now);
             if finish > deadline {
                 if let Some(i) = s.get_item(&g) {
-                    focus.push(item_row(srcs, n, all, "!", i, format!("critical path {} over the deadline (g, v v)", hm(finish - deadline)), None));
+                    focus.push(item_row(srcs, n, all, "!", i, format!("critical path {} over the deadline (g, v v v)", hm(finish - deadline)), None));
                 }
             }
         }
@@ -323,7 +323,7 @@ struct Overlay {
     only: Option<usize>,
     /// per store, for `period`
     stats: Vec<stats::StoreStats>,
-    /// gantt: 0 lanes per session, 1 per store, 2 critical paths
+    /// gantt: 0 lanes per session, 1 per store, 2 per item, 3 critical paths
     view: u8,
     /// gantt view 2: (store, goal, deadline, plan) of goals with deadlines
     plans: Vec<(usize, String, i64, Vec<crate::gantt::Planned>)>,
@@ -364,7 +364,11 @@ impl Overlay {
                 (n, g, d, p)
             })
             .collect();
-        let mut lanes = if self.view == 0 { crate::gantt::sessions(&gsrcs, user, gfrom, now) } else { crate::gantt::stores(&gsrcs, user, gfrom, now) };
+        let mut lanes = match self.view {
+            0 => crate::gantt::sessions(&gsrcs, user, gfrom, now),
+            1 => crate::gantt::stores(&gsrcs, user, gfrom, now),
+            _ => crate::gantt::items(&gsrcs, user, gfrom, now),
+        };
         // store indices of the lanes refer to `picked`; map back for colors
         for l in lanes.iter_mut() {
             for b in l.bars.iter_mut() {
@@ -592,12 +596,12 @@ fn paint_path(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
 
 fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     use crate::gantt;
-    if o.view == 2 {
+    if o.view == 3 {
         return paint_path(f, area, srcs, o);
     }
     let (from, to) = o.span;
     let scope = o.only.map_or("all stores".to_string(), |n| srcs[n].name.clone());
-    let block = boxed(format!(" gantt · {} · {} · {} ", if o.period == Period::Day { "24 h" } else { "7 days" }, if o.view == 0 { "who" } else { "stores" }, scope));
+    let block = boxed(format!(" gantt · {} · {} · {} ", if o.period == Period::Day { "24 h" } else { "7 days" }, ["who", "stores", "items"][o.view.min(2) as usize], scope));
     let inner = block.inner(area);
     f.render_widget(block, area);
     let name_w = o.lanes.iter().map(|l| l.name.chars().count()).max().unwrap_or(4).clamp(4, 22);
@@ -621,7 +625,9 @@ fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
         legend.push(Span::styled("■ ", Style::default().fg(colors[n % colors.len()])));
         legend.push(Span::styled(format!("{}  ", srcs[n].name), dim()));
     }
-    let marks = if o.view == 0 { "█ working  ▒ in cake  · waits on you" } else { "░ 1 at once  ▒ 2  ▓ 3  █ 4+  ⁚ waits on you" };
+    let marks = if o.view == 2 {
+        "█ timer  ▒ your chat on it"
+    } else if o.view == 0 { "█ working  ▒ in cake  · waits on you" } else { "░ 1 at once  ▒ 2  ▓ 3  █ 4+  ⁚ waits on you" };
     legend.push(Span::styled(marks, dim()));
     lines.push(Line::from(legend));
     let (max, avg, waited) = gantt::summary(&o.lanes, from, to);
@@ -659,7 +665,7 @@ fn paint_stats(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     let inner = block.inner(area);
     f.render_widget(block, area);
     let w = srcs.iter().map(|s| s.name.chars().count()).max().unwrap_or(5).clamp(5, 16);
-    let head = format!("{:w$}  {:>6}  {:>6}  {:>7}  {:>6}  {:>8}  {:>4}  {}", "", "you", "agents", "tokens", "kWh", "CO2e", "done", "per bucket", w = w);
+    let head = format!("{:w$}  {:>6}  {:>6}  {:>7}  {:>6}  {:>8}  {:>4}  {}", "", "you", "agents", "tokens", "kWh", "CO2e", "done", o.period.bucket(), w = w);
     let row = |name: &str, n: &stats::Numbers, buckets: String| {
         format!(
             "{:w$}  {:>6}  {:>6}  {:>7}  {:>6.2}  {:>6.0} g  {:>4}  {}",
@@ -698,7 +704,7 @@ fn paint_stats(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
 const MEDIUM: u16 = 100;
 const WIDE: u16 = 150;
 
-fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &str, side: &Side) {
+fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &str, side: &Side, user: &str) {
     let t = theme::t();
     let area = f.area();
     let col = Rect { x: area.x + 1, width: area.width.saturating_sub(2), ..area };
@@ -742,7 +748,10 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
     let used: usize = tabs.iter().map(|s| s.width()).sum();
     let room = (head.width as usize).saturating_sub(5 + used);
     tabs.push(Span::styled(format!("{:>w$}", cut(total, room), w = room), dim()));
-    f.render_widget(Paragraph::new(Line::from(tabs)).block(boxed(String::new())), head);
+    // who and when, in the top border
+    let clock = chrono::Local::now().format("%a %H:%M").to_string();
+    let block = boxed(String::new()).title(Line::from(Span::styled(format!(" {} · {} ", user, clock), dim())).right_aligned());
+    f.render_widget(Paragraph::new(Line::from(tabs)).block(block), head);
     if let Some(o) = &v.overlay {
         let body = Rect { height: list.height + card_area.height, ..list };
         match o.kind {
@@ -753,7 +762,7 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
         let k = match o.kind {
             Kind::Pie => "m measure  d period  j/k slice  <cr> goals  <bs> stores  s stats  g gantt  q back",
             Kind::Stats => "d period  p pie  g gantt  q back",
-            Kind::Gantt => "v who/stores/path  d day/week  j/k goal  p pie  s stats  q back",
+            Kind::Gantt => "v who/stores/items/path  d day/week  j/k goal  p pie  s stats  q back",
         };
         f.render_widget(Paragraph::new(Line::from(Span::styled(k, dim()))), keys);
         return;
@@ -844,7 +853,7 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
             if rows.get(v.sel).map_or(true, |r| r.store.is_none()) {
                 v.sel = selectable(&rows, v.sel, true);
             }
-            term.draw(|f| paint(f, &srcs, &v, &rows, &total, &side))?;
+            term.draw(|f| paint(f, &srcs, &v, &rows, &total, &side, user))?;
             if !event::poll(Duration::from_millis(500))? {
                 if last.elapsed() >= Duration::from_secs(2) {
                     srcs = load(root)?;
@@ -893,7 +902,7 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                         o.refresh(&srcs, user);
                     }
                     KeyCode::Char('v') if o.kind == Kind::Gantt => {
-                        o.view = (o.view + 1) % 3;
+                        o.view = (o.view + 1) % 4;
                         o.sel = 0;
                         o.refresh(&srcs, user);
                     }

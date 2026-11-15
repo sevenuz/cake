@@ -476,7 +476,7 @@ pub fn stats(config: &Config, store: &Store, period: &str, all: bool) -> Result<
     if !out::json() {
         let w = rows.iter().map(|(n, _)| n.chars().count()).max().unwrap_or(5).max(5);
         println!("{} {}", period.name(), util::format_timestamp(from)[..10].to_string() + " – now");
-        println!("{:w$}  {:>6}  {:>6}  {:>7}  {:>8}  {:>4}  {}", "", "you", "agents", "tokens", "CO2e", "done", "per bucket", w = w);
+        println!("{:w$}  {:>6}  {:>6}  {:>7}  {:>8}  {:>4}  {}", "", "you", "agents", "tokens", "CO2e", "done", period.bucket(), w = w);
         let line = |name: &str, n: &stats::Numbers, buckets: &str| {
             println!(
                 "{:w$}  {:>6}  {:>6}  {:>7}  {:>6.1} g  {:>4}  {}",
