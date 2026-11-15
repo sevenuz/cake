@@ -6,6 +6,7 @@ blocked_by: ["[[gantt-stores]]", "[[estimate-field]]"]
 created: 2026-11-15T22:31:55+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
+usage: {claude-opus-5-5: {in: 10, out: 8501, cache_read: 1681438, cache_write: 9971}}
 assignee: claude-code
 owner: sevenuz
 time:
