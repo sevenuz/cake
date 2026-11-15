@@ -1,5 +1,6 @@
 ---
 id: cgm3gx
+status: task
 tags: [tui]
 parent: "[[cake-dash-terminal-dashboard]]"
 created: 2026-10-27T13:11:05+01:00
@@ -15,3 +16,5 @@ owner: sevenuz
 - edges from parent and `blocked_by`
 - critical path through `blocked_by` chains (longest tracked duration)
 - filter with the normal selectors
+
+update (grilling 2026-11-15): full-screen overlay g, v cycles G1 sessions → G2 stores → G3 items with critical path to a goal's deadline; see [[dash-design]]
