@@ -1,12 +1,14 @@
 ---
 id: box-no-field-line
-status: task
+status: doing
 parent: "[[tree-form]]"
 created: 2026-11-15T17:12:06+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-15T17:14:01+01:00/
 ---
 # Details box without the field line
 
