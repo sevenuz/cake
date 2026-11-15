@@ -167,6 +167,8 @@ struct Screen {
     focus: Option<usize>,
     /// tree modules: the tree line of the cursor; the tree fills the screen
     tree_focus: Option<usize>,
+    /// put the tree cursor in the middle of the view (zz)
+    center: bool,
     /// the card has the focus: its border in the hint color
     card_active: bool,
     /// the terminal cursor, columns into the last input line
@@ -195,6 +197,8 @@ struct Ui {
     sort_who: String,
     /// the ALL tab's view: 0 open work, 1 with notes, 2 with closed items
     all_filter: u8,
+    /// tags shown in the tree (#)
+    show_tags: bool,
     /// per step: nothing left to decide (a check in the header)
     done: Vec<bool>,
     /// items changed this run per store and module: they stay in that module
@@ -463,6 +467,11 @@ fn paint(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen
     paint_max(f, header_lines, screen, step, max);
 }
 
+thread_local! {
+    /// the first tree row in view, kept between paints
+    static TREE_TOP: std::cell::Cell<u16> = const { std::cell::Cell::new(0) };
+}
+
 /// paint, returns how far the card text can scroll
 fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Screen, step: usize, max: u16) -> u16 {
     let g = style::g();
@@ -500,8 +509,14 @@ fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Sc
             let gap = u16::from(has_card);
             let card_h = if has_card { avail.saturating_sub(gap) / 2 } else { 0 };
             let tree_h = avail.saturating_sub(card_h + gap);
-            // the cursor row and one line under it stay in view
-            let scroll = (focus as u16 + 2).saturating_sub(tree_h).min(len.saturating_sub(tree_h));
+            // the view stays where it was (like vim) as long as the cursor
+            // row and one line under it are in view; zz centers
+            let prev = TREE_TOP.with(|t| t.get());
+            let want = if screen.center { (focus as u16).saturating_sub(tree_h / 2) } else { prev };
+            let low = (focus as u16 + 2).saturating_sub(tree_h);
+            let high = (focus as u16).saturating_sub(1);
+            let scroll = want.clamp(low, high.max(low)).min(len.saturating_sub(tree_h));
+            TREE_TOP.with(|t| t.set(scroll));
             (tree_h, scroll, card_h)
         }
         None => {
@@ -862,7 +877,7 @@ pub fn run(root: &Path, user: &str, mut o: Options) -> Result<(), Box<dyn Error>
         per_module.insert(0, 0);
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.iter().cloned().chain(["all".to_string()]).collect(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), all_filter: 0, done: vec![false; o.modules.len() + 1], changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.iter().cloned().chain(["all".to_string()]).collect(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), all_filter: 0, show_tags: true, done: vec![false; o.modules.len() + 1], changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the

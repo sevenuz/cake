@@ -440,8 +440,13 @@ impl View<'_> {
         let (t, g) = (theme::t(), style::g());
         let with_options = actions && self.kind.cards() && matches(self.kind, item, all, self.user, self.since);
         let (text, options) = if with_options { card_of(self.kind, item, all) } else { (body_of(item), vec![]) };
-        // the fields are in the tree row, not repeated here
+        // the fields are in the tree row, not repeated here; tags may be
+        // hidden there (#) or cut
         let mut lines: Vec<Line<'static>> = vec![];
+        let tags: Vec<String> = item["tags"].as_array().into_iter().flatten().filter_map(|t| t.as_str()).map(|t| format!("#{}", t)).collect();
+        if !tags.is_empty() {
+            lines.push(Line::from(Span::styled(tags.join(" "), dim())));
+        }
         if let Some(what) = news_what(item, self.user, self.since).filter(|_| self.kind == Kind::News) {
             lines.push(Line::from(vec![Span::styled("what ", dim()), Span::raw(what)]));
         }
@@ -508,6 +513,8 @@ struct State {
     /// lines the box text is scrolled
     scroll: u16,
     help: bool,
+    /// center the view on the cursor at the next paint (zz)
+    center: bool,
     note: Option<(String, bool)>,
 }
 
@@ -521,7 +528,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
     let stores: Vec<String> = crate::stores::all()?.into_iter().map(|(n, _)| n).filter(|n| n != store).collect();
     let whos = who_cycle(root, user);
     ui.module = kind.name();
-    let mut st = State { cur_id: String::new(), added: HashSet::new(), opened: HashSet::new(), in_box: false, sel: 0, scroll: 0, help: false, note: None };
+    let mut st = State { cur_id: String::new(), added: HashSet::new(), opened: HashSet::new(), in_box: false, sel: 0, scroll: 0, help: false, center: false, note: None };
     let mut decided = 0;
     let page = 10usize;
     loop {
@@ -542,6 +549,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         if kind == Kind::All {
             tree.mine = Some(user.to_owned());
         }
+        tree.tags = ui.show_tags;
         let rows = tree.rows();
         if rows.is_empty() {
             return Ok((decided, Leave::Empty));
@@ -638,6 +646,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         let mut screen = Screen {
             tree: tree_lines,
             tree_focus: Some(cur + 1),
+            center: std::mem::take(&mut st.center),
             card_title,
             card,
             choices,
@@ -813,6 +822,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             // ALL: park a task right where it is
             Act::Note if kind == Kind::All => change = Some(Change::Status("note")),
             Act::Filter if kind == Kind::All => ui.all_filter = (ui.all_filter + 1) % 3,
+            Act::Center => st.center = true,
+            Act::Tags => ui.show_tags = !ui.show_tags,
             Act::Who if kind.edits() => {
                 let at = item["assignee"].as_str().and_then(|w| whos.iter().position(|x| x == w));
                 change = Some(Change::Who(Some(whos[at.map_or(0, |a| (a + 1) % whos.len())].clone())));

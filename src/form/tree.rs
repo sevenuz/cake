@@ -20,6 +20,8 @@ pub(super) struct Tree<'a> {
     pub accent: Option<(Option<&'static str>, Color)>,
     /// items by this author in the theme's `mine` color (ALL)
     pub mine: Option<String>,
+    /// tags dim after the title
+    pub tags: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,7 +43,7 @@ pub(super) struct Row {
 
 impl<'a> Tree<'a> {
     pub fn new(all: &'a [Value], matched: impl IntoIterator<Item = String>, depth: usize) -> Self {
-        Tree { all, matched: matched.into_iter().collect(), changed: HashSet::new(), opened: HashSet::new(), depth, accent: None, mine: None }
+        Tree { all, matched: matched.into_iter().collect(), changed: HashSet::new(), opened: HashSet::new(), depth, accent: None, mine: None, tags: false }
     }
 
     pub fn item(&self, id: &str) -> Option<&'a Value> {
@@ -152,6 +154,14 @@ impl<'a> Tree<'a> {
             let after = fields(item, !r.editable);
             let after_w: usize = after.iter().map(Span::width).sum();
             let room = w.saturating_sub(lead.chars().count() + if after_w > 0 { after_w + 2 } else { 0 }).max(12);
+            // tags go first when the row is too narrow
+            let tags: String = if self.tags {
+                item["tags"].as_array().into_iter().flatten().filter_map(|t| t.as_str()).map(|t| format!(" #{}", t)).collect()
+            } else {
+                String::new()
+            };
+            let tags = if title.chars().count() + tags.chars().count() <= room { tags } else { String::new() };
+            let room = room - tags.chars().count();
             let title = if title.chars().count() > room { cut(&title, room) } else { title };
             // module items in the module's color, done ones green, parents
             // dim, revealed children dim and slanted
@@ -177,6 +187,9 @@ impl<'a> Tree<'a> {
                 _ => base,
             };
             let mut spans = vec![Span::styled(lead, if here && !dim_cursor { focus_style() } else { dim() }), Span::styled(title, style)];
+            if !tags.is_empty() {
+                spans.push(Span::styled(tags, dim()));
+            }
             if after_w > 0 {
                 spans.push(Span::raw("  "));
                 spans.extend(after);
@@ -317,5 +330,20 @@ mod tests {
         assert!(title(0).add_modifier.contains(Modifier::DIM));
         assert_eq!(title(1).fg, Some(mine), "own open item");
         assert_ne!(title(2).fg, Some(mine), "agent item stays plain");
+    }
+
+    #[test]
+    fn tags_after_the_title_and_first_to_go_when_narrow() {
+        style::init("unicode");
+        let mut all = all();
+        all[3]["tags"] = serde_json::json!(["doc", "tui"]);
+        let mut tree = Tree::new(&all, ["d".to_string()], 0);
+        let rows = tree.rows();
+        let text = |t: &Tree, w: u16| t.lines(&rows, 0, w, &|_, _| vec![], false)[0].to_string();
+        assert!(!text(&tree, 60).contains("#doc"), "off unless asked");
+        tree.tags = true;
+        assert!(text(&tree, 60).contains("title d #doc #tui"));
+        let narrow = text(&tree, 22);
+        assert!(!narrow.contains('#') && narrow.contains("title d"), "{}", narrow);
     }
 }
