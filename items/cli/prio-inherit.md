@@ -1,12 +1,14 @@
 ---
 id: prio-inherit
-status: task
+status: doing
 parent: "[[cli]]"
 created: 2026-11-15T18:47:52+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-15T18:47:54+01:00/
 ---
 # Priority and deadline inherited from parents
 
