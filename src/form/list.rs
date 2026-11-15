@@ -83,7 +83,7 @@ impl Kind {
             _ => "",
         };
         let mut parts: Vec<&str> = self.commands().iter().map(|c| example(c)).collect();
-        parts.extend(["w", "q"]);
+        parts.extend(["tag doc", "w", "q"]);
         parts.join(" · ")
     }
 
@@ -538,7 +538,12 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         let level = if kind == Kind::All { ui.all_filter } else { 0 };
         let mut all = load(ui, cake, root, &changed, level >= 2)?;
         keep_order(ui.order.entry(root.to_path_buf()).or_default(), &mut all);
-        let mut matched: Vec<String> = all.iter().filter(|i| if kind == Kind::All { in_all(i, level) } else { matches(kind, i, &all, user, since) }).map(|i| str_of(i, "id").to_string()).collect();
+        let tagged = |i: &Value| ui.tag_filter.as_ref().map_or(true, |t| i["tags"].as_array().is_some_and(|ts| ts.iter().any(|x| x.as_str() == Some(t))));
+        let mut matched: Vec<String> = all
+            .iter()
+            .filter(|i| tagged(i) && if kind == Kind::All { in_all(i, if ui.tag_filter.is_some() { level.max(1) } else { level }) } else { matches(kind, i, &all, user, since) })
+            .map(|i| str_of(i, "id").to_string())
+            .collect();
         matched.extend(st.added.iter().filter(|id| !matched.contains(id)).cloned().collect::<Vec<_>>());
         // ALL shows the whole way up, the modules `tree_depth` parents
         let depth = if kind == Kind::All { crate::store::MAX_DEPTH } else { ui.tree_depth };
@@ -551,6 +556,10 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         }
         tree.tags = ui.show_tags;
         let rows = tree.rows();
+        if rows.is_empty() && ui.tag_filter.is_some() {
+            st.note = Some((format!("nothing with #{} here, filter off", ui.tag_filter.take().unwrap()), true));
+            continue;
+        }
         if rows.is_empty() {
             return Ok((decided, Leave::Empty));
         }
@@ -638,6 +647,9 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         let parts: Vec<(&str, &str)> = parts.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
         let title = if kind == Kind::All { ["open work, by score", "open work and notes", "everything, closed too"][level as usize % 3] } else { kind.title() };
         let mut head = vec![Span::styled(format!("{} · {}", title, store), bold().fg(kind.accent().1))];
+        if let Some(t) = &ui.tag_filter {
+            head.push(Span::styled(format!(" · #{}", t), Style::default().fg(theme::t().tag)));
+        }
         if kind == Kind::All && !ui.summary.is_empty() {
             head.push(Span::styled(format!(" · {}", ui.summary), dim()));
         }
@@ -847,6 +859,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                     "" => (),
                     "q" | "q!" | "wq" | "x" => return Ok((decided, Leave::Quit)),
                     "w" => return Ok((decided, Leave::Done)),
+                    // a filter, not a change: works on any row
+                    "tag" => ui.tag_filter = Some(arg.trim_start_matches('#').to_string()).filter(|t| !t.is_empty()),
                     _ if ours && !editable => st.note = Some((format!("context: not in {}, no actions here", kind.name()), true)),
                     "due" | "deadline" if ours => match date(arg) {
                         Ok(v) => change = Some(if cmd == "due" { Change::Due(v) } else { Change::Deadline(v) }),
@@ -1036,9 +1050,9 @@ mod tests {
 
     #[test]
     fn command_hints_list_only_what_works() {
-        assert_eq!(Kind::Review.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · w · q");
-        assert_eq!(Kind::Sort.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · move <store> · all · w · q");
-        assert_eq!(Kind::Answer.command_hint(), "w · q");
+        assert_eq!(Kind::Review.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · tag doc · w · q");
+        assert_eq!(Kind::Sort.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · move <store> · all · tag doc · w · q");
+        assert_eq!(Kind::Answer.command_hint(), "tag doc · w · q");
     }
 
     #[test]
