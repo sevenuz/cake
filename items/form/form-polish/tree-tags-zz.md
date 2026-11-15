@@ -20,3 +20,5 @@ time:
 - done when: tags visible in tree and card, # and zz work; tests
 
 changed: tags dim after the title in every tree, on by default, # toggles, dropped first when the row is too narrow; card shows #tags in its first line; zz centers on the cursor; the tree view now stays put while the cursor is in view (vim-like) instead of always pinning it to the bottom; commits: f572a51; try: cake, l to ALL, # and zz
+
+comment (sevenuz): tags get lost after the title → fixed: own theme key tag (default aqua #8ec07c) in tree and card; commits: 32b270e
