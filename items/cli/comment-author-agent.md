@@ -1,10 +1,10 @@
 ---
 id: comment-author-agent
 tags: [doc, bug]
-parent: "[[zcgwhr]]"
+parent: "[[cli]]"
 created: 2026-11-14T00:48:32+01:00
 by: claude-code
-sessions: [09ab2c5e-817c-4232-99aa-cd89bfb2b546]
+sessions: [09ab2c5e-817c-4232-99aa-cd89bfb2b546, eb1412a2-56ac-4478-9717-6ebac99000ac]
 ---
 # Comments by agents are signed with the user's name
 

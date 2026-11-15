@@ -2,10 +2,10 @@
 id: command-surface
 status: done
 tags: [cli]
-parent: "[[zcgwhr]]"
+parent: "[[cli]]"
 created: 2026-11-14T01:11:22+01:00
 by: claude-code
-sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 48, out: 19181, cache_read: 20867867, cache_write: 36740}}
 closed: 2026-11-14T01:32:44+01:00
 assignee: claude-code

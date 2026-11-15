@@ -2,10 +2,10 @@
 id: tokens-per-item
 status: done
 tags: [stats]
-parent: "[[zcgwhr]]"
+parent: "[[cli]]"
 created: 2026-11-13T20:43:48+01:00
 by: claude-code
-sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, eb1412a2-56ac-4478-9717-6ebac99000ac]
 closed: 2026-11-13T23:07:14+01:00
 ---
 # Tokens per item with an energy, CO2e and water estimate

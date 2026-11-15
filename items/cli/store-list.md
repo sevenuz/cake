@@ -2,10 +2,10 @@
 id: store-list
 status: done
 tags: [cli]
-parent: "[[zcgwhr]]"
+parent: "[[cli]]"
 created: 2026-11-13T18:28:48+01:00
 by: claude-code
-sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 26, out: 17364, cache_read: 2571921, cache_write: 25972}}
 closed: 2026-11-13T20:13:09+01:00
 time:
