@@ -26,6 +26,8 @@ const DEFAULT: &str = r##"// cake colors: names (red, lightgreen, gray, darkgray
   // form
   question: "#fabd2f"
   hint: "#83a598"
+  // your own items in the ALL tree (agents' items stay plain)
+  mine: "#fe8019"
   ok: "#b8bb26"
   error: "#fb4934"
 }
@@ -43,6 +45,7 @@ struct Raw {
     doing: String,
     question: String,
     hint: String,
+    mine: String,
     ok: String,
     error: String,
 }
@@ -61,6 +64,7 @@ impl Default for Raw {
             doing: s("#fabd2f"),
             question: s("#fabd2f"),
             hint: s("#83a598"),
+            mine: s("#fe8019"),
             ok: s("#b8bb26"),
             error: s("#fb4934"),
         }
@@ -78,6 +82,7 @@ pub struct Theme {
     pub doing: Color,
     pub question: Color,
     pub hint: Color,
+    pub mine: Color,
     pub ok: Color,
     pub error: Color,
 }
@@ -108,6 +113,7 @@ pub fn init() -> Result<(), Box<dyn Error>> {
         doing: parse("doing", &raw.doing)?,
         question: parse("question", &raw.question)?,
         hint: parse("hint", &raw.hint)?,
+        mine: parse("mine", &raw.mine)?,
         ok: parse("ok", &raw.ok)?,
         error: parse("error", &raw.error)?,
     };
@@ -128,6 +134,7 @@ pub fn t() -> Theme {
             doing: parse("", &raw.doing).unwrap(),
             question: parse("", &raw.question).unwrap(),
             hint: parse("", &raw.hint).unwrap(),
+            mine: parse("", &raw.mine).unwrap(),
             ok: parse("", &raw.ok).unwrap(),
             error: parse("", &raw.error).unwrap(),
         }

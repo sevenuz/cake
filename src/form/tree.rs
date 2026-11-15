@@ -18,6 +18,8 @@ pub(super) struct Tree<'a> {
     pub depth: usize,
     /// the mark (None: the status mark) and color of open module items
     pub accent: Option<(Option<&'static str>, Color)>,
+    /// items by this author in the theme's `mine` color (ALL)
+    pub mine: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,7 +41,7 @@ pub(super) struct Row {
 
 impl<'a> Tree<'a> {
     pub fn new(all: &'a [Value], matched: impl IntoIterator<Item = String>, depth: usize) -> Self {
-        Tree { all, matched: matched.into_iter().collect(), changed: HashSet::new(), opened: HashSet::new(), depth, accent: None }
+        Tree { all, matched: matched.into_iter().collect(), changed: HashSet::new(), opened: HashSet::new(), depth, accent: None, mine: None }
     }
 
     pub fn item(&self, id: &str) -> Option<&'a Value> {
@@ -161,6 +163,13 @@ impl<'a> Tree<'a> {
                 dim().add_modifier(Modifier::ITALIC)
             } else {
                 dim()
+            };
+            // the user's own items stand out from the agents' (context dimmer)
+            let own = self.mine.as_deref().is_some_and(|u| str_of(item, "by") == u);
+            let base = match (own, open, r.editable) {
+                (true, true, _) => base.fg(t.mine),
+                (true, false, false) => base.fg(t.mine).add_modifier(Modifier::DIM),
+                _ => base,
             };
             let style = match (here, dim_cursor) {
                 (true, false) => base.add_modifier(Modifier::BOLD | Modifier::REVERSED),
@@ -288,5 +297,25 @@ mod tests {
         assert!(text[0].contains("… › title c"), "{}", text[0]);
         assert!(text[1].contains("├─ title d") && text[1].trim_end().ends_with(" d"));
         assert!(text[2].starts_with("› └─ ✓ title e"), "{}", text[2]);
+    }
+
+    #[test]
+    fn own_items_in_the_mine_color() {
+        style::init("unicode");
+        let mut all = all();
+        for i in all.iter_mut().filter(|i| ["c", "d"].contains(&str_of(i, "id"))) {
+            i["by"] = "jul".into();
+        }
+        let mut tree = Tree::new(&all, ["d".to_string(), "e".to_string()], 1);
+        tree.accent = Some((None, Color::Reset));
+        tree.mine = Some("jul".into());
+        let rows = tree.rows();
+        let lines = tree.lines(&rows, 9, 60, &|_, _| vec![], false);
+        let title = |n: usize| lines[n].spans[1].style;
+        let mine = theme::t().mine;
+        assert_eq!(title(0).fg, Some(mine), "context row by jul");
+        assert!(title(0).add_modifier.contains(Modifier::DIM));
+        assert_eq!(title(1).fg, Some(mine), "own open item");
+        assert_ne!(title(2).fg, Some(mine), "agent item stays plain");
     }
 }

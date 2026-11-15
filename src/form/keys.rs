@@ -425,6 +425,7 @@ impl Keymap {
             (format!("{} {} {} {}", g.inbox, g.todo, g.doing, g.review), "marks: inbox, task, doing, review".to_string()),
             (format!("{} {} {}", g.note, g.done, g.dropped), format!("marks: note, done, dropped; {} before a title: changed this run", g.check)),
             (format!("? +N {} {}", g.ellipsis, g.select), "a question for you; N children hidden (o shows); parents above cut".to_string()),
+            ("ALL".to_string(), "your own items in their own color (theme `mine`), agents' plain".to_string()),
             (String::new(), String::new()),
         ];
         out.splice(0..0, legend);

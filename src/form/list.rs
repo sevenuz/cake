@@ -539,6 +539,9 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         tree.changed = changed.clone();
         tree.opened = st.opened.clone();
         tree.accent = Some(kind.accent());
+        if kind == Kind::All {
+            tree.mine = Some(user.to_owned());
+        }
         let rows = tree.rows();
         if rows.is_empty() {
             return Ok((decided, Leave::Empty));
