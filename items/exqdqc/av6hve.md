@@ -1,6 +1,5 @@
 ---
 id: av6hve
-status: task
 tags: [data]
 parent: "[[exqdqc]]"
 created: 2026-10-27T13:11:05+01:00
