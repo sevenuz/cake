@@ -1,12 +1,14 @@
 ---
 id: commit-field
-status: task
+status: doing
 parent: "[[cli]]"
 created: 2026-11-16T00:42:21+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 assignee: claude-code
 owner: sevenuz
+time:
+  - 2026-11-16T00:48:43+01:00/
 ---
 # Commits per item
 
