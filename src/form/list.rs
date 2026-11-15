@@ -64,8 +64,8 @@ impl Kind {
     /// (and move in the inbox); answer has none
     fn commands(self) -> &'static [&'static str] {
         match self {
-            Kind::Sort => &["due", "deadline", "who", "prio", "move", "all"],
-            Kind::Mine | Kind::Review | Kind::All => &["due", "deadline", "who", "prio"],
+            Kind::Sort => &["due", "deadline", "who", "prio", "tag", "move", "all"],
+            Kind::Mine | Kind::Review | Kind::All => &["due", "deadline", "who", "prio", "tag"],
             // news is read only, answer has its options
             Kind::Answer | Kind::News => &[],
         }
@@ -78,12 +78,13 @@ impl Kind {
             "deadline" => "deadline 30.11.",
             "who" => "who ai",
             "prio" => "prio 1",
+            "tag" => "tag doc,~old",
             "move" => "move <store>",
             "all" => "all",
             _ => "",
         };
         let mut parts: Vec<&str> = self.commands().iter().map(|c| example(c)).collect();
-        parts.extend(["tag doc", "w", "q"]);
+        parts.extend(["filter doc", "w", "q"]);
         parts.join(" · ")
     }
 
@@ -114,6 +115,11 @@ pub(super) struct Before {
     prio: Option<u64>,
     due: Option<String>,
     deadline: Option<String>,
+    tags: Vec<String>,
+}
+
+fn tags_of(i: &Value) -> Vec<String> {
+    i["tags"].as_array().into_iter().flatten().filter_map(|t| t.as_str()).map(String::from).collect()
 }
 
 fn before(i: &Value) -> Before {
@@ -123,6 +129,7 @@ fn before(i: &Value) -> Before {
         prio: i["priority"].as_u64(),
         due: i["due"].as_str().map(String::from),
         deadline: i["deadline"].as_str().map(String::from),
+        tags: tags_of(i),
     }
 }
 
@@ -272,6 +279,8 @@ enum Change {
     Prio(Option<u64>),
     Due(Option<String>),
     Deadline(Option<String>),
+    /// `a,~b` as for `cake edit --tag`
+    Tags(String),
     Move(String),
     Timer(bool),
     /// news: back to you; a started item waits as a task
@@ -308,6 +317,10 @@ fn apply(cake: &Cake, item: &Value, change: &Change, user: &str, sort_who: Optio
         Change::Who(w) => {
             to_task(cake)?;
             cake.call(&["edit", id, "--assignee", &opt(w)])?;
+            String::new()
+        }
+        Change::Tags(t) => {
+            cake.call(&["edit", id, "--tag", t])?;
             String::new()
         }
         Change::Prio(p) => {
@@ -352,6 +365,11 @@ fn apply(cake: &Cake, item: &Value, change: &Change, user: &str, sort_who: Optio
             cake.call(&["set", &b.status, id])?;
             let (prio, due, deadline) = (b.prio.unwrap_or(0).to_string(), opt(&b.due), opt(&b.deadline));
             cake.call(&["edit", id, "--assignee", &opt(&b.who), "--prio", &prio, "--due", &due, "--deadline", &deadline])?;
+            let now = tags_of(item);
+            let tags: Vec<String> = b.tags.iter().cloned().chain(now.iter().filter(|t| !b.tags.contains(t)).map(|t| format!("~{}", t))).collect();
+            if !tags.is_empty() {
+                cake.call(&["edit", id, "--tag", &tags.join(",")])?;
+            }
             String::new()
         }
     })
@@ -860,7 +878,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                     "q" | "q!" | "wq" | "x" => return Ok((decided, Leave::Quit)),
                     "w" => return Ok((decided, Leave::Done)),
                     // a filter, not a change: works on any row
-                    "tag" => ui.tag_filter = Some(arg.trim_start_matches('#').to_string()).filter(|t| !t.is_empty()),
+                    "filter" => ui.tag_filter = Some(arg.trim_start_matches('#').to_string()).filter(|t| !t.is_empty()),
                     _ if ours && !editable => st.note = Some((format!("context: not in {}, no actions here", kind.name()), true)),
                     "due" | "deadline" if ours => match date(arg) {
                         Ok(v) => change = Some(if cmd == "due" { Change::Due(v) } else { Change::Deadline(v) }),
@@ -875,6 +893,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                         _ if arg.is_empty() || arg == "-" || arg == "0" => change = Some(Change::Prio(None)),
                         _ => st.note = Some(("prio is 1, 2, 3 or - for none".into(), true)),
                     },
+                    "tag" if ours && !arg.is_empty() => change = Some(Change::Tags(arg.split([',', ' ']).filter(|t| !t.is_empty()).map(|t| t.trim_start_matches('#')).collect::<Vec<_>>().join(","))),
+                    "tag" if ours => st.note = Some(("tag doc adds, tag ~doc removes; filter doc shows only doc".into(), true)),
                     "move" if ours && stores.iter().any(|s| s == arg) => change = Some(Change::Move(arg.to_string())),
                     "move" if ours => st.note = Some((format!("no store '{}': {}", arg, stores.join(", ")), true)),
                     "all" if ours => {
@@ -1050,9 +1070,9 @@ mod tests {
 
     #[test]
     fn command_hints_list_only_what_works() {
-        assert_eq!(Kind::Review.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · tag doc · w · q");
-        assert_eq!(Kind::Sort.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · move <store> · all · tag doc · w · q");
-        assert_eq!(Kind::Answer.command_hint(), "tag doc · w · q");
+        assert_eq!(Kind::Review.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · tag doc,~old · filter doc · w · q");
+        assert_eq!(Kind::Sort.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · tag doc,~old · move <store> · all · filter doc · w · q");
+        assert_eq!(Kind::Answer.command_hint(), "filter doc · w · q");
     }
 
     #[test]

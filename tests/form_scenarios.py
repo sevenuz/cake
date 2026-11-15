@@ -217,6 +217,8 @@ form([":", "prio 2\r", ":q\r"], args=("form", "review"))
 form(["l", "q"], args=("form", "review"))
 check("last tab: q quits", True)
 check("review: :prio 2 set the priority", item("rv")["priority"] == 2)
+form([":", "tag doc,x\r", ":", "tag ~x\r", ":q\r"], args=("form", "review"))
+check("review: :tag adds and removes tags", item("rv")["tags"] == ["doc"])
 
 # nothing waits: the form opens at dump anyway, esc goes on to the last tab
 empty = tmux_screen(["\x1b"], args=("form", "answer"))

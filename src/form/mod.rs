@@ -199,7 +199,7 @@ struct Ui {
     all_filter: u8,
     /// tags shown in the tree (#)
     show_tags: bool,
-    /// only items with this tag (`:tag doc`), in every tree
+    /// only items with this tag (`:filter doc`), in every tree
     tag_filter: Option<String>,
     /// per step: nothing left to decide (a check in the header)
     done: Vec<bool>,
