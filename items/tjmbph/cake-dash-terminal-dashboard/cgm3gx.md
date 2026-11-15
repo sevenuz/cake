@@ -1,6 +1,5 @@
 ---
 id: cgm3gx
-status: task
 tags: [tui]
 parent: "[[cake-dash-terminal-dashboard]]"
 created: 2026-10-27T13:11:05+01:00
