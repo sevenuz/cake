@@ -1,6 +1,6 @@
 ---
 id: prio-inherit
-status: doing
+status: review
 parent: "[[cli]]"
 created: 2026-11-15T18:47:52+01:00
 by: claude-code
@@ -8,7 +8,7 @@ sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 assignee: ai
 owner: sevenuz
 time:
-  - 2026-11-15T18:47:54+01:00/
+  - 2026-11-15T18:47:54+01:00/2026-11-15T18:48:43+01:00
 ---
 # Priority and deadline inherited from parents
 
@@ -18,3 +18,5 @@ time:
 - tree rows show an inherited prio/deadline dim
 - rejected: adding the parent's score (hard to predict); rank only on goals
 - done when: p1 on a goal lifts its tasks in cake ready; tests
+
+changed: effective prio/deadline = own, else nearest ancestor's; score and cake ready use them; --json field inherited {priority, deadline}; tree rows show them dim and slanted; tests; commits: e353446; try: cake edit stats --prio 1, then cake ready
