@@ -1,6 +1,6 @@
 ---
 id: cake-dash-terminal-dashboard
-status: task
+status: review
 tags: [plan]
 parent: "[[stats]]"
 blocked_by: ["[[deadline-field-asks-score]]"]
