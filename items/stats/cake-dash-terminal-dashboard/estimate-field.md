@@ -1,12 +1,14 @@
 ---
 id: estimate-field
-status: task
+status: doing
 parent: "[[cake-dash-terminal-dashboard]]"
 created: 2026-11-15T22:31:55+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 assignee: claude-code
 owner: sevenuz
+time:
+  - 2026-11-15T22:37:30+01:00/
 ---
 # Estimate field for task durations
 
