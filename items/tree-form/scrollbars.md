@@ -1,12 +1,11 @@
 ---
 id: scrollbars
-status: done
+status: review
 parent: "[[tree-form]]"
 created: 2026-11-15T17:36:37+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 7, out: 2647, cache_read: 607118, cache_write: 4021}}
-closed: 2026-11-15T17:44:13+01:00
 assignee: ai
 owner: sevenuz
 time:
@@ -21,3 +20,5 @@ time:
 changed: scrollbar at the right of the tree and on the box's right border, only when the content is longer than the room; thumb of the focused pane in the hint color; help overlay not yet (it does not scroll, see help-per-module); test; commits: 1fb0799; try: cake, all tab, tab into a long text
 
 comment (claude-code, 2026-11-15): thumb barely visible: wider indicator, no track line, more expressive color; focus color more visible
+
+changed (comment): thumb is a full block █, no track line; the focused pane (box border and title, tree cursor, its thumb) in the bold color (yellow) and bold, the other thumb in the hint color; commits: 06aea0c; try: cake, all, tab
