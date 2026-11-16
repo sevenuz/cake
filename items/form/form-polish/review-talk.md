@@ -1,11 +1,12 @@
 ---
 id: review-talk
-status: review
+status: done
 parent: "[[form-polish]]"
 created: 2026-11-16T00:42:21+01:00
 by: claude-code
 commits: [36fcb8a, 235fe18]
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
+closed: 2026-11-16T17:04:17+01:00
 assignee: claude-code
 owner: sevenuz
 ---
