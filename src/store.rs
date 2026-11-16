@@ -551,7 +551,8 @@ pub mod inner {
                 .values()
                 .filter(|i| i.status() == Some(Status::Done) && own(i) == own(item))
                 .map(|i| i.tracked_seconds())
-                .filter(|t| *t > 0)
+                // a timer from start straight to review says nothing
+                .filter(|t| *t >= 600)
                 .collect();
             if done.is_empty() {
                 return None;
@@ -1027,7 +1028,7 @@ pub mod inner {
         #[test]
         fn expected_work_is_the_estimate_else_the_median_of_done_tasks() {
             let mut s = empty_store();
-            for (id, secs) in [("a", 600), ("b", 3600), ("c", 7200)] {
+            for (id, secs) in [("a", 600), ("b", 3600), ("c", 7200), ("quick", 30)] {
                 let mut i = item(id, None, vec![]);
                 i.set_status(Status::Done).unwrap();
                 i.set_assignee(Some("claude-code".into()));

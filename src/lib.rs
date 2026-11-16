@@ -398,6 +398,9 @@ pub enum Commands {
     /// news sort answer review mine dump; -g: all stores
     Form {
         modules: Vec<String>,
+        /// the tree starts on this item (with module all)
+        #[arg(long, value_name = "ID")]
+        at: Option<String>,
     },
     /// move a store from the tag based workflow to inbox/task/review with
     /// assignees; shows the changes, --apply makes them
@@ -760,13 +763,16 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         // bare cake: the dashboard; the form is one key away
         None if interactive => return dash::run(&root, &config.user(&root)),
         Some(Commands::Form { .. }) if interactive => {
-            let modules = match &cli.command {
-                Some(Commands::Form { modules }) if !modules.is_empty() => modules.clone(),
-                _ => config.form.clone(),
+            // named modules end with the last one; the configured run ends
+            // in the ALL tree
+            let (modules, last_tab, at) = match &cli.command {
+                Some(Commands::Form { modules, at }) if !modules.is_empty() => (modules.clone(), false, at.clone()),
+                Some(Commands::Form { at, .. }) => (config.form.clone(), true, at.clone()),
+                _ => (config.form.clone(), true, None),
             };
             let aliases = config.aliases(&root)?;
             let agent_commands = ["triage", "work"].iter().filter(|c| aliases.contains_key(**c)).map(|c| c.to_string()).collect();
-            let options = form::Options { modules, all: cli.global, width: config.form_width, keys: config.keys.clone(), tree_depth: config.tree_depth, sort_who: config.sort_who.clone(), agent_commands };
+            let options = form::Options { modules, all: cli.global, width: config.form_width, keys: config.keys.clone(), tree_depth: config.tree_depth, sort_who: config.sort_who.clone(), agent_commands, last_tab, at };
             return form::run(&root, &config.user(&root), options);
         }
         _ => (),

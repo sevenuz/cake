@@ -64,8 +64,8 @@ impl Kind {
     /// (and move in the inbox); answer has none
     fn commands(self) -> &'static [&'static str] {
         match self {
-            Kind::Sort => &["due", "deadline", "who", "prio", "tag", "move", "all"],
-            Kind::Mine | Kind::Review | Kind::All => &["due", "deadline", "who", "prio", "tag"],
+            Kind::Sort => &["due", "deadline", "who", "prio", "est", "tag", "move", "all"],
+            Kind::Mine | Kind::Review | Kind::All => &["due", "deadline", "who", "prio", "est", "tag"],
             // news is read only, answer has its options
             Kind::Answer | Kind::News => &[],
         }
@@ -78,6 +78,7 @@ impl Kind {
             "deadline" => "deadline 30.11.",
             "who" => "who ai",
             "prio" => "prio 1",
+            "est" => "est 2h",
             "tag" => "tag doc,~old",
             "move" => "move <store>",
             "all" => "all",
@@ -281,6 +282,8 @@ enum Change {
     Deadline(Option<String>),
     /// `a,~b` as for `cake edit --tag`
     Tags(String),
+    /// expected work, `-` clears
+    Est(String),
     Move(String),
     Timer(bool),
     /// news: back to you; a started item waits as a task
@@ -324,10 +327,14 @@ fn apply(cake: &Cake, item: &Value, change: &Change, user: &str, sort_who: Optio
         Change::Talk => {
             // the body keeps the work so far (the review note above); this
             // line says why it is back
-            let line = format!("discuss ({}, {}): back for a talk before more work", user, chrono::Local::now().format("%Y-%m-%d"));
+            let line = format!("discuss ({}, {})", user, chrono::Local::now().format("%Y-%m-%d"));
             cake.call(&["set", "task", id, "-m", &line])?;
             cake.call(&["edit", id, "--tag", "discuss", "--assignee", user])?;
             "to discuss".into()
+        }
+        Change::Est(e) => {
+            cake.call(&["edit", id, "--est", e])?;
+            String::new()
         }
         Change::Tags(t) => {
             cake.call(&["edit", id, "--tag", t])?;
@@ -596,6 +603,11 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             tree.mine = Some(user.to_owned());
         }
         tree.tags = ui.show_tags;
+        if let Some(at) = ui.at.take() {
+            st.cur_id = at.clone();
+            st.opened.insert(at);
+            st.center = true;
+        }
         let rows = tree.rows();
         if rows.is_empty() && ui.tag_filter.is_some() {
             st.note = Some((format!("nothing with #{} here, filter off", ui.tag_filter.take().unwrap()), true));
@@ -819,10 +831,6 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             Act::NextModule => return Ok((decided, Leave::Next)),
             Act::Quit => return Ok((decided, Leave::Quit)),
             // the last tab: nothing left to lose, q quits
-            Act::Feedback => {
-                feedback(ui, &mut screen, cake, store, &format!("{} tree, row {}", kind.name(), st.cur_id))?;
-                st.note = screen.note.take();
-            }
             Act::Add | Act::AddChild => {
                 let parent = (act == Act::AddChild).then(|| st.cur_id.clone());
                 if let Some(id) = add_item(ui, &mut screen, cake, store, parent.as_deref())? {
@@ -914,6 +922,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                         _ if arg.is_empty() || arg == "-" || arg == "0" => change = Some(Change::Prio(None)),
                         _ => st.note = Some(("prio is 1, 2, 3 or - for none".into(), true)),
                     },
+                    "est" if ours => change = Some(Change::Est(if arg.is_empty() { "-".into() } else { arg.to_string() })),
                     "tag" if ours && !arg.is_empty() => change = Some(Change::Tags(arg.split([',', ' ']).filter(|t| !t.is_empty()).map(|t| t.trim_start_matches('#')).collect::<Vec<_>>().join(","))),
                     "tag" if ours => st.note = Some(("tag doc adds, tag ~doc removes; filter doc shows only doc".into(), true)),
                     "move" if ours && stores.iter().any(|s| s == arg) => change = Some(Change::Move(arg.to_string())),
@@ -1092,8 +1101,8 @@ mod tests {
 
     #[test]
     fn command_hints_list_only_what_works() {
-        assert_eq!(Kind::Review.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · tag doc,~old · filter doc · w · q");
-        assert_eq!(Kind::Sort.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · tag doc,~old · move <store> · all · filter doc · w · q");
+        assert_eq!(Kind::Review.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · est 2h · tag doc,~old · filter doc · w · q");
+        assert_eq!(Kind::Sort.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · est 2h · tag doc,~old · move <store> · all · filter doc · w · q");
         assert_eq!(Kind::Answer.command_hint(), "filter doc · w · q");
     }
 

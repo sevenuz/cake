@@ -117,11 +117,7 @@ cake("add", "mytask", "--task", "--assignee", "me", "-m", "# my task")
 form(["l", "h", "t", "\r"] + ["l"] * 6 + [":q\r"])
 check("h/l: back in inbox, the idea became a task", item("zz")["status"] == "task")
 
-# F on a screen: feedback becomes a task for the AI, not an inbox item
 cake("add", "yy", "-m", "# another idea")
-form(["F", "too many columns\r", ":q\r"])
-fb = [i for i in cake("ls", "-t", "form-feedback")["items"]]
-check("F: feedback is a task for ai", len(fb) == 1 and fb[0]["status"] == "task" and fb[0]["assignee"] == "ai")
 
 # sticky: two items sorted, h and l: both still in sort with a check
 cake("set", "dropped", "yy")
@@ -202,12 +198,15 @@ if landed is not None:
     check("answer done: on to mine, not review with the answers", "your tasks" in landed and "fourth?" not in landed)
 
 # the last tab: the whole open tree with the details box
-end = tmux_screen(["l"], args=("form", "mine"))
+end = tmux_screen([], args=("form", "all"))
 if end is not None:
-    check("last tab: everything open as a tree", "open work, by score" in end and "ALL" in end)
-start = tmux_screen([], args=("form", "mine"))
+    check("tree: cake form all opens the whole tree", "open work, by score" in end and "ALL" in end and " / " not in end)
+start = tmux_screen([], args=("form",))
 if start is not None:
-    check("header: all listed from the start", " · all" in start)
+    check("header: the configured run lists all from the start", " · all" in start)
+named = tmux_screen([], args=("form", "mine"))
+if named is not None:
+    check("header: named modules end without the tree", " · all" not in named)
 
 # review: : sets fields of the item under review
 cake("add", "rv", "--task", "--assignee", "claude-code", "-m", "# to review", agent=True)

@@ -33,6 +33,8 @@ pub struct Bar {
 pub struct Lane {
     pub name: String,
     pub bars: Vec<Bar>,
+    /// shaded by how many bars overlap (░▒▓█) instead of one block
+    pub stacked: bool,
 }
 
 /// one store's input
@@ -58,20 +60,9 @@ fn waits(store: &Store, user: &str, now: i64) -> Vec<(i64, i64)> {
         .collect()
 }
 
-/// `bars` spread over as few lanes as possible without overlaps
-fn pack(mut bars: Vec<Bar>) -> Vec<Vec<Bar>> {
-    bars.sort_by_key(|b| (b.start, b.end));
-    let mut lanes: Vec<Vec<Bar>> = vec![];
-    for b in bars {
-        match lanes.iter_mut().find(|l| l.last().is_some_and(|x| x.end <= b.start)) {
-            Some(l) => l.push(b),
-            None => lanes.push(vec![b]),
-        }
-    }
-    lanes
-}
-
-/// G1: you, agents per store (parallel ones on lanes of their own), waits
+/// G1: you, the agents of each store (one lane, shaded by how many
+/// timers ran at once: the assignee says who should do it, not who ran
+/// it), and what waited on you
 pub fn sessions(srcs: &[Src], user: &str, from: i64, to: i64) -> Vec<Lane> {
     let mut you = vec![];
     let mut out = vec![];
@@ -82,29 +73,23 @@ pub fn sessions(srcs: &[Src], user: &str, from: i64, to: i64) -> Vec<Lane> {
                 you.push(Bar { start: a, end: b, store: n, fill: if l.kind == "cake" { Fill::Light } else { Fill::Solid } });
             }
         }
-        let mut agents: std::collections::BTreeMap<String, Vec<Bar>> = Default::default();
+        let mut agents: Vec<Bar> = vec![];
         for i in s.store.get().values() {
             let bars = i.intervals().into_iter().filter(|(a, b)| overlaps(*a, *b, from, to)).map(|(a, b)| Bar { start: a, end: b, store: n, fill: Fill::Solid });
             match i.assignee() {
                 Some(a) if a == user => you.extend(bars),
-                Some(a) => agents.entry(a.clone()).or_default().extend(bars),
-                None => agents.entry("?".into()).or_default().extend(bars),
+                _ => agents.extend(bars),
             }
         }
-        for (agent, bars) in agents {
-            let lanes = pack(bars);
-            let many = lanes.len() > 1;
-            for (k, bars) in lanes.into_iter().enumerate() {
-                let name = if many { format!("{} · {} {}", agent, s.name, k + 1) } else { format!("{} · {}", agent, s.name) };
-                out.push(Lane { name, bars });
-            }
+        if !agents.is_empty() {
+            out.push(Lane { name: format!("agents · {}", s.name), bars: agents, stacked: true });
         }
         waited.extend(waits(s.store, user, to).into_iter().filter(|(a, b)| overlaps(*a, *b, from, to)).map(|(a, b)| Bar { start: a, end: b, store: n, fill: Fill::Wait }));
     }
-    let mut lanes = vec![Lane { name: "you".into(), bars: you }];
+    let mut lanes = vec![Lane { name: "you".into(), bars: you, stacked: false }];
     lanes.extend(out);
     if !waited.is_empty() {
-        lanes.push(Lane { name: "waits on you".into(), bars: waited });
+        lanes.push(Lane { name: "waits on you".into(), bars: waited, stacked: false });
     }
     lanes
 }
@@ -125,7 +110,7 @@ pub fn items(srcs: &[Src], user: &str, from: i64, to: i64) -> Vec<Lane> {
                 by_item.entry(id.clone()).or_default().push(Bar { start: a, end: b, store: n, fill: Fill::Light });
             }
         }
-        out.extend(by_item.into_iter().map(|(name, bars)| Lane { name, bars }));
+        out.extend(by_item.into_iter().map(|(name, bars)| Lane { name, bars, stacked: false }));
     }
     out.sort_by_key(|l| (l.bars.iter().map(|b| b.start).min().unwrap_or(0), l.name.clone()));
     out
@@ -136,7 +121,7 @@ pub fn items(srcs: &[Src], user: &str, from: i64, to: i64) -> Vec<Lane> {
 pub fn stores(srcs: &[Src], user: &str, from: i64, to: i64) -> Vec<Lane> {
     let g1 = sessions(srcs, user, from, to);
     (0..srcs.len())
-        .map(|n| Lane { name: srcs[n].name.to_string(), bars: g1.iter().flat_map(|l| l.bars.iter().filter(|b| b.store == n).cloned()).collect() })
+        .map(|n| Lane { name: srcs[n].name.to_string(), bars: g1.iter().flat_map(|l| l.bars.iter().filter(|b| b.store == n).cloned()).collect(), stacked: true })
         .collect()
 }
 
@@ -204,6 +189,7 @@ pub fn axis(from: i64, to: i64, width: usize) -> String {
 /// a lane as `width` cells: G1 bars in their store's color, G2 (`shade`)
 /// by how many at once
 pub fn render(lane: &Lane, from: i64, to: i64, width: usize, colors: &[Color], shade: bool, ascii: bool) -> Line<'static> {
+    let shade = shade || lane.stacked;
     let bars: Vec<&Bar> = lane.bars.iter().collect();
     let cols = columns(&bars, from, to, width);
     let (solid, light, wait) = if ascii { ('#', '+', '.') } else { ('█', '▒', '·') };
@@ -344,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn parallel_agent_work_gets_its_own_lane_and_waits_show() {
+    fn agents_share_one_lane_shaded_by_how_many_ran() {
         let h = 3600;
         let mut s = store();
         s.add(task("a", "claude-code", vec![0, 2 * h])).unwrap();
@@ -360,8 +346,8 @@ mod tests {
         let src = Src { name: "cake", store: &s, log: &log };
         let lanes = sessions(&[src], "jul", 0, 4 * h);
         let names: Vec<&str> = lanes.iter().map(|l| l.name.as_str()).collect();
-        assert_eq!(names[..3], ["you", "claude-code · cake 1", "claude-code · cake 2"]);
-        assert_eq!(lanes[1].bars.len(), 2, "a then c on one lane");
+        assert_eq!(names, ["you", "agents · cake"], "the question was asked outside the window");
+        assert_eq!(render(&lanes[1], 0, 4 * h, 4, &[Color::Reset], false, false).to_string(), "░▒░░", "a, a+b, b, c");
         let (max, avg, _) = summary(&lanes, 0, 4 * h);
         assert_eq!(max, 3, "you, a and b at 1h");
         assert!(avg > 1.0);
@@ -382,6 +368,7 @@ mod tests {
         let lanes = items(&[Src { name: "cake", store: &s, log: &log }], "jul", 0, 4 * h);
         let names: Vec<&str> = lanes.iter().map(|l| l.name.as_str()).collect();
         assert_eq!(names, ["b", "a"], "first started first, nothing outside the window");
+        assert!(!lanes[0].stacked);
         assert_eq!(render(&lanes[1], 0, 4 * h, 4, &[Color::Reset], false, false).to_string(), " █▒ ", "timer, then chat only");
     }
 

@@ -197,6 +197,10 @@ struct Ui {
     all_filter: u8,
     /// tags shown in the tree (#)
     show_tags: bool,
+    /// the tree's first cursor row, once
+    at: Option<String>,
+    /// what dump added this run: (id, text), kept across modules
+    dumped: Vec<(String, String)>,
     /// only items with this tag (`:filter doc`), in every tree
     tag_filter: Option<String>,
     /// per step: nothing left to decide (a check in the header)
@@ -371,6 +375,10 @@ fn header(names: &[String], counts: &[usize], done: &[bool], step: usize, handle
             } else {
                 Span::styled(format!("{}{}", name, count), Style::default().fg(step_color(n)))
             });
+        }
+        // the tree alone: nothing to count
+        if total == 0 && handled == 0 {
+            return vec![Line::from(steps), Line::default()];
         }
         let count = format!(" {} / {}", handled, total);
         let bar_w = (width as usize).saturating_sub(count.len()).max(4);
@@ -633,19 +641,6 @@ fn paint_max(f: &mut ratatui::Frame, header_lines: &[Line<'static>], screen: &Sc
     max_scroll
 }
 
-/// F: feedback on this screen as a task for the AI (tag form-feedback),
-/// so it does not wait in the user's own inbox
-fn feedback(ui: &mut Ui, screen: &mut Screen, cake: &Cake, store: &str, place: &str) -> Result<(), Box<dyn Error>> {
-    if let Some(text) = ui.overlay(screen, "feedback on this screen")?.filter(|t| !t.is_empty()) {
-        let body = format!("# {}\n\n- where: {} ({})", text, place, store);
-        match ui.save(screen, || cake.call(&["add", "--task", "--assignee", "ai", "-t", "form-feedback", "-m", &body]))? {
-            Ok(_) => screen.note = Some(("feedback saved as a task for the AI".into(), false)),
-            Err(e) => screen.note = Some((e.to_string(), true)),
-        }
-    }
-    Ok(())
-}
-
 /// a: a new item into the inbox of `cake` (with `parent`: under that row);
 /// the new id, None when cancelled or failed (then a note says why)
 fn add_item(ui: &mut Ui, screen: &mut Screen, cake: &Cake, store: &str, parent: Option<&str>) -> Result<Option<String>, Box<dyn Error>> {
@@ -730,10 +725,6 @@ fn still(ui: &mut Ui, title: &str, lines: Vec<Line<'static>>, fb: (&Cake, &str))
         ui.draw(&screen)?;
         help = false;
         match ui.keys.act()? {
-            Act::Feedback => {
-                feedback(ui, &mut screen, fb.0, fb.1, title)?;
-                note = screen.note.take();
-            }
             Act::Add | Act::AddChild => {
                 add_item(ui, &mut screen, fb.0, fb.1, None)?;
                 note = screen.note.take();
@@ -774,14 +765,14 @@ fn last_tab(ui: &mut Ui, root: &Path, user: &str, store: &str) -> Result<Leave, 
 /// dump: one new item per line into the inbox of `root`; `hint` (dim)
 /// above the added ones, e.g. what waits for agents
 fn dump(ui: &mut Ui, here: &Cake, store: &str, hint: &[String]) -> Result<usize, Box<dyn Error>> {
-    let mut added: Vec<String> = vec![];
+    let before = ui.dumped.len();
     let mut note = None;
     loop {
         // the same layout as the tree modules: added items as the tree,
         // the box below takes the text
         let mut tree = vec![Line::from(Span::styled(format!("dump: whatever is on your mind · {}", store), bold().fg(step_color(ui.step))))];
         tree.extend(hint.iter().map(|h| Line::from(Span::styled(h.clone(), dim()))));
-        for a in &added {
+        for (_, a) in &ui.dumped {
             tree.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled(format!("{} ", style::g().check), Style::default().fg(theme::t().ok)),
@@ -793,17 +784,17 @@ fn dump(ui: &mut Ui, here: &Cake, store: &str, hint: &[String]) -> Result<usize,
             tree,
             tree_focus: Some(focus),
             card_title: "new item into the inbox".into(),
-            card: vec![Line::from(Span::styled("Enter adds one, an empty enter or esc goes on.", dim()))],
-            keys: keys(&[("<cr>", "add / go on"), ("<esc>", "go on")]),
+            card: vec![Line::from(Span::styled("One idea per line. Change them afterwards in the inbox.", dim()))],
+            keys: keys(&[("<cr>", "add"), ("<esc> / empty <cr>", "next module")]),
             note: note.take(),
             ..Default::default()
         };
         match ui.input(&mut screen, "idea:", "")? {
             Some(text) if !text.is_empty() => match ui.save(&mut screen, || here.call(&["add", "-m", &text]))? {
-                Ok(_) => added.push(text),
+                Ok(items) => ui.dumped.push((items.first().map_or(String::new(), |i| str_of(i, "id").to_string()), text)),
                 Err(e) => note = Some((e.to_string(), true)),
             },
-            _ => return Ok(added.len()),
+            _ => return Ok(ui.dumped.len() - before),
         }
     }
 }
@@ -824,6 +815,11 @@ pub struct Options {
     /// own commands that start agents (aliases triage, work), for the hint
     /// when nothing waits
     pub agent_commands: Vec<String>,
+    /// the ALL tree after the last module (the configured run); modules
+    /// named on the command line end with the last one
+    pub last_tab: bool,
+    /// the row the tree starts on (`cake form all --at <id>`)
+    pub at: Option<String>,
 }
 
 /// runs the modules on `root` (with `all`: every known store); dump goes
@@ -877,7 +873,7 @@ pub fn run(root: &Path, user: &str, mut o: Options) -> Result<(), Box<dyn Error>
         per_module.insert(0, 0);
     }
     let keymap = Keymap::new(&o.keys)?;
-    let mut ui = Ui { term: ratatui::init(), names: o.modules.iter().filter(|m| *m != "all").cloned().chain(["all".to_string()]).collect(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), all_filter: 0, show_tags: true, tag_filter: None, done: vec![false; o.modules.len() + 1], changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
+    let mut ui = Ui { term: ratatui::init(), names: o.modules.iter().filter(|m| *m != "all").cloned().chain((o.last_tab || only_tree).then(|| "all".to_string())).collect(), counts: per_module, step: 0, handled: 0, total, max_width: o.width, keys: keymap, tree_depth: o.tree_depth, sort_who: o.sort_who.clone(), all_filter: 0, show_tags: true, at: None, dumped: vec![], tag_filter: None, done: vec![false; o.modules.len() + 1], changed: Default::default(), module: "", box_max: 0, cache: Default::default(), summary: String::new(), before: Default::default(), results: Default::default(), order: Default::default() };
     let mut counts = vec![0usize; o.modules.len()];
     let result = (|| -> Result<(), Box<dyn Error>> {
         // h/l move between modules; empty modules are passed in the
@@ -885,6 +881,8 @@ pub fn run(root: &Path, user: &str, mut o: Options) -> Result<(), Box<dyn Error>
         // `cake form all`: straight to the tree
         if only_tree {
             ui.summary = String::new();
+            ui.total = 0;
+            ui.at = o.at.clone();
             last_tab(&mut ui, root, user, &stores[0].0)?;
             return Ok(());
         }
@@ -934,6 +932,9 @@ pub fn run(root: &Path, user: &str, mut o: Options) -> Result<(), Box<dyn Error>
             };
             // after the last module: the whole tree as the last tab, instead
             // of closing by accident
+            if n + 1 == o.modules.len() && !o.last_tab && matches!(leave, Leave::Next | Leave::Done) {
+                return Ok(());
+            }
             let leave = if n + 1 == o.modules.len() && matches!(leave, Leave::Next | Leave::Done | Leave::Empty) {
                 let summary: Vec<String> = o.modules.iter().zip(&counts).filter(|(_, c)| **c > 0).map(|(m, c)| format!("{} {}", m, c)).collect();
                 ui.summary = if summary.is_empty() { "nothing decided".to_string() } else { format!("decided: {}", summary.join(", ")) };

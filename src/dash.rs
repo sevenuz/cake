@@ -547,6 +547,8 @@ fn paint_pie(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
         }
     });
     f.render_widget(canvas, pie);
+    // names as wide as the legend allows
+    let nw = (legend.width as usize).saturating_sub(4 + 7 + 5).clamp(6, 16);
     let mut lines: Vec<Line> = slices
         .iter()
         .enumerate()
@@ -556,14 +558,15 @@ fn paint_pie(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
             Line::from(vec![
                 Span::raw(if here { "› " } else { "  " }),
                 Span::styled("■ ", Style::default().fg(colors[n % colors.len()])),
-                Span::styled(format!("{:<16} {:>8} {:>4.0}%", cut(name, 16), o.measure.show(*v), v / total * 100.0), style),
+                Span::styled(format!("{:<nw$} {:>6} {:>3.0}%", cut(name, nw), o.measure.show(*v), v / total * 100.0, nw = nw), style),
             ])
         })
         .collect();
     let n = o.zoom.map_or_else(|| stats::sum(&o.stats), |z| o.stats[z].numbers.clone());
     lines.push(Line::default());
     lines.push(Line::from(Span::styled(format!("you {} · agents {}", hm(n.you), hm(n.agents)), dim())));
-    lines.push(Line::from(Span::styled(format!("{:.0} Wh · {:.0} g CO2e · {:.2} l water", n.wh, n.co2_g, n.water_l), dim())));
+    lines.push(Line::from(Span::styled(format!("{:.0} Wh · {:.0} g CO2e", n.wh, n.co2_g), dim())));
+    lines.push(Line::from(Span::styled(format!("{:.1} l water", n.water_l), dim())));
     f.render_widget(Paragraph::new(lines), legend);
 }
 
@@ -625,6 +628,13 @@ fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     let (from, to) = o.span;
     let scope = o.only.map_or("all stores".to_string(), |n| srcs[n].name.clone());
     let block = boxed(format!(" gantt · {} · {} · {} ", if o.period == Period::Day { "24 h" } else { "7 days" }, ["who", "stores", "items"][o.view.min(2) as usize], scope));
+    // items: a cursor row and its card below
+    let (area, card_area) = if o.view == 2 && !o.lanes.is_empty() {
+        let [a, c] = Layout::vertical([Constraint::Fill(1), Constraint::Percentage(35)]).areas(area);
+        (a, Some(c))
+    } else {
+        (area, None)
+    };
     let inner = block.inner(area);
     f.render_widget(block, area);
     let name_w = o.lanes.iter().map(|l| l.name.chars().count()).max().unwrap_or(4).clamp(4, 22);
@@ -635,10 +645,18 @@ fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     if visible.is_empty() {
         lines.push(Line::from(Span::styled("nothing ran in this period (d: week)", dim())));
     }
-    for l in &visible {
-        let mut spans = vec![Span::styled(format!("{:w$}  ", cut(&l.name, name_w), w = name_w), dim())];
+    // rows in view: the cursor row stays visible (items scroll)
+    let room = (inner.height as usize).saturating_sub(5).max(1);
+    let top = if o.view == 2 { (o.sel + 1).saturating_sub(room) } else { 0 };
+    for (k, l) in visible.iter().enumerate().skip(top).take(room) {
+        let here = o.view == 2 && k == o.sel;
+        let name_style = if here { Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED) } else { dim() };
+        let mut spans = vec![Span::styled(format!("{:w$}", cut(&l.name, name_w), w = name_w), name_style), Span::raw("  ")];
         spans.extend(gantt::render(l, from, to, width, &colors, o.view == 1, style::ascii()).spans);
         lines.push(Line::from(spans));
+    }
+    if visible.len() > top + room {
+        lines.push(Line::from(Span::styled(format!("{:w$}  … {} more (j/k)", "", visible.len() - top - room, w = name_w), dim())));
     }
     lines.push(Line::default());
     // the stores' colors, then what the marks mean
@@ -648,14 +666,21 @@ fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
         legend.push(Span::styled("■ ", Style::default().fg(colors[n % colors.len()])));
         legend.push(Span::styled(format!("{}  ", srcs[n].name), dim()));
     }
-    let marks = if o.view == 2 {
-        "█ timer  ▒ your chat on it"
-    } else if o.view == 0 { "█ working  ▒ in cake  · waits on you" } else { "░ 1 at once  ▒ 2  ▓ 3  █ 4+  ⁚ waits on you" };
+    let marks = match o.view {
+        2 => "█ timer  ▒ your chat on it",
+        0 => "you: █ chat ▒ in cake · agents: ░ 1 ▒ 2 ▓ 3 █ 4+ at once · waits on you",
+        _ => "░ 1 at once  ▒ 2  ▓ 3  █ 4+  ⁚ waits on you",
+    };
     legend.push(Span::styled(marks, dim()));
     lines.push(Line::from(legend));
     let (max, avg, waited) = gantt::summary(&o.lanes, from, to);
     lines.push(Line::from(Span::styled(format!("at once: max {} · avg {:.1} · agents waited {} on you", max, avg, hm(waited)), dim())));
     f.render_widget(Paragraph::new(lines), inner);
+    if let (Some(c), Some(l)) = (card_area, o.lanes.get(o.sel)) {
+        let row = Row { store: l.bars.first().map(|b| b.store), id: Some(l.name.clone()), module: None, line: Line::default() };
+        let (title, body) = card(srcs, &row, c.width);
+        f.render_widget(Paragraph::new(body).wrap(Wrap { trim: false }).block(boxed(format!(" {} ", title))), c);
+    }
 }
 
 /// the store lanes of the last 24 h, compact: axis and one line per store
@@ -688,8 +713,17 @@ fn paint_stats(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     let inner = block.inner(area);
     f.render_widget(block, area);
     let w = srcs.iter().map(|s| s.name.chars().count()).max().unwrap_or(5).clamp(5, 16);
-    let head = format!("{:w$}  {:>6}  {:>6}  {:>7}  {:>6}  {:>8}  {:>4}  {}", "", "you", "agents", "tokens", "kWh", "CO2e", "done", o.period.bucket(), w = w);
+    // narrow (the dashboard's side column): no kWh, no sparkline
+    let compact = inner.width < 80;
+    let head = if compact {
+        format!("{:w$}  {:>6}  {:>6}  {:>7}  {:>7}  {:>4}", "", "you", "agents", "tokens", "CO2e", "done", w = w)
+    } else {
+        format!("{:w$}  {:>6}  {:>6}  {:>7}  {:>6}  {:>8}  {:>4}  {}", "", "you", "agents", "tokens", "kWh", "CO2e", "done", o.period.bucket(), w = w)
+    };
     let row = |name: &str, n: &stats::Numbers, buckets: String| {
+        if compact {
+            return format!("{:w$}  {:>6}  {:>6}  {:>7}  {:>5.0} g  {:>4}", cut(name, w), hm(n.you), hm(n.agents), crate::footprint::human(n.tokens), n.co2_g, n.done, w = w);
+        }
         format!(
             "{:w$}  {:>6}  {:>6}  {:>7}  {:>6.2}  {:>6.0} g  {:>4}  {}",
             cut(name, w), hm(n.you), hm(n.agents), crate::footprint::human(n.tokens), n.wh / 1000.0, n.co2_g, n.done, buckets, w = w
@@ -725,7 +759,7 @@ fn paint_stats(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
 
 /// terminal widths where the main screen shows more
 const MEDIUM: u16 = 100;
-const WIDE: u16 = 150;
+const WIDE: u16 = 120;
 
 fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &str, side: &Side, user: &str) {
     let t = theme::t();
@@ -753,9 +787,14 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
     // wide: pie and who-gantt to the right of the lists
     let list = if wide {
         let [l, r] = Layout::horizontal([Constraint::Fill(1), Constraint::Length(col.width * 45 / 100)]).areas(list);
-        let [pie, gantt] = Layout::vertical([Constraint::Length(12), Constraint::Fill(1)]).areas(r);
+        // pie, the who-gantt as tall as its lanes, the stats per goal below
+        let lanes = side.who.lanes.iter().filter(|l| !l.bars.is_empty()).count() as u16;
+        let [pie, gantt, table] = Layout::vertical([Constraint::Length(12), Constraint::Length(lanes.max(1) + 7), Constraint::Fill(1)]).areas(r);
         paint_pie(f, pie, srcs, &side.pie);
         paint_gantt(f, gantt, srcs, &side.who);
+        if table.height >= 5 {
+            paint_stats(f, table, srcs, &side.pie);
+        }
         l
     } else {
         list
@@ -785,7 +824,7 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
         let k = match o.kind {
             Kind::Pie => "m measure  d period  j/k slice  <cr> goals  <bs> stores  s stats  g gantt  q back",
             Kind::Stats => "d period  p pie  g gantt  q back",
-            Kind::Gantt => "v who/stores/items/path  d day/week  j/k goal  p pie  s stats  q back",
+            Kind::Gantt => "v who/stores/items/path  d day/week  j/k row  <cr> tree  e edit  p pie  s stats  q back",
         };
         f.render_widget(Paragraph::new(Line::from(Span::styled(k, dim()))), keys);
         return;
@@ -937,7 +976,22 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                         o.refresh(&srcs, user);
                     }
                     KeyCode::Char('m') => o.measure = o.measure.next(),
-                    KeyCode::Char('j') | KeyCode::Down if o.kind == Kind::Gantt => o.sel = (o.sel + 1).min(o.plans.len().saturating_sub(1)),
+                    KeyCode::Char('j') | KeyCode::Down if o.kind == Kind::Gantt => {
+                        let n = if o.view == 2 { o.lanes.len() } else { o.plans.len() };
+                        o.sel = (o.sel + 1).min(n.saturating_sub(1));
+                    }
+                    // items: open the tree on it, or edit it
+                    KeyCode::Enter | KeyCode::Char('e') if o.kind == Kind::Gantt && o.view == 2 => {
+                        if let Some((n, id)) = o.lanes.get(o.sel).and_then(|l| l.bars.first().map(|b| (b.store, l.name.clone()))) {
+                            let args: Vec<&str> = if k.code == KeyCode::Enter { vec!["form", "all", "--at", &id] } else { vec!["edit", &id] };
+                            suspend(&mut term, &srcs[n].root.clone(), &args)?;
+                            srcs = load(root)?;
+                            if let Some(o) = v.overlay.as_mut() {
+                                o.refresh(&srcs, user);
+                            }
+                        }
+                        continue;
+                    }
                     KeyCode::Char('j') | KeyCode::Down => o.sel = (o.sel + 1).min(count.saturating_sub(1)),
                     KeyCode::Char('k') | KeyCode::Up => o.sel = o.sel.saturating_sub(1),
                     KeyCode::Enter if o.kind == Kind::Pie && o.zoom.is_none() => {
@@ -993,7 +1047,8 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                     let args: &[&str] = match c {
                         'F' => &["form", "news", "inbox", "answer", "review"],
                         'T' => &["form", "all"],
-                        _ => &["form", "dump"],
+                        // the new ideas right after, to sort and change
+                        _ => &["form", "dump", "inbox"],
                     };
                     suspend(&mut term, &srcs[n].root.clone(), args)?;
                     srcs = load(root)?;
