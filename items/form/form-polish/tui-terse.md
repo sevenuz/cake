@@ -4,7 +4,7 @@ status: review
 parent: "[[form-polish]]"
 created: 2026-11-16T02:25:18+01:00
 by: claude-code
-commits: [b637502]
+commits: [b637502, 359c1f5]
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 7, out: 6932, cache_read: 1792272, cache_write: 9392}}
 assignee: claude-code
@@ -19,3 +19,5 @@ time:
 - done when: no TUI line explains more than it needs
 
 changed: review option 'not ok yet #discuss'; shorter dump card/keys, filter note, empty states, gantt legends, overlay key lines, focus lines; try: cake
+
+rework (user): too short in places: key lines name every key again (p pie, s stats, g gantt, q back), gantt legends and the path note in words
