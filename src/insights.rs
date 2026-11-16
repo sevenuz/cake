@@ -10,8 +10,6 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use std::collections::BTreeMap;
 
-pub const SECTIONS: [&str; 5] = ["overview", "rhythm", "flow", "agents", "fun"];
-
 /// one store's input
 pub struct Src<'a> {
     pub store: &'a Store,
@@ -86,15 +84,17 @@ fn heat(g: &[[i64; 24]; 7], color: Color, look: &Look) -> Vec<Line<'static>> {
     out
 }
 
-/// work spans: (start, end, the user's)
+/// work spans: (start, end, the user's); agents per session, so one
+/// agent's parallel timers count once
 fn spans(srcs: &[Src], user: &str) -> Vec<(i64, i64, bool)> {
     let mut v = vec![];
     for s in srcs {
-        for i in s.store.get().values() {
-            let mine = users(i, user);
-            v.extend(i.intervals().into_iter().map(|(a, b)| (a, b, mine)));
+        for i in s.store.get().values().filter(|i| users(i, user)) {
+            v.extend(i.intervals().into_iter().map(|(a, b)| (a, b, true)));
         }
         v.extend(s.log.iter().filter(|l| l.who == user).filter_map(|l| l.span()).map(|(a, b)| (a, b, true)));
+        let ids: Vec<&str> = s.store.get().keys().map(String::as_str).collect();
+        v.extend(stats::agent_spans(s.store, &ids, s.log, user).into_iter().map(|(_, a, b)| (a, b, false)));
     }
     v
 }

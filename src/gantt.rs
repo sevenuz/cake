@@ -61,8 +61,7 @@ fn waits(store: &Store, user: &str, now: i64) -> Vec<(i64, i64)> {
 }
 
 /// G1: you, the agents of each store (one lane, shaded by how many
-/// timers ran at once: the assignee says who should do it, not who ran
-/// it), and what waited on you
+/// sessions worked at once), and what waited on you
 pub fn sessions(srcs: &[Src], user: &str, from: i64, to: i64) -> Vec<Lane> {
     let mut you = vec![];
     let mut out = vec![];
@@ -73,14 +72,16 @@ pub fn sessions(srcs: &[Src], user: &str, from: i64, to: i64) -> Vec<Lane> {
                 you.push(Bar { start: a, end: b, store: n, fill: if l.kind == "cake" { Fill::Light } else { Fill::Solid } });
             }
         }
-        let mut agents: Vec<Bar> = vec![];
-        for i in s.store.get().values() {
-            let bars = i.intervals().into_iter().filter(|(a, b)| overlaps(*a, *b, from, to)).map(|(a, b)| Bar { start: a, end: b, store: n, fill: Fill::Solid });
-            match i.assignee() {
-                Some(a) if a == user => you.extend(bars),
-                _ => agents.extend(bars),
-            }
+        for i in s.store.get().values().filter(|i| i.assignee().is_some_and(|a| a == user)) {
+            you.extend(i.intervals().into_iter().filter(|(a, b)| overlaps(*a, *b, from, to)).map(|(a, b)| Bar { start: a, end: b, store: n, fill: Fill::Solid }));
         }
+        // per session: several timers of one agent count once
+        let ids: Vec<&str> = s.store.get().keys().map(String::as_str).collect();
+        let agents: Vec<Bar> = crate::stats::agent_spans(s.store, &ids, s.log, user)
+            .into_iter()
+            .filter(|(_, a, b)| overlaps(*a, *b, from, to))
+            .map(|(_, a, b)| Bar { start: a, end: b, store: n, fill: Fill::Solid })
+            .collect();
         if !agents.is_empty() {
             out.push(Lane { name: format!("agents · {}", s.name), bars: agents, stacked: true });
         }

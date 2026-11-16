@@ -622,7 +622,7 @@ fn paint_path(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     let names: Vec<&str> = path.iter().map(|p| p.id.as_str()).collect();
     let (verdict, style) = if finish <= *deadline { ("fits ✓".to_string(), Style::default().fg(t.ok)) } else { (format!("{} over", hm(finish - deadline)), Style::default().fg(t.error)) };
     lines.push(Line::from(vec![Span::styled(format!("critical path: {} = {} · ", names.join(" → "), hm(total)), dim()), Span::styled(verdict, style)]));
-    lines.push(Line::from(Span::styled("~ guessed · ◆ question", dim())));
+    lines.push(Line::from(Span::styled("~ guessed estimate · ◆ question to you", dim())));
     f.render_widget(Paragraph::new(lines), inner);
 }
 
@@ -674,13 +674,13 @@ fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     }
     let marks = match o.view {
         2 => "█ timer ▒ chat",
-        0 => "█ chat ▒ cake · agents ░▒▓█ 1-4+ · waits",
-        _ => "░▒▓█ 1-4+ at once · ⁚ waits",
+        0 => "█ chat  ▒ in cake  agents ░▒▓█ 1-4+ at once  · waits on you",
+        _ => "░▒▓█ 1-4+ at once  ⁚ waits on you",
     };
     legend.push(Span::styled(marks, dim()));
     lines.push(Line::from(legend));
     let (max, avg, waited) = gantt::summary(&o.lanes, from, to);
-    lines.push(Line::from(Span::styled(format!("at once max {} · avg {:.1} · waited {}", max, avg, hm(waited)), dim())));
+    lines.push(Line::from(Span::styled(format!("at once: max {} · avg {:.1} · agents waited {} on you", max, avg, hm(waited)), dim())));
     f.render_widget(Paragraph::new(lines), inner);
     if let (Some(c), Some(l)) = (card_area, o.lanes.get(o.sel)) {
         let row = Row { store: l.bars.first().map(|b| b.store), id: Some(l.name.clone()), module: None, line: Line::default() };
@@ -689,14 +689,11 @@ fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     }
 }
 
-/// a stats section (rhythm, flow, agents, fun) of the tab's store or all
-fn paint_section(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
+/// the stats sections (rhythm, flow, agents, fun) of the tab's store or
+/// all, each as (title, lines)
+fn section_lines(srcs: &[Src], o: &Overlay) -> Vec<Vec<Line<'static>>> {
     use crate::insights;
     let t = theme::t();
-    let name = insights::SECTIONS[o.view as usize % insights::SECTIONS.len()];
-    let block = boxed(format!(" stats · {} · {} ", name, o.period.name()));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
     let picked: Vec<usize> = o.only.map_or((0..srcs.len()).collect(), |n| vec![n]);
     let isrcs: Vec<insights::Src> = picked
         .iter()
@@ -705,14 +702,12 @@ fn paint_section(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) 
     let look = insights::Look { dim: dim(), you: t.mine, agents: t.hint };
     let (from, to) = (o.stats.first().map_or(0, |s| s.from), util::timestamp());
     let user = o.user.as_str();
-    let lines = match name {
-        "rhythm" => insights::rhythm(&isrcs, user, from, to, &look),
-        "flow" => insights::flow(&isrcs, user, from, to, &look),
-        "agents" => insights::agents(&isrcs, user, from, to, &look),
-        _ => insights::fun(&isrcs, user, from, to, &look),
-    };
-    let top = o.sel.min(lines.len().saturating_sub(1));
-    f.render_widget(Paragraph::new(lines.into_iter().skip(top).collect::<Vec<_>>()), inner);
+    vec![
+        insights::rhythm(&isrcs, user, from, to, &look),
+        insights::flow(&isrcs, user, from, to, &look),
+        insights::agents(&isrcs, user, from, to, &look),
+        insights::fun(&isrcs, user, from, to, &look),
+    ]
 }
 
 /// the store lanes of the last 24 h, compact: axis and one line per store
@@ -739,11 +734,10 @@ fn paint_strip(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     f.render_widget(Paragraph::new(lines), inner);
 }
 
-fn paint_stats(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
+/// the stats table; with `full` (the overlay) the sections follow on one
+/// page, in two columns when there is room, j/k scroll
+fn paint_stats(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay, full: bool) {
     let t = theme::t();
-    if o.view > 0 {
-        return paint_section(f, area, srcs, o);
-    }
     let block = boxed(format!(" stats · {} ", o.period.name()));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -789,7 +783,35 @@ fn paint_stats(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
         Span::styled(format!("overdue {}", overdue), late),
         Span::styled(format!(" · review {} · questions {} · streak {} d", review, questions, streak), dim()),
     ]));
-    f.render_widget(Paragraph::new(lines), inner);
+    if !full {
+        f.render_widget(Paragraph::new(lines), inner);
+        return;
+    }
+    lines.push(Line::default());
+    let sections = section_lines(srcs, o);
+    let gap = |mut v: Vec<Line<'static>>| {
+        v.push(Line::default());
+        v
+    };
+    if inner.width >= 120 {
+        // two columns under the table: rhythm and agents left, flow and fun right
+        let mut it = sections.into_iter();
+        let (r, fl, ag, fu) = (it.next().unwrap_or_default(), it.next().unwrap_or_default(), it.next().unwrap_or_default(), it.next().unwrap_or_default());
+        let (a, b) = ([gap(r), ag].concat(), [gap(fl), fu].concat());
+        let top = lines.len() as u16;
+        let scroll = o.sel as u16;
+        f.render_widget(Paragraph::new(lines).scroll((scroll, 0)), inner);
+        let below = Rect { y: inner.y + top.saturating_sub(scroll).min(inner.height), height: inner.height.saturating_sub(top.saturating_sub(scroll)), ..inner };
+        let [l, r] = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(below);
+        let inside = scroll.saturating_sub(top);
+        f.render_widget(Paragraph::new(a).scroll((inside, 0)), l);
+        f.render_widget(Paragraph::new(b).scroll((inside, 0)), r);
+    } else {
+        for sec in sections {
+            lines.extend(gap(sec));
+        }
+        f.render_widget(Paragraph::new(lines).scroll((o.sel as u16, 0)), inner);
+    }
 }
 
 /// terminal widths where the main screen shows more
@@ -828,7 +850,7 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
         paint_pie(f, pie, srcs, &side.pie);
         paint_gantt(f, gantt, srcs, &side.who);
         if table.height >= 5 {
-            paint_stats(f, table, srcs, &side.pie);
+            paint_stats(f, table, srcs, &side.pie, false);
         }
         l
     } else {
@@ -853,13 +875,13 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
         let body = Rect { height: list.height + card_area.height, ..list };
         match o.kind {
             Kind::Pie => paint_pie(f, body, srcs, o),
-            Kind::Stats => paint_stats(f, body, srcs, o),
+            Kind::Stats => paint_stats(f, body, srcs, o, true),
             Kind::Gantt => paint_gantt(f, body, srcs, o),
         }
         let k = match o.kind {
-            Kind::Pie => "v measure  d period  j/k  <cr> zoom  <bs> back  s g  q",
-            Kind::Stats => "v section  d period  j/k scroll  p g  q",
-            Kind::Gantt => "v view  d period  j/k  <cr> tree  e edit  p s  q",
+            Kind::Pie => "v measure  d period  j/k slice  <cr> zoom  <bs> back  s stats  g gantt  q back",
+            Kind::Stats => "d period  j/k scroll  p pie  g gantt  q back",
+            Kind::Gantt => "v view  d period  j/k row  <cr> tree  e edit  p pie  s stats  q back",
         };
         f.render_widget(Paragraph::new(Line::from(Span::styled(k, dim()))), keys);
         return;
@@ -892,7 +914,7 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
     f.render_widget(Paragraph::new(body).wrap(Wrap { trim: false }).block(block), card_area);
     let keys_line = match &v.note {
         Some(n) => Line::from(Span::styled(n.clone(), Style::default().fg(t.error))),
-        None => Line::from(Span::styled("h/l store  j/k  <cr> open  a add  e edit  F form  T tree  D dump  p s g  q", dim())),
+        None => Line::from(Span::styled("h/l store  j/k  <cr> open  a add  e edit  F form  T tree  D dump  p pie  s stats  g gantt  q quit", dim())),
     };
     f.render_widget(Paragraph::new(keys_line), keys);
 }
@@ -1019,8 +1041,7 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                     }
                     // v: the next view, in every overlay
                     KeyCode::Char('v') if o.kind == Kind::Pie => o.measure = o.measure.next(),
-                    KeyCode::Char('v') if o.kind == Kind::Stats => (o.view, o.sel) = ((o.view + 1) % crate::insights::SECTIONS.len() as u8, 0),
-                    KeyCode::Char('j') | KeyCode::Down if o.kind == Kind::Stats => o.sel += 1,
+                    KeyCode::Char('j') | KeyCode::Down if o.kind == Kind::Stats => o.sel = (o.sel + 1).min(80),
                     KeyCode::Char('j') | KeyCode::Down if o.kind == Kind::Gantt => {
                         let n = if o.view == 2 { o.lanes.len() } else { o.plans.len() };
                         o.sel = (o.sel + 1).min(n.saturating_sub(1));

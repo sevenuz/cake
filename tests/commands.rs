@@ -761,7 +761,7 @@ fn claude_hook_logs_session_time_split_by_the_running_timer() {
     std::thread::sleep(std::time::Duration::from_millis(2100));
     let now = chrono::Utc::now();
     let line = |kind: &str, t: chrono::DateTime<chrono::Utc>| {
-        format!("{{\"type\":\"{}\",\"timestamp\":\"{}\",\"message\":{{}}}}\n", kind, t.to_rfc3339())
+        format!("{{\"type\":\"{}\",\"timestamp\":\"{}\",\"message\":{{\"content\":\"hi\"}}}}\n", kind, t.to_rfc3339())
     };
     let transcript = env.path("t.jsonl");
     // the user asked 10 minutes ago, the agent answers now
@@ -785,10 +785,15 @@ fn claude_hook_logs_session_time_split_by_the_running_timer() {
     assert_eq!(files.len(), 1, "one file for this month and machine");
     let lines: Vec<serde_json::Value> =
         std::fs::read_to_string(&files[0]).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
-    assert_eq!(lines.len(), 2, "{:?}", lines);
-    assert!(lines.iter().all(|l| l["who"] == "jul" && l["kind"] == "chat" && l["session"] == "s1"));
-    assert!(lines[0].get("item").is_none(), "before the timer: the store only");
-    assert_eq!(lines[1]["item"], "work");
+    let chat: Vec<&serde_json::Value> = lines.iter().filter(|l| l["kind"] == "chat").collect();
+    assert_eq!(chat.len(), 2, "{:?}", lines);
+    assert!(chat.iter().all(|l| l["who"] == "jul" && l["session"] == "s1"));
+    assert!(chat[0].get("item").is_none(), "before the timer: the store only");
+    assert_eq!(chat[1]["item"], "work");
+    // the agent's turn (prompt to answer) is its own time
+    let agent: Vec<&serde_json::Value> = lines.iter().filter(|l| l["kind"] == "agent").collect();
+    assert_eq!(agent.len(), 2, "{:?}", lines);
+    assert!(agent.iter().all(|l| l["who"] == "claude-code"));
 }
 
 #[test]

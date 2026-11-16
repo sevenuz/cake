@@ -81,12 +81,28 @@ struct Answer {
 /// complete new lines of `path` since the last call, as answers
 #[cfg(test)]
 fn new_answers(path: &Path) -> Result<Vec<Answer>, Box<dyn Error>> {
-    Ok(new_lines(path)?.0)
+    Ok(read_lines(path)?.answers)
+}
+
+/// what new transcript lines tell: the answers, the time of every line
+/// (user and assistant) and the agent's turns (a prompt of the user until
+/// the last assistant line before the next prompt)
+struct Lines {
+    answers: Vec<Answer>,
+    times: Vec<i64>,
+    turns: Vec<(i64, i64)>,
+}
+
+/// a prompt typed by the user (tool results come as user lines too)
+fn is_prompt(v: &serde_json::Value) -> bool {
+    let c = &v["message"]["content"];
+    v["type"] == "user"
+        && (c.is_string() || c.as_array().is_some_and(|a| !a.iter().any(|x| x["type"] == "tool_result")))
 }
 
 /// complete new lines of `path` since the last call: the answers and the
 /// time of every line (user and assistant), for the session log
-fn new_lines(path: &Path) -> Result<(Vec<Answer>, Vec<i64>), Box<dyn Error>> {
+fn read_lines(path: &Path) -> Result<Lines, Box<dyn Error>> {
     let offsets_file = state_dir()?.join("claude-offsets.json");
     let mut offsets: BTreeMap<String, u64> = read_json(&offsets_file);
     let key = path.to_string_lossy().to_string();
@@ -103,11 +119,21 @@ fn new_lines(path: &Path) -> Result<(Vec<Answer>, Vec<i64>), Box<dyn Error>> {
     let mut seen = HashSet::new();
     let mut answers = vec![];
     let mut times = vec![];
+    let mut turns = vec![];
+    let mut turn: Option<(i64, i64)> = None;
     for line in text[..complete].lines() {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
         if matches!(v["type"].as_str(), Some("user" | "assistant")) {
             if let Some(t) = v["timestamp"].as_str().and_then(|t| util::parse_timestamp(t).ok()) {
                 times.push(t);
+                if is_prompt(&v) {
+                    turns.extend(turn.take().filter(|(a, b)| b > a));
+                    turn = Some((t, t));
+                } else if v["type"] == "assistant" {
+                    if let Some(tr) = turn.as_mut() {
+                        tr.1 = t;
+                    }
+                }
             }
         }
         let m = &v["message"];
@@ -133,15 +159,16 @@ fn new_lines(path: &Path) -> Result<(Vec<Answer>, Vec<i64>), Box<dyn Error>> {
             },
         });
     }
+    turns.extend(turn.filter(|(a, b)| b > a));
     offsets.insert(key, offset + complete as u64);
     write_json(&offsets_file, &offsets)?;
-    Ok((answers, times))
+    Ok(Lines { answers, times, turns })
 }
 
 /// the session's activity since the last hook as log lines: stretches of
 /// the transcript's times (a pause up to log::GAP after the last stretch
 /// continues it), split by the timers of the session's items
-fn session_lines(store: &Store, session: &str, times: &[i64], who: &str) -> Result<Vec<log::Line>, Box<dyn Error>> {
+fn session_lines(store: &Store, session: &str, times: &[i64], turns: &[(i64, i64)], who: &str) -> Result<Vec<log::Line>, Box<dyn Error>> {
     let ends_file = state_dir()?.join("claude-session-ends.json");
     let mut ends: BTreeMap<String, i64> = read_json(&ends_file);
     let stretches = log::stretches(times, ends.get(session).copied());
@@ -161,6 +188,15 @@ fn session_lines(store: &Store, session: &str, times: &[i64], who: &str) -> Resu
             lines.push(l);
         }
     }
+    // the agent's own time: its turns, split by the timers as well
+    for (start, end) in turns {
+        for (s, e, item) in log::split(*start, *end, &timers) {
+            let mut l = log::Line::new(s, e, "claude-code", "agent");
+            l.session = Some(session.to_owned());
+            l.item = item;
+            lines.push(l);
+        }
+    }
     if let Some((_, end)) = stretches.last() {
         ends.insert(session.to_owned(), *end);
         write_json(&ends_file, &ends)?;
@@ -174,9 +210,9 @@ pub fn claude_hook(store: &mut Store, log_as: Option<&str>) -> Result<Vec<PathBu
     let mut stdin = String::new();
     std::io::stdin().read_to_string(&mut stdin)?;
     let input: HookInput = serde_json::from_str(&stdin)?;
-    let (answers, times) = new_lines(&input.transcript_path)?;
+    let Lines { answers, times, turns } = read_lines(&input.transcript_path)?;
     let files = match log_as {
-        Some(who) => log::append(store.root(), &session_lines(store, &input.session_id, &times, who)?)?,
+        Some(who) => log::append(store.root(), &session_lines(store, &input.session_id, &times, &turns, who)?)?,
         None => vec![],
     };
     let file = pending_file(store.root())?;

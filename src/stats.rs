@@ -196,16 +196,50 @@ fn users(i: &Item, user: &str) -> bool {
 }
 
 /// numbers of one item set in [from, to]: `log` the user's lines
-fn numbers(store: &Store, ids: &[&str], log: &[(i64, i64)], user: &str, from: i64, to: i64) -> Numbers {
+/// agents' work as (session, start, end), overlaps within a session
+/// merged: one agent that started several timers works on one thing at a
+/// time. Sources: timers of agent items (keyed by the session that
+/// changed the item first) and agent turns from the session log.
+pub fn agent_spans(store: &Store, ids: &[&str], log: &[Line], user: &str) -> Vec<(String, i64, i64)> {
+    let mut by: std::collections::BTreeMap<String, Vec<(i64, i64)>> = Default::default();
+    for id in ids {
+        let Some(i) = store.get_item(id) else { continue };
+        if users(i, user) {
+            continue;
+        }
+        let key = i.sessions().first().cloned().unwrap_or_else(|| format!("item:{}", id));
+        by.entry(key).or_default().extend(i.intervals());
+    }
+    for l in log.iter().filter(|l| l.who != user) {
+        if let Some((a, b)) = l.span() {
+            by.entry(l.session.clone().unwrap_or_else(|| l.who.clone())).or_default().push((a, b));
+        }
+    }
+    let mut out = vec![];
+    for (k, mut v) in by {
+        v.retain(|(a, b)| b > a);
+        v.sort();
+        let mut merged: Vec<(i64, i64)> = vec![];
+        for (a, b) in v {
+            match merged.last_mut() {
+                Some(last) if a <= last.1 => last.1 = last.1.max(b),
+                _ => merged.push((a, b)),
+            }
+        }
+        out.extend(merged.into_iter().map(|(a, b)| (k.clone(), a, b)));
+    }
+    out
+}
+
+fn numbers(store: &Store, ids: &[&str], you_log: &[(i64, i64)], agent_log: &[Line], user: &str, from: i64, to: i64) -> Numbers {
     let mut n = Numbers::default();
-    let mut you: Vec<(i64, i64)> = log.to_vec();
+    let mut you: Vec<(i64, i64)> = you_log.to_vec();
+    n.agents = agent_spans(store, ids, agent_log, user).iter().map(|(_, a, b)| clip(*a, *b, from, to)).sum();
     for id in ids {
         let Some(i) = store.get_item(id) else { continue };
         let spans = i.intervals();
         if users(i, user) {
             you.extend(spans.iter().copied());
-        } else {
-            n.agents += spans.iter().map(|(s, e)| clip(*s, *e, from, to)).sum::<i64>();
         }
         // tokens by the share of the item's time in the period; without
         // time, by when it was closed (or created)
@@ -239,7 +273,9 @@ pub fn of_store(store: &Store, log: &[Line], user: &str, period: Period, now: i6
     let mine: Vec<(i64, i64, Option<String>)> =
         log.iter().filter(|l| l.who == user).filter_map(|l| l.span().map(|(s, e)| (s, e, l.item.clone()))).collect();
     let spans = |pick: &dyn Fn(&Option<String>) -> bool| -> Vec<(i64, i64)> { mine.iter().filter(|(_, _, i)| pick(i)).map(|(s, e, _)| (*s, *e)).collect() };
-    let total = numbers(store, &all, &spans(&|_| true), user, from, now);
+    let theirs: Vec<Line> = log.iter().filter(|l| l.who != user).cloned().collect();
+    let theirs_of = |pick: &dyn Fn(&Option<String>) -> bool| -> Vec<Line> { theirs.iter().filter(|l| pick(&l.item)).cloned().collect() };
+    let total = numbers(store, &all, &spans(&|_| true), &theirs, user, from, now);
 
     // per goal: items under it, log lines of its items; the rest is ""
     let goal_id = |id: &str| goal_of(store, id).map_or(String::new(), |g| g.id().clone());
@@ -250,9 +286,9 @@ pub fn of_store(store: &Store, log: &[Line], user: &str, period: Period, now: i6
     let mut goals: Vec<Goal> = by_goal
         .iter()
         .map(|(g, ids)| {
-            let lines = spans(&|i| i.as_deref().map_or(g.is_empty(), |i| goal_id(i) == *g));
+            let pick = |i: &Option<String>| i.as_deref().map_or(g.is_empty(), |i| goal_id(i) == *g);
             let title = store.get_item(g).map_or("other".to_string(), |i| i.title());
-            Goal { id: g.clone(), title, numbers: numbers(store, ids, &lines, user, from, now) }
+            Goal { id: g.clone(), title, numbers: numbers(store, ids, &spans(&pick), &theirs_of(&pick), user, from, now) }
         })
         .filter(|g| g.numbers != Numbers::default())
         .collect();
@@ -264,7 +300,7 @@ pub fn of_store(store: &Store, log: &[Line], user: &str, period: Period, now: i6
         .iter()
         .zip(&ends)
         .map(|(s, e)| {
-            let n = numbers(store, &all, &spans(&|_| true), user, *s, *e);
+            let n = numbers(store, &all, &spans(&|_| true), &theirs, user, *s, *e);
             (*s, n.you + n.agents)
         })
         .collect();
@@ -286,7 +322,7 @@ pub fn of_store(store: &Store, log: &[Line], user: &str, period: Period, now: i6
     let (mut day_start, _) = Period::Day.range(now);
     let mut day_end = now;
     loop {
-        let n = numbers(store, &all, &spans(&|_| true), user, day_start, day_end);
+        let n = numbers(store, &all, &spans(&|_| true), &theirs, user, day_start, day_end);
         if n.you + n.agents == 0 && n.done == 0 {
             break;
         }
@@ -341,7 +377,8 @@ pub fn activity(store: &Store, log: &[Line]) -> Vec<(i64, i64)> {
 pub fn window(store: &Store, log: &[Line], user: &str, from: i64, to: i64) -> Numbers {
     let all: Vec<&str> = store.get().keys().map(String::as_str).collect();
     let mine: Vec<(i64, i64)> = log.iter().filter(|l| l.who == user).filter_map(|l| l.span()).collect();
-    numbers(store, &all, &mine, user, from, to)
+    let theirs: Vec<Line> = log.iter().filter(|l| l.who != user).cloned().collect();
+    numbers(store, &all, &mine, &theirs, user, from, to)
 }
 
 /// you + agents seconds for each of the last `n` days (today last)
@@ -393,6 +430,22 @@ mod tests {
         assert_eq!(workday_start(vec![(18 * h, 23 * h), (24 * h, 25 * h)], 25 * h), 18 * h);
         // nothing for 5 h: a clean start
         assert_eq!(workday_start(spans, 41 * h), 41 * h);
+    }
+
+    #[test]
+    fn one_session_with_several_timers_counts_once() {
+        let h = 3600;
+        let mut s = store();
+        for (id, sess, t) in [("a", "s1", vec![0, 2 * h]), ("b", "s1", vec![h, 3 * h]), ("c", "s2", vec![0, h])] {
+            let mut i = item(id, None);
+            i.set_assignee(Some("claude-code".into()));
+            i.add_session(sess);
+            i.set_timetrack(t);
+            s.add(i).unwrap();
+        }
+        let ids = ["a", "b", "c"];
+        let spans = agent_spans(&s, &ids, &[], "jul");
+        assert_eq!(spans.iter().map(|(_, a, b)| b - a).sum::<i64>(), 4 * h, "s1 0-3h once, s2 0-1h");
     }
 
     #[test]
