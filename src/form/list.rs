@@ -269,7 +269,7 @@ fn card_of(kind: Kind, item: &Value, all: &[Value]) -> (String, Vec<String>) {
             (text, vec!["ok, done".into(), "drop".into()])
         }
     };
-    options.push(format!("{} {}", g.ellipsis, if kind == Kind::Answer { "own words" } else { "not ok yet: what bothers you (back to you as #discuss)" }));
+    options.push(format!("{} {}", g.ellipsis, if kind == Kind::Answer { "own words" } else { "not ok yet #discuss" }));
     (context, options)
 }
 
@@ -606,7 +606,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         }
         let rows = tree.rows();
         if rows.is_empty() && ui.tag_filter.is_some() {
-            st.note = Some((format!("nothing with #{} here, filter off", ui.tag_filter.take().unwrap()), true));
+            st.note = Some((format!("no #{} here", ui.tag_filter.take().unwrap()), true));
             continue;
         }
         if rows.is_empty() {
@@ -918,7 +918,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                     },
                     "est" if ours => change = Some(Change::Est(if arg.is_empty() { "-".into() } else { arg.to_string() })),
                     "tag" if ours && !arg.is_empty() => change = Some(Change::Tags(arg.split([',', ' ']).filter(|t| !t.is_empty()).map(|t| t.trim_start_matches('#')).collect::<Vec<_>>().join(","))),
-                    "tag" if ours => st.note = Some(("tag doc adds, tag ~doc removes; filter doc shows only doc".into(), true)),
+                    "tag" if ours => st.note = Some(("tag doc · tag ~doc".into(), true)),
                     "move" if ours && stores.iter().any(|s| s == arg) => change = Some(Change::Move(arg.to_string())),
                     "move" if ours => st.note = Some((format!("no store '{}': {}", arg, stores.join(", ")), true)),
                     "all" if ours => {
@@ -996,7 +996,7 @@ fn choose(ui: &mut Ui, screen: &mut Screen, kind: Kind, item: &Value, all: &[Val
     }
     if pick == options.len() - 1 && kind != Kind::Answer {
         // room for the doubts; empty is fine: then it is just to talk
-        let Some(text) = ui.overlay(screen, "not ok yet: what bothers you? (empty: just talk about it)")? else { return Ok(None) };
+        let Some(text) = ui.overlay(screen, "not ok yet #discuss")? else { return Ok(None) };
         return Ok(Some(Change::Talk(text)));
     }
     if pick == options.len() - 1 {
@@ -1142,7 +1142,7 @@ mod tests {
         assert_eq!(ctx, "Why.");
         assert_eq!(opts, ["always", "with -d (recommended)", "… own words"]);
         let (_, opts) = card_of(Kind::Review, &q, &[]);
-        assert_eq!(opts, ["ok, done", "drop", "… not ok yet: what bothers you (back to you as #discuss)"]);
+        assert_eq!(opts, ["ok, done", "drop", "… not ok yet #discuss"]);
     }
 
     #[test]

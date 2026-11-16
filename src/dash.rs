@@ -153,7 +153,7 @@ fn rows(srcs: &[Src], tab: Option<usize>, user: &str) -> Vec<Row> {
         let blocking: Vec<&Item> =
             items.iter().copied().filter(|i| i.is_open() && mine(i) && items.iter().any(|o| o.is_open() && o.blocked_by().contains(i.id()))).collect();
         if !blocking.is_empty() {
-            focus.push(info_row(srcs, n, all, format!("? {} answer(s) block agent work", blocking.len()), Some("answer")));
+            focus.push(info_row(srcs, n, all, format!("? {} answer(s) block agents", blocking.len()), Some("answer")));
         }
         let review: Vec<&Item> = items.iter().copied().filter(|i| i.status() == Some(Status::Review)).collect();
         if !review.is_empty() {
@@ -163,7 +163,7 @@ fn rows(srcs: &[Src], tab: Option<usize>, user: &str) -> Vec<Row> {
         }
         let talk = items.iter().filter(|i| i.is_open() && mine(i) && i.tags().iter().any(|t| t == "discuss")).count();
         if talk > 0 {
-            focus.push(info_row(srcs, n, all, format!("# {} to discuss (bring up in a chat)", talk), Some("mine")));
+            focus.push(info_row(srcs, n, all, format!("# {} to discuss", talk), Some("mine")));
         }
         let inbox = items.iter().filter(|i| i.status() == Some(Status::Inbox)).count();
         if inbox > 0 {
@@ -188,7 +188,7 @@ fn rows(srcs: &[Src], tab: Option<usize>, user: &str) -> Vec<Row> {
             let finish = plan.iter().filter(|p| p.on_path).map(|p| p.end).max().unwrap_or(now);
             if finish > deadline {
                 if let Some(i) = s.get_item(&g) {
-                    focus.push(item_row(user, srcs, n, all, "!", i, format!("critical path {} over the deadline (g, v v v)", hm(finish - deadline)), None));
+                    focus.push(item_row(user, srcs, n, all, "!", i, format!("{} over the deadline", hm(finish - deadline)), None));
                 }
             }
         }
@@ -213,9 +213,9 @@ fn rows(srcs: &[Src], tab: Option<usize>, user: &str) -> Vec<Row> {
         out.push(Row { store: None, id: None, module: None, line: Line::from(Span::styled("  nothing runs", dim())) });
     }
     out.extend(running);
-    out.push(Row::section("your focus", "unblocks agents first".into()));
+    out.push(Row::section("your focus", String::new()));
     if focus.is_empty() {
-        out.push(Row { store: None, id: None, module: None, line: Line::from(Span::styled("  nothing waits for you", dim())) });
+        out.push(Row { store: None, id: None, module: None, line: Line::from(Span::styled("  nothing", dim())) });
     }
     out.extend(focus);
     let note = if queue_more > 0 { format!("+{} more", queue_more) } else { String::new() };
@@ -224,7 +224,7 @@ fn rows(srcs: &[Src], tab: Option<usize>, user: &str) -> Vec<Row> {
         out.push(Row { store: None, id: None, module: None, line: Line::from(Span::styled(format!("  stopped · {}", s), Style::default().fg(theme::t().error))) });
     }
     if queue.is_empty() {
-        out.push(Row { store: None, id: None, module: None, line: Line::from(Span::styled("  nothing ready for agents", dim())) });
+        out.push(Row { store: None, id: None, module: None, line: Line::from(Span::styled("  nothing", dim())) });
     }
     out.extend(queue);
     out
@@ -350,6 +350,10 @@ struct Overlay {
     view: u8,
     /// gantt view 2: (store, goal, deadline, plan) of goals with deadlines
     plans: Vec<(usize, String, i64, Vec<crate::gantt::Planned>)>,
+    /// whose time is "you"
+    user: String,
+    /// session log lines per store, for the stats sections
+    logs: Vec<Vec<crate::log::Line>>,
     /// gantt: lanes and their time span
     lanes: Vec<crate::gantt::Lane>,
     span: (i64, i64),
@@ -359,7 +363,7 @@ impl Overlay {
     /// on a store's tab the overlay shows that store (its goals), on the all
     /// tab every store
     fn new(kind: Kind, srcs: &[Src], user: &str, only: Option<usize>) -> Overlay {
-        let mut o = Overlay { kind, period: Period::Day, measure: Measure::Time, zoom: only, sel: 0, only, stats: vec![], view: 0, plans: vec![], lanes: vec![], span: (0, 0) };
+        let mut o = Overlay { kind, period: Period::Day, measure: Measure::Time, zoom: only, sel: 0, only, stats: vec![], view: 0, plans: vec![], user: user.to_string(), logs: vec![], lanes: vec![], span: (0, 0) };
         o.refresh(srcs, user);
         o
     }
@@ -402,6 +406,8 @@ impl Overlay {
         let start = if self.period == Period::Day { first - first.rem_euclid(3600) } else { gfrom };
         self.span = (start.max(gfrom), now);
         self.lanes = lanes;
+        // the stats sections look back further (the heatmap: 4 weeks)
+        self.logs = srcs.iter().map(|s| crate::log::read(&s.root, from.min(now - 29 * 86400), now)).collect();
     }
 
     /// (name, value) of the pie's slices, largest first
@@ -510,7 +516,7 @@ fn paint_pie(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     let inner = block.inner(area);
     f.render_widget(block, area);
     if slices.is_empty() {
-        f.render_widget(Paragraph::new(Span::styled("nothing in this period yet (d: longer period, v: other measure)", dim())), inner);
+        f.render_widget(Paragraph::new(Span::styled("nothing yet (d period, v measure)", dim())), inner);
         return;
     }
     // half blocks: two square pixels per cell, each its own color; a
@@ -579,7 +585,7 @@ fn paint_path(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     let inner = block.inner(area);
     f.render_widget(block, area);
     let Some((n, goal, deadline, plan)) = o.plans.get(o.sel.min(o.plans.len().saturating_sub(1))) else {
-        f.render_widget(Paragraph::new(Span::styled("no goal with a deadline here (cake edit <goal> --deadline 30.11.)", dim())), inner);
+        f.render_widget(Paragraph::new(Span::styled("no goal with a deadline", dim())), inner);
         return;
     };
     let now = util::timestamp();
@@ -616,7 +622,7 @@ fn paint_path(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     let names: Vec<&str> = path.iter().map(|p| p.id.as_str()).collect();
     let (verdict, style) = if finish <= *deadline { ("fits ✓".to_string(), Style::default().fg(t.ok)) } else { (format!("{} over", hm(finish - deadline)), Style::default().fg(t.error)) };
     lines.push(Line::from(vec![Span::styled(format!("critical path: {} = {} · ", names.join(" → "), hm(total)), dim()), Span::styled(verdict, style)]));
-    lines.push(Line::from(Span::styled("estimates from --est, ~ = history median or 1 h; questions ◆ hold the chain", dim())));
+    lines.push(Line::from(Span::styled("~ guessed · ◆ question", dim())));
     f.render_widget(Paragraph::new(lines), inner);
 }
 
@@ -667,20 +673,46 @@ fn paint_gantt(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
         legend.push(Span::styled(format!("{}  ", srcs[n].name), dim()));
     }
     let marks = match o.view {
-        2 => "█ timer  ▒ your chat on it",
-        0 => "you: █ chat ▒ in cake · agents: ░ 1 ▒ 2 ▓ 3 █ 4+ at once · waits on you",
-        _ => "░ 1 at once  ▒ 2  ▓ 3  █ 4+  ⁚ waits on you",
+        2 => "█ timer ▒ chat",
+        0 => "█ chat ▒ cake · agents ░▒▓█ 1-4+ · waits",
+        _ => "░▒▓█ 1-4+ at once · ⁚ waits",
     };
     legend.push(Span::styled(marks, dim()));
     lines.push(Line::from(legend));
     let (max, avg, waited) = gantt::summary(&o.lanes, from, to);
-    lines.push(Line::from(Span::styled(format!("at once: max {} · avg {:.1} · agents waited {} on you", max, avg, hm(waited)), dim())));
+    lines.push(Line::from(Span::styled(format!("at once max {} · avg {:.1} · waited {}", max, avg, hm(waited)), dim())));
     f.render_widget(Paragraph::new(lines), inner);
     if let (Some(c), Some(l)) = (card_area, o.lanes.get(o.sel)) {
         let row = Row { store: l.bars.first().map(|b| b.store), id: Some(l.name.clone()), module: None, line: Line::default() };
         let (title, body) = card(srcs, &row, c.width);
         f.render_widget(Paragraph::new(body).wrap(Wrap { trim: false }).block(boxed(format!(" {} ", title))), c);
     }
+}
+
+/// a stats section (rhythm, flow, agents, fun) of the tab's store or all
+fn paint_section(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
+    use crate::insights;
+    let t = theme::t();
+    let name = insights::SECTIONS[o.view as usize % insights::SECTIONS.len()];
+    let block = boxed(format!(" stats · {} · {} ", name, o.period.name()));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let picked: Vec<usize> = o.only.map_or((0..srcs.len()).collect(), |n| vec![n]);
+    let isrcs: Vec<insights::Src> = picked
+        .iter()
+        .map(|n| insights::Src { store: &srcs[*n].store, log: o.logs.get(*n).map_or(&[][..], |l| &l[..]) })
+        .collect();
+    let look = insights::Look { dim: dim(), you: t.mine, agents: t.hint };
+    let (from, to) = (o.stats.first().map_or(0, |s| s.from), util::timestamp());
+    let user = o.user.as_str();
+    let lines = match name {
+        "rhythm" => insights::rhythm(&isrcs, user, from, to, &look),
+        "flow" => insights::flow(&isrcs, user, from, to, &look),
+        "agents" => insights::agents(&isrcs, user, from, to, &look),
+        _ => insights::fun(&isrcs, user, from, to, &look),
+    };
+    let top = o.sel.min(lines.len().saturating_sub(1));
+    f.render_widget(Paragraph::new(lines.into_iter().skip(top).collect::<Vec<_>>()), inner);
 }
 
 /// the store lanes of the last 24 h, compact: axis and one line per store
@@ -709,6 +741,9 @@ fn paint_strip(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
 
 fn paint_stats(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     let t = theme::t();
+    if o.view > 0 {
+        return paint_section(f, area, srcs, o);
+    }
     let block = boxed(format!(" stats · {} ", o.period.name()));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -822,9 +857,9 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
             Kind::Gantt => paint_gantt(f, body, srcs, o),
         }
         let k = match o.kind {
-            Kind::Pie => "v time/tokens/done  d period  j/k slice  <cr> goals  <bs> stores  s stats  g gantt  q back",
-            Kind::Stats => "d period  p pie  g gantt  q back",
-            Kind::Gantt => "v who/stores/items/path  d day/week  j/k row  <cr> tree  e edit  p pie  s stats  q back",
+            Kind::Pie => "v measure  d period  j/k  <cr> zoom  <bs> back  s g  q",
+            Kind::Stats => "v section  d period  j/k scroll  p g  q",
+            Kind::Gantt => "v view  d period  j/k  <cr> tree  e edit  p s  q",
         };
         f.render_widget(Paragraph::new(Line::from(Span::styled(k, dim()))), keys);
         return;
@@ -857,7 +892,7 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
     f.render_widget(Paragraph::new(body).wrap(Wrap { trim: false }).block(block), card_area);
     let keys_line = match &v.note {
         Some(n) => Line::from(Span::styled(n.clone(), Style::default().fg(t.error))),
-        None => Line::from(Span::styled("h/l store  j/k  <cr> open  a add  e edit  F form  T tree  D dump  p pie  s stats  g gantt  q quit", dim())),
+        None => Line::from(Span::styled("h/l store  j/k  <cr> open  a add  e edit  F form  T tree  D dump  p s g  q", dim())),
     };
     f.render_widget(Paragraph::new(keys_line), keys);
 }
@@ -984,6 +1019,8 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                     }
                     // v: the next view, in every overlay
                     KeyCode::Char('v') if o.kind == Kind::Pie => o.measure = o.measure.next(),
+                    KeyCode::Char('v') if o.kind == Kind::Stats => (o.view, o.sel) = ((o.view + 1) % crate::insights::SECTIONS.len() as u8, 0),
+                    KeyCode::Char('j') | KeyCode::Down if o.kind == Kind::Stats => o.sel += 1,
                     KeyCode::Char('j') | KeyCode::Down if o.kind == Kind::Gantt => {
                         let n = if o.view == 2 { o.lanes.len() } else { o.plans.len() };
                         o.sel = (o.sel + 1).min(n.saturating_sub(1));
@@ -1031,7 +1068,7 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                         srcs = load(root)?;
                         total = totals(&srcs, user);
                     }
-                    None => v.note = Some("<cr> works on the focus lines; e edits an item".into()),
+                    None => v.note = Some("<cr>: focus lines only".into()),
                 },
                 KeyCode::Char('e') => match rows.get(v.sel).and_then(|r| r.store.zip(r.id.clone())) {
                     Some((n, id)) => {

@@ -175,7 +175,7 @@ pub struct StoreStats {
 }
 
 /// the nearest note tagged goal at or above `id`
-fn goal_of<'a>(store: &'a Store, id: &str) -> Option<&'a Item> {
+pub fn goal_of<'a>(store: &'a Store, id: &str) -> Option<&'a Item> {
     let mut seen = std::collections::HashSet::new();
     let mut cur = store.get_item(id);
     while let Some(i) = cur {

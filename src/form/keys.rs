@@ -64,7 +64,7 @@ pub const ACTIONS: &[(&str, Act, &str, &str)] = &[
     ("open", Act::Open, "o <space>", "show or hide parent, siblings and children"),
     ("back", Act::Back, "<esc>", "close, cancel"),
     ("confirm", Act::Confirm, "<cr>", "confirm: save the option, open the box"),
-    ("insert", Act::Insert, "i", "own words; review: not ok yet, back to you as #discuss"),
+    ("insert", Act::Insert, "i", "own words; review: not ok yet #discuss"),
     ("task", Act::Task, "t", "make it a task"),
     ("note", Act::Note, "N", "keep it as a note"),
     ("drop", Act::Drop, "dd x", "drop"),

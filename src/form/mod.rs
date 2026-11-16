@@ -783,9 +783,9 @@ fn dump(ui: &mut Ui, here: &Cake, store: &str, hint: &[String]) -> Result<usize,
         let mut screen = Screen {
             tree,
             tree_focus: Some(focus),
-            card_title: "new item into the inbox".into(),
-            card: vec![Line::from(Span::styled("One idea per line. Change them afterwards in the inbox.", dim()))],
-            keys: keys(&[("<cr>", "add"), ("<esc> / empty <cr>", "next module")]),
+            card_title: "into the inbox".into(),
+            card: vec![Line::from(Span::styled("one idea per line", dim()))],
+            keys: keys(&[("<cr>", "add"), ("<esc>", "next")]),
             note: note.take(),
             ..Default::default()
         };

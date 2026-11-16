@@ -10,6 +10,7 @@ mod markdown;
 mod migrate;
 mod form;
 mod gantt;
+mod insights;
 mod out;
 mod selector;
 mod stats;
