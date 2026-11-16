@@ -95,9 +95,9 @@ Per store (`cake --store <path> … --json`), when asked to triage or work:
    --json`. A new `comment (…)` line at the end of a body is a change
    request; a `blocked_by` item that is now `done` carries the user's
    answer at the end of its body. Rework accordingly. Items tagged
-   `discuss` (assigned to the user, `discuss (…)` line at the end) were
-   sent back from review for a talk: the work so far stays as described
-   above that line. Bring them up first in the next chat, never rework
+   `discuss` (assigned to the user, a `discuss (…): <doubts>` line at the
+   end) were sent back from review as not ok yet: the work so far stays
+   as described above that line, the doubts follow it. Bring them up first in the next chat, never rework
    them unasked; after the talk either the user closes them, or you
    rework and remove the tag (`cake edit <id> --tag ~discuss --assignee
    <you>`).

@@ -223,10 +223,10 @@ cake("done", "rv")
 cake("add", "tk", "--task", "--assignee", "claude-code", "-m", "# talk about me", agent=True)
 cake("edit", "tk", "--owner", "jul")
 cake("review", "tk", "-m", "changed: stuff; commits: abc", agent=True)
-form(["t", "q"], args=("form", "review"))
+form(["i", "the naming feels off\r", "q"], args=("form", "review"))
 tk = item("tk")
-check("review: t sends it back to talk", tk["status"] == "task" and "discuss" in tk["tags"] and tk["assignee"] == "jul"
-      and "changed: stuff" in tk["body"] and "discuss (jul" in tk["body"])
+check("review: not ok goes back to talk, with the doubts", tk["status"] == "task" and "discuss" in tk["tags"] and tk["assignee"] == "jul"
+      and "changed: stuff" in tk["body"] and "): the naming feels off" in tk["body"])
 
 # nothing waits: the form opens at dump anyway, esc goes on to the last tab
 empty = tmux_screen(["\x1b"], args=("form", "answer"))

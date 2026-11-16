@@ -266,10 +266,10 @@ fn card_of(kind: Kind, item: &Value, all: &[Value]) -> (String, Vec<String>) {
                 .map(|c| format!("- {} {}", if str_of(c, "status") == "done" { g.check } else { g.dropped }, str_of(c, "title")))
                 .collect();
             let text = if parts.is_empty() { body } else { format!("{}\n\nparts:\n{}", body, parts.join("\n")) };
-            (text, vec!["ok, done".into(), "drop".into(), "talk about it first: back to you, #discuss".into()])
+            (text, vec!["ok, done".into(), "drop".into()])
         }
     };
-    options.push(format!("{} {}", g.ellipsis, if kind == Kind::Answer { "own words" } else { "change something: the agent reworks it" }));
+    options.push(format!("{} {}", g.ellipsis, if kind == Kind::Answer { "own words" } else { "not ok yet: what bothers you (back to you as #discuss)" }));
     (context, options)
 }
 
@@ -290,10 +290,9 @@ enum Change {
     Hold,
     /// answer: an option's text or own words
     Answer(String),
-    /// review: what should change
-    Comment(String),
-    /// review: back to the user as a task tagged discuss
-    Talk,
+    /// review, not ok yet: back to the user as a task tagged discuss, with
+    /// what bothers them (may be empty)
+    Talk(String),
     Undo(Before),
 }
 
@@ -324,10 +323,11 @@ fn apply(cake: &Cake, item: &Value, change: &Change, user: &str, sort_who: Optio
             cake.call(&["edit", id, "--assignee", &opt(w)])?;
             String::new()
         }
-        Change::Talk => {
+        Change::Talk(text) => {
             // the body keeps the work so far (the review note above); this
-            // line says why it is back
-            let line = format!("discuss ({}, {})", user, chrono::Local::now().format("%Y-%m-%d"));
+            // line says what bothers the user
+            let head = format!("discuss ({}, {})", user, chrono::Local::now().format("%Y-%m-%d"));
+            let line = if text.trim().is_empty() { head } else { format!("{}: {}", head, text.trim()) };
             cake.call(&["set", "task", id, "-m", &line])?;
             cake.call(&["edit", id, "--tag", "discuss", "--assignee", user])?;
             "to discuss".into()
@@ -373,10 +373,6 @@ fn apply(cake: &Cake, item: &Value, change: &Change, user: &str, sort_who: Optio
         Change::Answer(text) => {
             cake.call(&["set", "done", id, "-m", &format!("answer: {}", text)])?;
             text.clone()
-        }
-        Change::Comment(text) => {
-            cake.call(&["edit", id, "--comment", text])?;
-            "sent back".into()
         }
         Change::Undo(b) => {
             cake.call(&["set", &b.status, id])?;
@@ -678,8 +674,7 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                 Kind::Review => vec![
                     (ks(Act::Complete), "ok".into()),
                     (ks(Act::Drop), "drop".into()),
-                    (ks(Act::Task), "talk first".into()),
-                    (ks(Act::Insert), "rework".into()),
+                    (ks(Act::Insert), "not ok".into()),
                 ],
             }
         };
@@ -876,7 +871,6 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
             Act::Timer if kind == Kind::Mine => change = Some(Change::Timer(str_of(&item, "status") != "doing")),
             Act::Timer if kind == Kind::News => (change, then_next) = (Some(Change::Hold), true),
             Act::Task if matches!(kind, Kind::Sort | Kind::All) => change = Some(Change::Status("task")),
-            Act::Task if kind == Kind::Review && editable => (change, then_next) = (Some(Change::Talk), true),
             Act::Note if kind == Kind::Sort => (change, then_next) = (Some(Change::Status("note")), true),
             // ALL: park a task right where it is
             Act::Note if kind == Kind::All => change = Some(Change::Status("note")),
@@ -1000,16 +994,19 @@ fn choose(ui: &mut Ui, screen: &mut Screen, kind: Kind, item: &Value, all: &[Val
     if pick >= options.len() {
         return Ok(None);
     }
+    if pick == options.len() - 1 && kind != Kind::Answer {
+        // room for the doubts; empty is fine: then it is just to talk
+        let Some(text) = ui.overlay(screen, "not ok yet: what bothers you? (empty: just talk about it)")? else { return Ok(None) };
+        return Ok(Some(Change::Talk(text)));
+    }
     if pick == options.len() - 1 {
-        let prompt = if kind == Kind::Answer { "your answer:" } else { "what should change:" };
-        let Some(text) = ui.input(screen, prompt, "")?.filter(|t| !t.is_empty()) else { return Ok(None) };
-        return Ok(Some(if kind == Kind::Answer { Change::Answer(text) } else { Change::Comment(text) }));
+        let Some(text) = ui.input(screen, "your answer:", "")?.filter(|t| !t.is_empty()) else { return Ok(None) };
+        return Ok(Some(Change::Answer(text)));
     }
     Ok(Some(match kind {
         Kind::Answer => Change::Answer(answer_text(&body_of(item), &((b'a' + pick as u8) as char).to_string())),
         _ if pick == 0 => Change::Status("done"),
-        _ if pick == 1 => Change::Status("dropped"),
-        _ => Change::Talk,
+        _ => Change::Status("dropped"),
     }))
 }
 
@@ -1145,7 +1142,7 @@ mod tests {
         assert_eq!(ctx, "Why.");
         assert_eq!(opts, ["always", "with -d (recommended)", "… own words"]);
         let (_, opts) = card_of(Kind::Review, &q, &[]);
-        assert_eq!(opts, ["ok, done", "drop", "talk about it first: back to you, #discuss", "… change something: the agent reworks it"]);
+        assert_eq!(opts, ["ok, done", "drop", "… not ok yet: what bothers you (back to you as #discuss)"]);
     }
 
     #[test]

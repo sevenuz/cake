@@ -510,7 +510,7 @@ fn paint_pie(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     let inner = block.inner(area);
     f.render_widget(block, area);
     if slices.is_empty() {
-        f.render_widget(Paragraph::new(Span::styled("nothing in this period yet (d: longer period, m: other measure)", dim())), inner);
+        f.render_widget(Paragraph::new(Span::styled("nothing in this period yet (d: longer period, v: other measure)", dim())), inner);
         return;
     }
     // half blocks: two square pixels per cell, each its own color; a
@@ -822,7 +822,7 @@ fn paint(f: &mut ratatui::Frame, srcs: &[Src], v: &View, rows: &[Row], total: &s
             Kind::Gantt => paint_gantt(f, body, srcs, o),
         }
         let k = match o.kind {
-            Kind::Pie => "m measure  d period  j/k slice  <cr> goals  <bs> stores  s stats  g gantt  q back",
+            Kind::Pie => "v time/tokens/done  d period  j/k slice  <cr> goals  <bs> stores  s stats  g gantt  q back",
             Kind::Stats => "d period  p pie  g gantt  q back",
             Kind::Gantt => "v who/stores/items/path  d day/week  j/k row  <cr> tree  e edit  p pie  s stats  q back",
         };
@@ -952,7 +952,14 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
             if let Some(o) = v.overlay.as_mut() {
                 let count = o.slices(&srcs).len();
                 match k.code {
-                    KeyCode::Char('q') | KeyCode::Esc => v.overlay = None,
+                    KeyCode::Char('q') | KeyCode::Esc => {
+                        // the pie on the main screen keeps what was chosen here
+                        if o.kind == Kind::Pie {
+                            (side.pie.measure, side.pie.period) = (o.measure, o.period);
+                            side.pie.refresh(&srcs, user);
+                        }
+                        v.overlay = None;
+                    }
                     KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => return Ok(()),
                     KeyCode::Char('d') => {
                         // the gantt has a day and a week
@@ -975,7 +982,8 @@ pub fn run(root: &Path, user: &str) -> Result<(), Box<dyn Error>> {
                         }
                         o.refresh(&srcs, user);
                     }
-                    KeyCode::Char('m') => o.measure = o.measure.next(),
+                    // v: the next view, in every overlay
+                    KeyCode::Char('v') if o.kind == Kind::Pie => o.measure = o.measure.next(),
                     KeyCode::Char('j') | KeyCode::Down if o.kind == Kind::Gantt => {
                         let n = if o.view == 2 { o.lanes.len() } else { o.plans.len() };
                         o.sel = (o.sel + 1).min(n.saturating_sub(1));
