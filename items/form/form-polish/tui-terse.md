@@ -1,12 +1,14 @@
 ---
 id: tui-terse
-status: task
+status: doing
 parent: "[[form-polish]]"
 created: 2026-11-16T02:25:18+01:00
 by: claude-code
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 assignee: claude-code
 owner: sevenuz
+time:
+  - 2026-11-16T02:25:19+01:00/
 ---
 # TUI texts: short and intuitive
 
