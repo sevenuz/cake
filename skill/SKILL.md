@@ -101,6 +101,10 @@ Per store (`cake --store <path> … --json`), when asked to triage or work:
    them unasked; after the talk either the user closes them, or you
    rework and remove the tag (`cake edit <id> --tag ~discuss --assignee
    <you>`).
+   Dropped items with `commits` and without the tag `reverted`: the
+   user threw the work away. Add a task under the same parent that
+   reverts those commits (assignee you, owner the user, `--blocked-by`
+   nothing), then `cake edit <dropped> --tag reverted`.
 4. Garden (triage and agent runs): keep the tree filed and lean.
    - top-level items that are not goal notes (sorted feedback, loose
      tasks): move under the matching goal, `cake edit <id> --parent
