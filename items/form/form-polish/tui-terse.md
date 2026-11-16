@@ -1,12 +1,13 @@
 ---
 id: tui-terse
-status: review
+status: done
 parent: "[[form-polish]]"
 created: 2026-11-16T02:25:18+01:00
 by: claude-code
 commits: [b637502, 359c1f5]
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 7, out: 6932, cache_read: 1792272, cache_write: 9392}}
+closed: 2026-11-16T17:04:19+01:00
 assignee: claude-code
 owner: sevenuz
 time:
