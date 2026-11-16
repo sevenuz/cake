@@ -1,6 +1,5 @@
 ---
 id: nmqs6e
-status: task
 tags: [search]
 parent: "[[cli]]"
 blocked_by: ["[[s1k16e]]"]
