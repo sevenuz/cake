@@ -1,6 +1,6 @@
 ---
 id: drop-revert
-status: review
+status: task
 parent: "[[agents]]"
 created: 2026-11-16T02:25:18+01:00
 by: claude-code
@@ -20,3 +20,5 @@ time:
 - done when: skill rule written
 
 changed: skill step 3: dropped items with commits and without #reverted get a revert task (assignee the agent, owner you) under the same parent, the dropped item gets #reverted; cake itself writes nothing
+
+discuss (sevenuz, 2026-11-16): do they get automatically reverted? explain how it works
