@@ -1,11 +1,12 @@
 ---
 id: dash-round4
-status: review
+status: done
 parent: "[[cake-dash-terminal-dashboard]]"
 created: 2026-11-16T01:25:12+01:00
 by: claude-code
 commits: [c68416b, 235fe18]
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
+closed: 2026-11-16T17:04:07+01:00
 assignee: claude-code
 owner: sevenuz
 time:
