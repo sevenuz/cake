@@ -1,12 +1,13 @@
 ---
 id: stats-sections
-status: review
+status: done
 parent: "[[cake-dash-terminal-dashboard]]"
 created: 2026-11-16T02:25:18+01:00
 by: claude-code
 commits: [b637502, 359c1f5]
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
 usage: {claude-opus-5-5: {in: 9, out: 6939, cache_read: 1792276, cache_write: 9400}}
+closed: 2026-11-16T17:04:09+01:00
 assignee: claude-code
 owner: sevenuz
 time:
