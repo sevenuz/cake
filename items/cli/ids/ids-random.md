@@ -12,10 +12,10 @@ owner: sevenuz
 estimate: 30m
 time:
   - 2026-11-18T16:20:10+01:00/2026-11-18T16:21:35+01:00
-tokens_in: 8
-tokens_out: 2080
-tokens_cache_read: 335237
-tokens_cache_write: 3656
+tokens_in: 16
+tokens_out: 4160
+tokens_cache_read: 670474
+tokens_cache_write: 7312
 ---
 # Ids: random when none is given
 
