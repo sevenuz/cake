@@ -1,13 +1,13 @@
 ---
 id: fields-hook
-status: dropped
+status: done
 parent: "[[fields]]"
 blocked_by: ["[[fields-map]]"]
 created: 2026-11-18T16:46:24+01:00
 by: claude-code
 commits: [7ecb6f2, 4c878d6]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
-closed: 2026-11-18T23:27:31+01:00
+closed: 2026-11-18T23:27:33+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 2h
