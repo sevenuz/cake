@@ -527,6 +527,17 @@ pub fn status(config: &Config, store: &Store) -> Result<Report, Box<dyn Error>> 
             .collect(),
     );
     let hm = |s: i64| format!("{}h{:02}", s / 3600, s / 60 % 60);
+    // week and streak need the stats of the week (session log too): only
+    // computed when one of them is shown
+    let week = std::cell::OnceCell::new();
+    let week = || {
+        week.get_or_init(|| {
+            let now = util::timestamp();
+            let (from, _) = crate::stats::Period::Week.range(now);
+            let log = crate::log::read(store.root(), from.min(now - 400 * 86400), now);
+            crate::stats::of_store(store, &log, &me, crate::stats::Period::Week, now)
+        })
+    };
     let mut tags = serde_json::Map::new();
     let mut parts: Vec<String> = vec![];
     for segment in &config.status {
@@ -548,6 +559,13 @@ pub fn status(config: &Config, store: &Store) -> Result<Report, Box<dyn Error>> 
                 }
             }
             "today" if today >= 60 => parts.push(format!("today {}", hm(today))),
+            "week" => {
+                let n = &week().numbers;
+                if n.you + n.agents >= 60 {
+                    parts.push(format!("week {}", hm(n.you + n.agents)));
+                }
+            }
+            "streak" if week().streak > 1 => parts.push(format!("streak {} d", week().streak)),
             s if s.starts_with("tag:") => {
                 let tag = &s[4..];
                 let n = items.iter().filter(|i| i.is_open() && i.tags().iter().any(|t| t == tag)).count();

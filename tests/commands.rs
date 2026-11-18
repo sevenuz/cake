@@ -752,7 +752,7 @@ fn status_shows_your_timers_others_ready_and_configured_tags() {
 
     let user = env.path("config/cake/config.hjson");
     let cfg = std::fs::read_to_string(&user).unwrap().replace(
-        "status: [\"mine\", \"others\", \"ready\", \"today\", \"review\"]",
+        "status: [\"mine\", \"others\", \"ready\", \"today\", \"week\", \"streak\", \"review\"]",
         "status: [\"ready\", \"review\"]",
     );
     std::fs::write(&user, cfg).unwrap();
@@ -958,6 +958,19 @@ fn stats_sum_configured_formulas_and_migrate_turns_usage_into_fields() {
     assert_eq!(s["sums"]["double"], 40.0);
     let table = env.cake_ok(&d, &["stats", "-p", "week"]);
     assert!(table.contains("tokens") && table.contains("double"), "{}", table);
+}
+
+#[test]
+fn status_shows_the_week_and_the_streak() {
+    let env = Env::new();
+    let d = env.plain_store();
+    let now = chrono::Local::now();
+    let at = |days: i64, h: i64| (now - chrono::Duration::days(days) - chrono::Duration::hours(h)).to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+    // an hour of work today (ending an hour ago) and yesterday
+    let item = format!("---\nid: w\nstatus: task\ntime:\n  - {}/{}\n  - {}/{}\n---\n# Work\n", at(1, 2), at(1, 1), at(0, 2), at(0, 1));
+    std::fs::write(d.join(".cake/items/w.md"), item).unwrap();
+    let out = env.cake_ok(&d, &["status"]);
+    assert!(out.contains("streak 2 d") && out.contains("week "), "{}", out);
 }
 
 #[test]

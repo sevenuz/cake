@@ -74,8 +74,9 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   // holding its session id; first set one wins
   agent_env: ["AI_AGENT"]
   session_env: ["CAKE_SESSION", "CLAUDE_CODE_SESSION_ID"]
-  // cake status: mine, others, ready, today, review, tag:<name>
-  status: ["mine", "others", "ready", "today", "review"]
+  // cake status: mine, others, ready, today, week (you and agents), streak
+  // (days in a row with time or a done item), review, tag:<name>
+  status: ["mine", "others", "ready", "today", "week", "streak", "review"]
   // own commands, may override built-ins for you (not for agents):
   // check: "ls --status review", ls: "ls --mine".
   // A line starting with ! is a shell command, like in git, e.g. for
@@ -164,7 +165,7 @@ fn default_style() -> String {
 }
 
 fn default_status() -> Vec<String> {
-    ["mine", "others", "ready", "today", "review"].iter().map(|s| s.to_string()).collect()
+    ["mine", "others", "ready", "today", "week", "streak", "review"].iter().map(|s| s.to_string()).collect()
 }
 
 fn first_env(vars: &[String]) -> Option<String> {
