@@ -12,10 +12,10 @@ owner: sevenuz
 estimate: 2h
 time:
   - 2026-11-18T16:46:28+01:00/2026-11-18T16:47:36+01:00
-tokens_in: 26
-tokens_out: 5839
-tokens_cache_read: 1445363
-tokens_cache_write: 18013
+tokens_in: 52
+tokens_out: 11678
+tokens_cache_read: 2890726
+tokens_cache_write: 36026
 ---
 # Ids: the sort step offers a new id
 
