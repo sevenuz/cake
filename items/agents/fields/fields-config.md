@@ -1,6 +1,6 @@
 ---
 id: fields-config
-status: review
+status: done
 parent: "[[fields]]"
 blocked_by: ["[[fields-map]]"]
 created: 2026-11-18T16:46:24+01:00
@@ -8,6 +8,7 @@ by: claude-code
 commits: [695dd95]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 usage: {claude-opus-5-5: {in: 28, out: 11485, cache_read: 3266734, cache_write: 16371}}
+closed: 2026-11-18T21:55:13+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 2h
