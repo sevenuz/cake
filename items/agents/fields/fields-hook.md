@@ -5,6 +5,7 @@ parent: "[[fields]]"
 blocked_by: ["[[fields-map]]"]
 created: 2026-11-18T16:46:24+01:00
 by: claude-code
+commits: [7ecb6f2]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 assignee: claude-code
 owner: sevenuz
