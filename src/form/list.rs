@@ -1123,8 +1123,8 @@ mod tests {
 
     #[test]
     fn command_hints_list_only_what_works() {
-        assert_eq!(Kind::Review.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · est 2h · tag doc,~old · filter doc · w · q");
-        assert_eq!(Kind::Sort.command_hint(), "due fri · deadline 30.11. · who ai · prio 1 · est 2h · tag doc,~old · move <store> · all · filter doc · w · q");
+        assert_eq!(Kind::Review.command_hint(), "id merge-driver · due fri · deadline 30.11. · who ai · prio 1 · est 2h · tag doc,~old · filter doc · w · q");
+        assert_eq!(Kind::Sort.command_hint(), "id merge-driver · due fri · deadline 30.11. · who ai · prio 1 · est 2h · tag doc,~old · move <store> · all · filter doc · w · q");
         assert_eq!(Kind::Answer.command_hint(), "filter doc · w · q");
     }
 
