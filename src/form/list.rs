@@ -485,6 +485,8 @@ struct View<'a> {
     since: i64,
     /// results of this run per id (an answer, "sent back")
     results: &'a std::collections::HashMap<String, String>,
+    /// the hovered item was decided in this run and may be decided again
+    reopen: bool,
 }
 
 impl View<'_> {
@@ -492,7 +494,7 @@ impl View<'_> {
     /// text; for an open answer or review item its options (`sel` marked)
     fn detail(&self, item: &Value, all: &[Value], actions: bool, sel: Option<usize>, width: u16) -> (String, Vec<Line<'static>>, Vec<Line<'static>>) {
         let (t, g) = (theme::t(), style::g());
-        let with_options = actions && self.kind.cards() && matches(self.kind, item, all, self.user, self.since);
+        let with_options = actions && self.kind.cards() && (self.reopen || matches(self.kind, item, all, self.user, self.since));
         let (text, options) = if with_options { card_of(self.kind, item, all) } else { (body_of(item), vec![]) };
         // the fields are in the tree row, not repeated here; tags may be
         // hidden there (#) or cut
@@ -658,10 +660,12 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         st.cur_id = rows[cur].id.clone();
         let item = tree.item(&st.cur_id).cloned().unwrap_or_default();
         let editable = rows[cur].editable;
-        // answer, review: options for an open item
-        let with_options = editable && kind.cards() && matches(kind, &item, &all, user, since);
+        // answer, review: options for an open item; a review decided in
+        // this run (ok, drop) can still be sent back as not ok yet
+        let reopen = kind == Kind::Review && changed.contains(&st.cur_id) && matches!(str_of(&item, "status"), "done" | "dropped");
+        let with_options = editable && kind.cards() && (reopen || matches(kind, &item, &all, user, since));
         let n_opts = if with_options { card_of(kind, &item, &all).1.len() } else { 0 };
-        let view = View { kind, user, since, results: &results };
+        let view = View { kind, user, since, results: &results, reopen };
         let width = column_width(ui.term.size()?.width, ui.max_width);
         // the last column is the scrollbar's
         let lines = tree.lines(&rows, cur, width.saturating_sub(2), &|i, context| fields(i, user, since, kind == Kind::News, context), st.in_box);
