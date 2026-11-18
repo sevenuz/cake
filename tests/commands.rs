@@ -836,7 +836,9 @@ fn id_prefixes_work_everywhere_and_ls_shows_short_ids() {
     env.cake_ok(&d, &["add", "kmnpqr", "--todo", "-m", "# parent"]);
     env.cake_ok(&d, &["add", "abcdef", "--todo", "-p", "km", "-m", "# one"]);
     env.cake_ok(&d, &["add", "abxyzq", "--todo", "--blocked-by", "abc", "-m", "# two"]);
-    assert_eq!(env.cake_ok(&d, &["ls"]), "○ abx two\n○ km parent\n└─ ○ abc one\n");
+    // roots in creation order (ties by id): the two may fall into different seconds
+    let ls = env.cake_ok(&d, &["ls"]);
+    assert!(ls.contains("○ abx two\n") && ls.contains("○ km parent\n└─ ○ abc one\n") && ls.lines().count() == 3, "{}", ls);
 
     env.cake_ok(&d, &["done", "abc"]);
     env.cake_ok(&d, &["mv", "abx", "km"]);
