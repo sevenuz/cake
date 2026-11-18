@@ -12,10 +12,10 @@ owner: sevenuz
 estimate: 4h
 time:
   - 2026-11-18T22:00:00+01:00/2026-11-18T22:08:22+01:00
-tokens_in: 84
-tokens_out: 37147
-tokens_cache_read: 12951358
-tokens_cache_write: 68836
+tokens_in: 168
+tokens_out: 74294
+tokens_cache_read: 25902716
+tokens_cache_write: 137672
 ---
 # Fields: declarative stats sections and merge_by
 
