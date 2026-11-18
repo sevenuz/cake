@@ -12,10 +12,10 @@ owner: sevenuz
 estimate: 30m
 time:
   - 2026-11-18T17:14:29+01:00/2026-11-18T17:14:55+01:00
-tokens_in: 6
-tokens_out: 2518
-tokens_cache_read: 615181
-tokens_cache_write: 3737
+tokens_in: 12
+tokens_out: 5036
+tokens_cache_read: 1230362
+tokens_cache_write: 7474
 ---
 # Dev rules: AGENTS.md instead of the skill
 
