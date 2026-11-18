@@ -1,6 +1,6 @@
 ---
 id: scope-add
-status: review
+status: task
 parent: "[[scope]]"
 blocked_by: ["[[scope-link]]"]
 created: 2026-11-18T16:15:24+01:00
@@ -21,3 +21,4 @@ Done when: tested from the dir, a subdir, with `-p -`, `-g` and a missing goal.
 
 ## Log
 - 2026-11-18 changed: add (and the form's a, which calls add) without -p uses the goal of the linked dir when that dir links to the store in use; -p - is the top level; -g ignores it; a gone goal adds at the top level with a warning; stderr says '<id> → <goal>'; skill mentions it. Differs from scope-doc: an explicit --store to the same store keeps the default (the form calls cake with --store); try: cd a linked dir, cake add -m x
+- 2026-11-18 comment (claude-code): note (claude-code): one run of id_prefixes_work_everywhere_and_ls_shows_short_ids failed once, 3 reruns passed; flaky, cause not found yet
