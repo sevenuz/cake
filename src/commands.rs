@@ -393,7 +393,7 @@ where
         let item = store.get_item_mut(id).unwrap();
         item.set_status(status)?;
         if let Some(n) = &note {
-            item.append_content(n);
+            item.append_log(n);
         }
     }
     say!("{} {}.", ids.len(), status.as_str());
@@ -430,12 +430,11 @@ pub fn to_note(store: &mut Store, selector: Selector) -> Result<Report, Box<dyn 
 }
 
 
-/// appends "comment (user, date): text"; work in review or doing goes back
-/// to its assignee as a task
+/// logs "comment (user): text"; work in review or doing goes back to its
+/// assignee as a task
 pub fn comment(store: &mut Store, id: &str, user: &str, text: &str) -> Result<Report, Box<dyn Error>> {
     let item = store.get_item_mut(id).ok_or_else(|| error::not_found(id))?;
-    let date = chrono::Local::now().format("%Y-%m-%d");
-    item.append_content(&format!("comment ({}, {}): {}", user, date, text.trim()));
+    item.append_log(&format!("comment ({}): {}", user, text.trim()));
     if matches!(item.status(), Some(Status::Review) | Some(Status::Doing)) {
         item.set_status(Status::Task)?;
     }

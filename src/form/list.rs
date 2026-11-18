@@ -329,7 +329,7 @@ fn apply(cake: &Cake, item: &Value, change: &Change, user: &str, sort_who: Optio
         Change::Talk(text) => {
             // the body keeps the work so far (the review note above); this
             // line says what bothers the user
-            let head = format!("discuss ({}, {})", user, chrono::Local::now().format("%Y-%m-%d"));
+            let head = format!("discuss ({})", user);
             let line = if text.trim().is_empty() { head } else { format!("{}: {}", head, text.trim()) };
             cake.call(&["set", "task", id, "-m", &line])?;
             cake.call(&["edit", id, "--tag", "discuss", "--assignee", user])?;

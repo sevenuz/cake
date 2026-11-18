@@ -7,6 +7,9 @@ use serde_yaml_ng::{Mapping, Value};
 #[cfg(test)]
 mod tests;
 
+/// the heading of the history at the end of a body
+pub const LOG_HEADING: &str = "## Log";
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Status {
     /// new, not sorted yet
@@ -633,10 +636,33 @@ impl Item {
         Ok(())
     }
 
-    /// appends `text` as a new paragraph, e.g. the answer to a question
+    /// appends `text` as a new paragraph (only for migrations; events go
+    /// to the log, `append_log`), e.g. the answer to a question
     pub fn append_content(&mut self, text: &str) {
         let body = self.content.trim_end();
         self.content = format!("{}\n\n{}\n", body, text.trim());
+    }
+
+    /// `- <date> <text>` under the body's `## Log` heading (added at the end
+    /// when missing); later lines of `text` are indented under it
+    pub fn append_log(&mut self, text: &str) {
+        let date = chrono::Local::now().format("%Y-%m-%d");
+        let mut lines = text.trim().lines();
+        let mut entry = format!("- {} {}", date, lines.next().unwrap_or("").trim_end());
+        for l in lines {
+            entry.push('\n');
+            if !l.trim().is_empty() {
+                entry.push_str("  ");
+                entry.push_str(l.trim_end());
+            }
+        }
+        let body = self.content.trim_end();
+        let has_log = body.lines().any(|l| l.trim_end() == LOG_HEADING);
+        self.content = if has_log {
+            format!("{}\n{}\n", body, entry)
+        } else {
+            format!("{}\n\n{}\n{}\n", body, LOG_HEADING, entry)
+        };
     }
 
     /// 1 (high) .. 3 (low)

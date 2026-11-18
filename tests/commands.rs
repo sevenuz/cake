@@ -150,6 +150,20 @@ fn add_without_an_id_gets_a_random_one() {
 }
 
 #[test]
+fn comments_and_notes_go_under_the_log_heading() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "w", "--task", "-m", "# Work\n\nWhy: x"]);
+    env.cake_ok(&d, &["review", "w", "-m", "changed: a\ntry: b"]);
+    env.cake_ok(&d, &["edit", "w", "--comment", "more"]);
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let body = read_item(&d, "w");
+    let want = format!("Why: x\n\n## Log\n- {t} changed: a\n  try: b\n- {t} comment (", t = today);
+    assert!(body.contains(&want), "{}", body);
+    assert_eq!(body.matches("## Log").count(), 1);
+}
+
+#[test]
 fn asks_block_work_until_answered_with_done_m() {
     let env = Env::new();
     let d = env.plain_store();
@@ -160,7 +174,8 @@ fn asks_block_work_until_answered_with_done_m() {
     assert_eq!(json_ids(&env, &d, &["ready", "-t", "ask"]), vec!["ask-db"]);
 
     env.cake_ok(&d, &["done", "ask-db", "-m", "b, keep it plain"]);
-    assert!(read_item(&d, "ask-db").ends_with("- b) files\n\nb, keep it plain\n"));
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    assert!(read_item(&d, "ask-db").ends_with(&format!("- b) files\n\n## Log\n- {} b, keep it plain\n", today)));
     assert_eq!(json_ids(&env, &d, &["ready", "-t", "~ask"]), vec!["work"]);
 }
 
