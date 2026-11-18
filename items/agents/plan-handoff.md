@@ -1,5 +1,5 @@
 ---
-id: also-handoff-needs-be
+id: plan-handoff
 status: review
 parent: "[[agents]]"
 created: 2026-11-14T11:28:06+01:00

@@ -1,7 +1,7 @@
 ---
 id: session-note
 status: dropped
-parent: "[[also-handoff-needs-be]]"
+parent: "[[plan-handoff]]"
 blocked_by: ["[[agent-metadata-field]]"]
 created: 2026-11-14T22:57:08+01:00
 by: claude-code
