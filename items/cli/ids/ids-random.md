@@ -1,6 +1,6 @@
 ---
 id: ids-random
-status: task
+status: doing
 parent: "[[ids]]"
 created: 2026-11-18T16:20:08+01:00
 by: claude-code
@@ -8,6 +8,8 @@ sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 assignee: claude-code
 owner: sevenuz
 estimate: 30m
+time:
+  - 2026-11-18T16:20:10+01:00/
 ---
 # Ids: random when none is given
 
