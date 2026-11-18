@@ -25,7 +25,7 @@ Decided:
     co2_g: { derive: "wh * 0.4" }
   }
   ```
-- Formulas via the `evalexpr` crate (measured +145 KB release, about 6% of 2.5 MB; user leaned crate). Only number results are used; a formula error shows as `?` in stats and once as a warning.
+- Formulas via the `evalexpr` crate (measured +145 KB release, about 6% of 2.5 MB; user chose the crate, 2026-11-18). Its whole language is allowed: strings and assignments too (user: could be handy); stats sums number results, string results show as text in `show`; an error shows as `?` and once as a warning.
 - Time merging: `stats.merge_by: ["session", "by"]`; overlapping timers of items with the same value of the first present key count once. Replaces the hardcoded session merge.
 - Stats declarative only: config `stats.sections`, each row a label plus an aggregate over a field or derived field: `sum`, `avg`, `per_done`, `top N`, `heat`. Built-ins stay (your time, done, rhythm, flow); the agents and footprint sections become config, shipped as an example in the skill.
   ```hjson
