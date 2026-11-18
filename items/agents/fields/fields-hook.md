@@ -1,11 +1,11 @@
 ---
 id: fields-hook
-status: task
+status: review
 parent: "[[fields]]"
 blocked_by: ["[[fields-map]]"]
 created: 2026-11-18T16:46:24+01:00
 by: claude-code
-commits: [7ecb6f2]
+commits: [7ecb6f2, 4c878d6]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 assignee: claude-code
 owner: sevenuz
@@ -25,3 +25,4 @@ Done when: one chat session records tokens through the script, the command is go
 
 ## Log
 - 2026-11-18 progress: cake log add and hooks/claude-code.py done (7ecb6f2), tested in a sandbox (tokens per item once, chat and agent log lines); open: switch the Stop hook in ~/.claude/settings.json to the script and remove cake usage claude-hook, only together with fields-stats (stats still reads the old usage key)
+- 2026-11-18 changed: Stop hook in ~/.claude/settings.json now runs python3 ~/.claude/skills/cake/hooks/claude-code.py; cake usage claude-hook is gone; try: after this chat turn, cake show <a task with a running timer> shows tokens_in/out
