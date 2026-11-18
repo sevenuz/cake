@@ -64,8 +64,8 @@ impl Kind {
     /// (and move in the inbox); answer has none
     fn commands(self) -> &'static [&'static str] {
         match self {
-            Kind::Sort => &["due", "deadline", "who", "prio", "est", "tag", "move", "all"],
-            Kind::Mine | Kind::Review | Kind::All => &["due", "deadline", "who", "prio", "est", "tag"],
+            Kind::Sort => &["id", "due", "deadline", "who", "prio", "est", "tag", "move", "all"],
+            Kind::Mine | Kind::Review | Kind::All => &["id", "due", "deadline", "who", "prio", "est", "tag"],
             // news is read only, answer has its options
             Kind::Answer | Kind::News => &[],
         }
@@ -74,6 +74,7 @@ impl Kind {
     /// the dim hint of the `:` line: an example per command
     fn command_hint(self) -> String {
         let example = |c: &str| match c {
+            "id" => "id merge-driver",
             "due" => "due fri",
             "deadline" => "deadline 30.11.",
             "who" => "who ai",
@@ -285,6 +286,8 @@ enum Change {
     /// expected work, `-` clears
     Est(String),
     Move(String),
+    /// a new id; children, blockers and links follow
+    Rename(String),
     Timer(bool),
     /// news: back to you; a started item waits as a task
     Hold,
@@ -354,6 +357,10 @@ fn apply(cake: &Cake, item: &Value, change: &Change, user: &str, sort_who: Optio
             to_task(cake)?;
             cake.call(&["edit", id, "--deadline", &opt(d)])?;
             String::new()
+        }
+        Change::Rename(new) => {
+            cake.call(&["rename", id, new])?;
+            format!("now {}", new)
         }
         Change::Move(to) => {
             cake.call(&["mv", id, "--to-store", to])?;
@@ -919,6 +926,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                     "est" if ours => change = Some(Change::Est(if arg.is_empty() { "-".into() } else { arg.to_string() })),
                     "tag" if ours && !arg.is_empty() => change = Some(Change::Tags(arg.split([',', ' ']).filter(|t| !t.is_empty()).map(|t| t.trim_start_matches('#')).collect::<Vec<_>>().join(","))),
                     "tag" if ours => st.note = Some(("tag doc · tag ~doc".into(), true)),
+                    "id" if ours && !arg.is_empty() => change = Some(Change::Rename(arg.to_string())),
+                    "id" if ours => st.note = Some(("id <new>: topic first, 1–3 words, e.g. id merge-driver".into(), true)),
                     "move" if ours && stores.iter().any(|s| s == arg) => change = Some(Change::Move(arg.to_string())),
                     "move" if ours => st.note = Some((format!("no store '{}': {}", arg, stores.join(", ")), true)),
                     "all" if ours => {
@@ -952,6 +961,9 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         }
         if let Some(c) = change {
             let ok = commit(ui, &mut screen, cake, root, &item, &c, user, sort_who.as_deref(), &mut decided, &mut st.note)?;
+            if let (true, Change::Rename(new)) = (ok, &c) {
+                st.cur_id = new.clone();
+            }
             if ok && then_next {
                 st.cur_id = goto(step(cur, true));
                 st.in_box = false;
@@ -1035,7 +1047,20 @@ fn commit(
         }
     };
     let changed = ui.changed.entry((root.to_path_buf(), ui.module)).or_default();
-    if let Change::Undo(_) = change {
+    if let Change::Rename(new) = change {
+        // not a decision: the row keeps what was decided under its new id
+        let to = (root.to_path_buf(), new.clone());
+        if changed.remove(&id) {
+            changed.insert(new.clone());
+        }
+        if let Some(b) = ui.before.remove(&key) {
+            ui.before.insert(to.clone(), b);
+        }
+        if let Some(r) = ui.results.remove(&key) {
+            ui.results.insert(to, r);
+        }
+        *note = Some((result, false));
+    } else if let Change::Undo(_) = change {
         changed.remove(&id);
         ui.before.remove(&key);
         ui.results.remove(&key);
