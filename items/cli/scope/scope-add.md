@@ -1,6 +1,6 @@
 ---
 id: scope-add
-status: task
+status: review
 parent: "[[scope]]"
 blocked_by: ["[[scope-link]]"]
 created: 2026-11-18T16:15:24+01:00
