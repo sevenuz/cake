@@ -1,6 +1,7 @@
 ---
 id: scope-views
 status: task
+tags: [discuss]
 parent: "[[scope]]"
 blocked_by: ["[[scope-link]]"]
 created: 2026-11-18T16:15:24+01:00
@@ -8,7 +9,7 @@ by: claude-code
 commits: [712f1cd]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 usage: {claude-opus-5-5: {in: 30, out: 8207, cache_read: 3211996, cache_write: 12188}}
-assignee: claude-code
+assignee: sevenuz
 owner: sevenuz
 estimate: 2h
 time:
