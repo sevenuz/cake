@@ -748,14 +748,32 @@ where
 /// `<repo>/.cake` (attached if the branch exists locally or on the remote),
 /// otherwise a plain `.cake` dir in the current directory.
 /// With `global`, the global store becomes a git repo on `main`.
-pub fn init<F>(debug: F, config: &Config, global: bool, store: Option<&Path>) -> Result<Report, Box<dyn Error>>
+pub fn init<F>(debug: F, config: &Config, global: bool, store: Option<&Path>, parent: Option<&str>, items: &Store) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
+    if parent.is_some() && (store.is_none() || global) {
+        return Err(error::invalid("--parent links a dir to a store: use it with --store DIR."));
+    }
     // a separate store, used from the current dir (e.g. a paper repo)
     if let Some(p) = store.filter(|_| !global) {
         if p.join("items").is_dir() {
-            return Err(error::invalid(format!("There is already a store at {}.", p.display())));
+            // an existing store: link this dir to it
+            let cwd = std::env::current_dir()?;
+            let abs = fs::canonicalize(p)?;
+            if cwd.starts_with(&abs) || abs.parent().is_some_and(|r| cwd.starts_with(r) && abs.ends_with(util::STORE_DIR)) {
+                return Err(error::invalid(format!("There is already a store at {}.", p.display())));
+            }
+            if let Some(id) = parent.filter(|id| items.get_item(id).is_none()) {
+                return Err(error::not_found(id));
+            }
+            let name = abs.parent().filter(|_| abs.ends_with(util::STORE_DIR)).unwrap_or(&abs).file_name().map_or("store".into(), |n| n.to_string_lossy().to_string());
+            crate::stores::link(&abs, &name, &cwd, parent)?;
+            say!("{} uses the store {}{}.", cwd.display(), p.display(), parent.map_or(String::new(), |g| format!(", captures go under {}", g)));
+            return Ok(store_report(p));
+        }
+        if parent.is_some() {
+            return Err(error::invalid("--parent needs an existing store with that item; create the store first."));
         }
         let files = create_store_files(p)?;
         if !config.disable_git {

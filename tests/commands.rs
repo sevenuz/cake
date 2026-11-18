@@ -202,6 +202,28 @@ fn ready_orders_by_score_deadline_before_prio() {
 }
 
 #[test]
+fn init_links_more_dirs_to_an_existing_store_with_a_default_goal() {
+    let env = Env::new();
+    let (paper, gfs) = (env.path("paper"), env.path("gekkofs"));
+    std::fs::create_dir_all(gfs.join("src")).unwrap();
+    std::fs::create_dir(&paper).unwrap();
+    let store = env.path("phd/.cake");
+    let st = store.to_str().unwrap();
+    env.cake_ok(&paper, &["--store", st, "init"]);
+    assert!(env.cake_err(&gfs, &["--store", st, "init", "--parent", "gekkofs"]).contains("not found"));
+    env.cake_ok(&paper, &["add", "gekkofs", "-m", "# GekkoFS"]);
+    env.cake_ok(&gfs, &["--store", st, "init", "--parent", "gekkofs"]);
+    let list = std::fs::read_to_string(env.path("config/cake/stores.json")).unwrap();
+    assert!(list.contains("\"parent\": \"gekkofs\""), "{}", list);
+    env.cake_ok(&gfs.join("src"), &["add", "x", "-m", "# X"]);
+    assert!(store.join("items/x.md").is_file(), "the linked dir finds the store");
+    env.cake_ok(&paper, &["rename", "gekkofs", "gfs"]);
+    let list = std::fs::read_to_string(env.path("config/cake/stores.json")).unwrap();
+    assert!(list.contains("\"parent\": \"gfs\""), "{}", list);
+    assert!(env.cake_err(&paper, &["init", "--parent", "gfs"]).contains("--store"));
+}
+
+#[test]
 fn separate_store_is_found_from_its_dir_and_subtrees_move_between_stores() {
     let env = Env::new();
     let paper = env.path("paper");

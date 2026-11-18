@@ -462,8 +462,13 @@ pub enum Commands {
         abort: bool,
     },
     /// create a store; in a git repo on its own branch, attached if it exists on the remote;
-    /// with --store DIR a separate store used from here (listed in stores.json)
-    Init {},
+    /// with --store DIR a separate store used from here (listed in stores.json); an existing
+    /// one is linked to this dir
+    Init {
+        /// with --store: what is captured here goes under this item (a goal)
+        #[arg(long)]
+        parent: Option<String>,
+    },
     /// open the config file in the editor
     Config {},
 }
@@ -984,7 +989,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             &commit_message(&args[1..], config.agent()),
         )?,
         Some(Commands::Mv { .. }) => unreachable!("clap requires a parent or --to-store"),
-        Some(Commands::Rename { id, new }) => commands::rename(debug, &mut store, id, new)?,
+        Some(Commands::Rename { id, new }) => {
+            let report = commands::rename(debug, &mut store, id, new)?;
+            if let Err(e) = stores::rename_parent(&root, id, new) {
+                eprintln!("stores.json: links to {} keep the old id: {}", id, e);
+            }
+            report
+        }
         Some(Commands::Archive { older, dry_run }) => commands::archive(debug, &mut store, older, *dry_run)?,
         Some(Commands::Set { to, selector, .. }) => {
             let selector = selector.selector(&selector.ids)?;
@@ -1023,7 +1034,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Status {}) => commands::status(&config, &store)?,
         Some(Commands::Stats { period, all }) => commands::stats(&config, &store, period, *all)?,
         Some(Commands::Show { target }) => commands::show(debug, &config, &store, target)?,
-        Some(Commands::Init {}) => commands::init(debug, &config, cli.global, cli.store.as_deref())?,
+        Some(Commands::Init { parent }) => commands::init(debug, &config, cli.global, cli.store.as_deref(), parent.as_deref(), &store)?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
         Some(Commands::Form { .. }) => unreachable!("handled before the lock"),
