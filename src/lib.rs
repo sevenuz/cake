@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod dash;
 mod error;
+mod fields;
 mod footprint;
 mod git;
 mod item;
@@ -971,9 +972,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             report
         }
         Some(Commands::Edit { ids, prio, due, deadline, est, assignee, owner, tag, blocked_by, parent, set_fields, add_fields, unset_fields, .. }) => {
+            let defs = Config::store(&root)?.fields;
             let pair = |kv: &String| -> Result<(String, serde_yaml_ng::Value), Box<dyn Error>> {
                 let (k, v) = kv.split_once('=').ok_or_else(|| error::invalid(format!("'{}': use KEY=VALUE", kv)))?;
-                Ok((k.trim().to_string(), item::field_value(v.trim())))
+                let k = k.trim().to_string();
+                let v = fields::typed(&defs, &k, v.trim()).map_err(error::invalid)?;
+                Ok((k, v))
             };
             let sets = set_fields.iter().map(pair).collect::<Result<Vec<_>, _>>()?;
             let adds = add_fields.iter().map(pair).collect::<Result<Vec<_>, _>>()?;
@@ -1013,7 +1017,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                         item.set_field(k, v.clone()).map_err(error::invalid)?;
                     }
                     for (k, v) in &adds {
-                        item.add_field(k, v.clone()).map_err(error::invalid)?;
+                        let list = fields::is_list(&defs, k, item.field(k));
+                        item.add_field(k, v.clone(), list).map_err(error::invalid)?;
                     }
                     for k in unset_fields {
                         item.unset_field(k).map_err(error::invalid)?;

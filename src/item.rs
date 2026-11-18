@@ -687,6 +687,11 @@ impl Item {
         self.extra.get(key)
     }
 
+    /// all free fields as stored
+    pub fn fields(&self) -> &Mapping {
+        &self.extra
+    }
+
     fn free_key(key: &str) -> Result<(), String> {
         if key.trim().is_empty() || key.contains(char::is_whitespace) {
             return Err(format!("'{}' is no field name", key));
@@ -705,12 +710,12 @@ impl Item {
     }
 
     /// numbers are summed, lists get the value appended; a new key becomes
-    /// a number (for a number) or a list
-    pub fn add_field(&mut self, key: &str, value: Value) -> Result<(), String> {
+    /// a number (for a number, unless `list`) or a list
+    pub fn add_field(&mut self, key: &str, value: Value, list: bool) -> Result<(), String> {
         Self::free_key(key)?;
         let k = Value::String(key.into());
         let new = match (self.extra.shift_remove(&k), value) {
-            (None, v @ Value::Number(_)) => v,
+            (None, v @ Value::Number(_)) if !list => v,
             (None, v) => Value::Sequence(vec![v]),
             (Some(Value::Number(a)), Value::Number(b)) => match (a.as_i64(), b.as_i64()) {
                 (Some(x), Some(y)) => Value::Number(x.saturating_add(y).into()),

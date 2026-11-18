@@ -248,6 +248,8 @@ cake set <status> <ids> [-m TEXT] [--commit H1,H2] --json   # inbox note task do
 cake edit <ids> --json [-m BODY] [--prio N] [--due D] [--deadline D] [--est 2h|-] [--commit H1,H2] [--assignee WHO] [--owner WHO]
           [--tag a,~b] [--blocked-by x,~y] [--parent ID|-] [--comment TEXT]
           [--set key=value] [--add key=value] [--unset key]   # free header fields
+# store config .cake/config.hjson `fields`: types (number, list, date, duration, text)
+# and derived ones ({ wh: { derive: "tokens_in * 0.00025" } }), shown under `fields` in json
 # -m replaces the body (your items only); --comment appends and gives it back to the assignee
 # dates: 2026-11-30, 30.11., today, tomorrow, mon..sun, +3d, 2w; stored as YYYY-MM-DD
 # who: me (the user), ai (any agent), an agent or person name, - nobody

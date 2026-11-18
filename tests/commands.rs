@@ -196,6 +196,36 @@ fn free_fields_are_set_added_unset_and_selected() {
 }
 
 #[test]
+fn store_config_types_fields_and_derives_new_ones() {
+    let env = Env::new();
+    let d = env.plain_store();
+    std::fs::write(
+        d.join(".cake/config.hjson"),
+        r#"{ fields: {
+            tokens_in: { type: "number" }
+            sessions_seen: { type: "list" }
+            wh: { derive: "tokens_in * 0.5 + tokens_out" }
+            co2: { derive: "wh * 2" }
+            broken: { derive: "1 +" }
+        } }"#,
+    )
+    .unwrap();
+    env.cake_ok(&d, &["add", "w", "--task", "-m", "# Work"]);
+    assert!(env.cake_err(&d, &["edit", "w", "--set", "tokens_in=lots"]).contains("is a number"));
+    assert!(env.cake_err(&d, &["edit", "w", "--set", "wh=3"]).contains("derived"));
+    env.cake_ok(&d, &["edit", "w", "--add", "tokens_in=10", "--add", "tokens_out=1", "--add", "sessions_seen=7"]);
+    assert!(read_item(&d, "w").contains("sessions_seen:\n- 7"), "{}", read_item(&d, "w"));
+    let out = env.cake(&d, &["show", "w", "--json"]);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let f = &v["items"][0]["fields"];
+    assert_eq!(f["wh"], serde_json::json!(6.0));
+    assert_eq!(f["co2"], serde_json::json!(12.0));
+    assert_eq!(f["broken"], "?");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("field broken"));
+    assert!(!read_item(&d, "w").contains("wh:"), "derived values are not stored");
+}
+
+#[test]
 fn asks_block_work_until_answered_with_done_m() {
     let env = Env::new();
     let d = env.plain_store();

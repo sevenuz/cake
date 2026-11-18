@@ -83,6 +83,10 @@ pub mod inner {
         archived: HashSet<String>,
         /// set when `resolve` found an id only in the archive
         archive_hit: std::cell::Cell<bool>,
+        /// the store config's free field definitions, read on first use
+        field_defs: std::cell::OnceCell<crate::fields::Defs>,
+        /// formula errors already printed
+        field_errors: std::cell::RefCell<HashSet<String>>,
         /// files to move without content changes (archive)
         relayout: bool,
     }
@@ -179,6 +183,8 @@ pub mod inner {
                 archived: archive.keys().cloned().collect(),
                 archive,
                 archive_hit: std::cell::Cell::new(false),
+                field_defs: Default::default(),
+                field_errors: Default::default(),
                 relayout: false,
             };
             // a parent that does not exist (e.g. a directory left by a merge) detaches
@@ -649,10 +655,32 @@ pub mod inner {
             ids
         }
 
+        pub fn field_defs(&self) -> &crate::fields::Defs {
+            self.field_defs.get_or_init(|| crate::config::Config::store(&self.root).map(|c| c.fields).unwrap_or_default())
+        }
+
+        /// stored and derived free fields of an item; formula errors go to
+        /// stderr once each
+        pub fn fields_json(&self, item: &Item) -> serde_json::Map<String, serde_json::Value> {
+            let mut m = match serde_json::to_value(item.fields()) {
+                Ok(serde_json::Value::Object(m)) => m,
+                _ => serde_json::Map::new(),
+            };
+            let (derived, errors) = crate::fields::derive(self.field_defs(), item.fields());
+            m.extend(derived);
+            for e in errors {
+                if self.field_errors.borrow_mut().insert(e.clone()) {
+                    eprintln!("store config: {}", e);
+                }
+            }
+            m
+        }
+
         /// item json with derived blocks, ready and path
         pub fn item_json(&self, id: &str) -> Option<serde_json::Value> {
             let item = self.items.get(id)?;
             let mut m = item.to_json();
+            m.insert("fields".into(), self.fields_json(item).into());
             let mut blocks: Vec<&String> = self
                 .items
                 .values()

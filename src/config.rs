@@ -228,11 +228,13 @@ pub struct StoreConfig {
     pub agents: Vec<String>,
     /// while this many items wait in review, agents get no new work; -1 off
     pub max_review: i64,
+    /// free header fields: types and derived formulas (see fields.rs)
+    pub fields: crate::fields::Defs,
 }
 
 impl Default for StoreConfig {
     fn default() -> Self {
-        StoreConfig { aliases: BTreeMap::new(), people: vec![], agents: vec![], max_review: 8 }
+        StoreConfig { aliases: BTreeMap::new(), people: vec![], agents: vec![], max_review: 8, fields: Default::default() }
     }
 }
 
