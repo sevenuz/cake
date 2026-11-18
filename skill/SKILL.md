@@ -21,37 +21,87 @@ changed items record your session in `sessions`, commits are tagged
 - **Only through `cake`:** never edit `.cake/` files or run git in it.
 - **Plans and docs go into the store**, never as files in the repo.
 - **The user's text is theirs:** never edit the body of their items; add a
-  child or a comment (`cake edit <id> --comment …`).
+  child or a comment (`cake edit <id> --comment …`), which lands in the log.
 - **Work only on ready tasks assigned to you or to `ai`** (`cake ready`
   shows exactly those). Never sort the inbox: that is the user's.
-- **Short but complete:** titles ≤ 60 chars, bodies as bullets, no prose.
-  Aim for 3–5 bullets, more rather than losing details.
+- **Readable without the chat:** the user decides in `cake`, days later.
+  Bodies follow the layout below: as short as possible while complete. No
+  internal shorthand, no bare file or function names without saying what
+  they do. Titles ≤ 60 chars.
 - **Designs agreed in chat** go into a `doc` note under the plan before any
   implementation, complete enough to build from without the chat:
   decisions with reasons, rejected options, exact formats and keys, edge
-  cases, an example. Bullet limits apply to plans, not to these.
-- **Readable without the chat:** the user decides in `cake`, days later.
-  First bullet `why:` the problem in plain words, then what changes, then
-  `done when`. No internal shorthand, no bare file or function names
-  without saying what they do.
+  cases, an example. A big design: one child note per topic (below).
 - **No `cake sync`** unless asked or in an agent run. Cite items by id.
 - **Capture from the chat:** when the user mentions something for later
   ("todo", "later", "idea", "we should …") or a decision worth keeping,
   offer `cake add` in one line. Once per topic, never when they said no.
 
+## Item layout
+
+Short full sentences, bullets only for real lists. Fields in this order:
+
+```
+# Merge driver for sync conflicts
+
+Context: two clones editing one item end in a git conflict cake cannot read.
+Why: sync stops and the user has to fix markdown by hand.
+Change: a git merge driver that merges front matter per key, bodies per line.
+Done when: the two-clone test syncs without a conflict marker.
+Not: rebasing the store branch (rewrites history others pulled).
+
+## Log
+- 2026-11-18 changed: driver in sync/merge; try: cake sync in both clones
+- 2026-11-19 comment (sevenuz): also for archived items
+```
+
+- `Context:` 1–3 sentences, readable cold; `Why:` the problem in plain
+  words; `Change:` what gets done; `Done when:` a checkable state; `Not:`
+  rejected options or out of scope (optional).
+- Notes (docs, rules, goals) use the fields that fit; docs add `Decided:`,
+  formats, edge cases, examples.
+- **Above `## Log` is the current state.** On your own items rewrite it
+  (`cake edit <id> -m`) instead of appending; history goes to `## Log` as
+  one dated line per event. cake writes comments, answers, review notes and
+  `discuss` lines there itself.
+- The user's items: body untouched; only log lines and children.
+
 ## Names
 
-The id is a slug of the title (first 4 words without filler) and the file
-name. Ids change only through `cake rename <id> <new>` (links, blockers and
-children follow); rename only when the user asks.
+The id is the file name. Without an id `cake add` takes a random one
+(`kqejfn`). Ids change only through `cake rename <id> <new>` (links,
+blockers and children follow).
 
 - Title starts with the topic: `Merge driver for sync conflicts`.
 - No tool, project or parent name, no status or dates in the title.
-- Always pass an id, the slug is rarely good: topic first, 1–3 words,
-  easy to type (`cake add sync-merge …`). Goals and plans get one word
-  (`dashboard`, `form`, `sync`) so the user can file with `-p dashboard`;
-  children start with the parent's topic (`dash-period`, `dash-pie`).
-- Trees at most 3 levels; cross links with `[[id]]` or `--blocked-by`.
+- Always pass an id: topic first, 1–3 words, easy to type (`cake add
+  sync-merge …`). Goals and plans get one word (`dashboard`, `form`,
+  `sync`) so the user can file with `-p dashboard`; children start with
+  the parent's topic (`dash-period`, `dash-pie`).
+- Rename only random ids (exactly 6 letters, no dash) in triage, to a topic
+  id, listed in the summary. Every other id only when the user asks: an id
+  the user typed is theirs.
+
+## Tree
+
+No depth limit; nest by meaning.
+
+- A child belongs to exactly one parent and is part of it: the parent is
+  finished only when the child is. What touches several parents gets a
+  `[[id]]` link or `--blocked-by`, not a place in the tree.
+- Goals are notes tagged `goal` and may nest (`phd` › `gekkofs` ›
+  `gekkofs-paper`); rules and goals apply down the tree.
+- Tasks split as deep as needed; a task with work children is a plan, only
+  leaves are worked.
+- Docs go under their plan. A big design: the `doc` note holds a short
+  summary, each topic is an untagged child note; children link each other
+  with `[[id]]`. No index, the tree shows them.
+- **Handoff:** one living note per goal, `<goal>-handoff`, tagged
+  `handoff`: 2–3 sentences of current state and next step, rewritten, never
+  a second note. Its children are the open threads (half-made decisions,
+  context no item holds). A thread that gets concrete graduates: `cake edit
+  <id> --parent <goal or plan>` and make it a task or doc. A settled thread
+  is closed or merged into a doc.
 
 ## States
 
@@ -92,27 +142,31 @@ Per store (`cake --store <path> … --json`), when asked to triage or work:
 2. Read rules: notes tagged `rule`/`goal` up the tree of what you touch
    (top level: the whole store). They override defaults here.
 3. Answers and comments: `cake ls -l --assignee <you>,ai --status task
-   --json`. A new `comment (…)` line at the end of a body is a change
-   request; a `blocked_by` item that is now `done` carries the user's
-   answer at the end of its body. Rework accordingly. Items tagged
-   `discuss` (assigned to the user, a `discuss (…): <doubts>` line at the
-   end) were sent back from review as not ok yet: the work so far stays
-   as described above that line, the doubts follow it. Bring them up first in the next chat, never rework
-   them unasked; after the talk either the user closes them, or you
+   --json`. A new `comment (…)` line in `## Log` (older items: at the end
+   of the body) is a change request; a `blocked_by` item that is now
+   `done` carries the user's answer there. Rework accordingly and rewrite
+   the state above the log. Items tagged `discuss` (assigned to the user,
+   a `discuss (…): <doubts>` log line) were sent back from review as not
+   ok yet: the doubts are in that line. Bring them up first in the next
+   chat, never rework them unasked; after the talk either the user closes them, or you
    rework and remove the tag (`cake edit <id> --tag ~discuss --assignee
    <you>`).
    Dropped items with `commits` and without the tag `reverted`: the
    user threw the work away. Add a task under the same parent that
    reverts those commits (assignee you, owner the user, `--blocked-by`
    nothing), then `cake edit <dropped> --tag reverted`.
-4. Garden (triage and agent runs): keep the tree filed and lean.
-   - top-level items that are not goal notes (sorted feedback, loose
-     tasks): move under the matching goal, `cake edit <id> --parent
-     <goal>`; only the parent changes, never the user's text; no goal
-     fits → name it in the summary;
+4. Garden (triage and agent runs): keep the tree filed and lean, per goal,
+   deepest goals first (in a scoped dir only that goal's subtree).
+   - top-level items that are not goal notes: move under the matching
+     goal; direct children of a goal that are not goals, plans, docs or
+     handoffs: move into the best fitting subgoal or plan. `cake edit <id>
+     --parent <x>`, only the parent changes, never the user's text; every
+     move in the summary; nothing fits → it stays, name it;
+   - random ids (6 letters, no dash): `cake rename` to a topic id, in the
+     summary;
    - open items that overlap or repeat each other: never merge on your
      own, ask "Merge <a> into <b>?" (a: merge, b: keep both, c: drop one);
-   - ready tasks without `why`/`done when` that are not yours to plan
+   - ready tasks without `Why`/`Done when` that are not yours to plan
      (old ideas, vague dumps): ask "Plan or park <id>?" (park = `cake
      note`, `cake do` brings it back);
    - a parent that only collects leftovers (many done children, few open):
@@ -130,14 +184,20 @@ Per store (`cake --store <path> … --json`), when asked to triage or work:
      never push to main), then
      `cake review <id> --commit <hashes> -m "changed: …; try: …" --json`.
 6. Your own findings and docs: `cake add --note -t doc …`, never the inbox.
-7. `cake sync --json`, then a short summary: reviews, questions, blocked,
-   what you filed or found to merge.
+7. Update the handoff of each goal you worked in (Tree, above).
+8. `cake sync --json`, then a short summary: reviews, questions, blocked,
+   moves and renames, what you found to merge.
 
 ## Chat mode
 
 While the user is in the chat, the chat is the work loop and cake the
 record. Nothing is asked or answered twice.
 
+- **Session start:** read the handoff of the goal you work in
+  (`<goal>-handoff` and its children); bring up `discuss` items first.
+- **Session end** (the user leaves, or a big topic is done): rewrite that
+  handoff: state and next step, open threads as children, graduated
+  threads moved out. Never a new handoff note.
 - **Ask in chat**, not as question items. Write the answer into cake
   yourself: into the task, a design `doc` note, or a question item created
   and closed at once (`cake done <id> -m "answer: …"`) when it is worth
