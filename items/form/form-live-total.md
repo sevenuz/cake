@@ -11,6 +11,10 @@ owner: sevenuz
 estimate: 45m
 time:
   - 2026-11-18T22:31:17+01:00/2026-11-18T22:32:04+01:00
+tokens_in: 10
+tokens_out: 3188
+tokens_cache_read: 1716966
+tokens_cache_write: 6723
 ---
 # Form: live total in the module header
 
