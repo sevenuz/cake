@@ -448,6 +448,9 @@ pub enum Commands {
     Migrate {
         #[arg(long)]
         apply: bool,
+        /// only this step: usage (old tokens per model into token fields) or workflow (old tags)
+        #[arg(long, value_name = "STEP")]
+        only: Option<String>,
     },
     /// the session log: activity without a timer, e.g. from an agent harness adapter
     Log {
@@ -605,7 +608,7 @@ impl Commands {
                 | Commands::Mv { .. }
                 | Commands::Rename { .. }
                 | Commands::Archive { dry_run: false, .. }
-                | Commands::Migrate { apply: true }
+                | Commands::Migrate { apply: true, .. }
         )
     }
 }
@@ -1122,7 +1125,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
         Some(Commands::Form { .. }) => unreachable!("handled before the lock"),
-        Some(Commands::Migrate { apply }) => crate::migrate::run(&mut store, &config.user(&root), *apply)?,
+        Some(Commands::Migrate { apply, only }) => crate::migrate::run(&mut store, &config.user(&root), *apply, only.as_deref())?,
         Some(Commands::Log { action: LogAction::Add { start, end, who, kind, agent, session, item } }) => {
             let at = |t: &str| t.parse::<i64>().or_else(|_| util::parse_timestamp(t)).map_err(|_| error::invalid(format!("'{}' is no time (unix seconds or RFC 3339)", t)));
             let (s, e) = (at(start)?, at(end)?);

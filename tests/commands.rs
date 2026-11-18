@@ -946,7 +946,7 @@ fn stats_sum_configured_formulas_and_migrate_turns_usage_into_fields() {
     let file = d.join(".cake/items/t.md");
     let text = std::fs::read_to_string(&file).unwrap();
     std::fs::write(&file, text.replacen("---\n# task", "usage: {m1: {in: 10, out: 5, cache_read: 0, cache_write: 0}, m2: {in: 1, out: 4}}\n---\n# task", 1)).unwrap();
-    env.cake_ok(&d, &["migrate", "--apply"]);
+    env.cake_ok(&d, &["migrate", "--apply", "--only", "usage"]);
     let item = read_item(&d, "t");
     assert!(item.contains("tokens_in: 11") && item.contains("tokens_out: 9") && !item.contains("usage"), "{}", item);
     env.cake_ok(&d, &["done", "t"]);

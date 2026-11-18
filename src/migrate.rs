@@ -14,7 +14,12 @@ struct Change {
     what: Vec<String>,
 }
 
-pub fn run(store: &mut Store, user: &str, apply: bool) -> Result<Report, Box<dyn Error>> {
+pub fn run(store: &mut Store, user: &str, apply: bool, only: Option<&str>) -> Result<Report, Box<dyn Error>> {
+    if only.is_some_and(|o| o != "usage" && o != "workflow") {
+        return Err(crate::error::invalid("--only is usage or workflow."));
+    }
+    let workflow = only != Some("usage");
+    let usage = only != Some("workflow");
     let mut ids: Vec<String> = store.get().keys().cloned().collect();
     ids.sort();
     let mut changes = vec![];
@@ -28,7 +33,7 @@ pub fn run(store: &mut Store, user: &str, apply: bool) -> Result<Report, Box<dyn
         let mut what = vec![];
         let mut next = item.clone();
 
-        if has("reply") && open {
+        if workflow && has("reply") && open {
             // a comment becomes text of the item it was about
             if let Some(parent) = item.parents().first().cloned() {
                 what.push(format!("comment appended to {}, item removed", parent));
@@ -44,7 +49,8 @@ pub fn run(store: &mut Store, user: &str, apply: bool) -> Result<Report, Box<dyn
                 continue;
             }
         }
-        if has("ask") && open {
+        if !workflow {
+        } else if has("ask") && open {
             what.push(format!("question: task for {}", user));
             next.set_status(Status::Task).ok();
             next.set_assignee(Some(user.to_string()));
@@ -77,7 +83,7 @@ pub fn run(store: &mut Store, user: &str, apply: bool) -> Result<Report, Box<dyn
         }
         // tokens per model (the old `usage` key) become the free fields an
         // adapter writes: tokens_in, tokens_out, tokens_cache_read, tokens_cache_write
-        if let Some(serde_yaml_ng::Value::Mapping(models)) = item.field("usage") {
+        if let (true, Some(serde_yaml_ng::Value::Mapping(models))) = (usage, item.field("usage")) {
             let mut sums = [0i64; 4];
             for (_, u) in models {
                 for (n, k) in ["in", "out", "cache_read", "cache_write"].iter().enumerate() {
@@ -94,7 +100,7 @@ pub fn run(store: &mut Store, user: &str, apply: bool) -> Result<Report, Box<dyn
             next.unset_field("usage").ok();
         }
         let tags: Vec<String> = item.tags().iter().filter(|t| OLD_TAGS.contains(&t.as_str())).cloned().collect();
-        if !tags.is_empty() {
+        if workflow && !tags.is_empty() {
             what.push(format!("tags {} removed", tags.join(", ")));
             next.remove_tags(tags);
         }
