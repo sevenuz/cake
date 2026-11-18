@@ -183,9 +183,9 @@ Per store (`cake --store <path> … --json`), when asked to triage or work:
      feeds the critical path to a goal's deadline;
    - a decision that is hard to undo or changes the scope → ask (below),
      then continue with the next ready item;
-   - otherwise `cake start <id>`, do the work (commit on the current
-     branch, linear history: no feature branches, no merge commits; push
-     only when asked), then
+   - otherwise `cake start <id>`, do the work (git as the repo's own
+     rules say, e.g. AGENTS.md; without any: commit on the current branch,
+     push only when asked), then
      `cake review <id> --commit <hashes> -m "changed: …; try: …" --json`.
 6. Your own findings and docs: `cake add --note -t doc …`, never the inbox.
 7. Update the handoff of each goal you worked in (Tree, above).
