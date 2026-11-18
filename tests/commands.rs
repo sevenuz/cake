@@ -226,6 +226,17 @@ fn store_config_types_fields_and_derives_new_ones() {
 }
 
 #[test]
+fn log_add_appends_a_line_to_the_session_log() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["log", "add", "--start", "1763460000", "--end", "2025-11-18T11:00:00+01:00", "--who", "claude-code", "--kind", "agent", "--session", "s1", "--item", "w"]);
+    assert!(env.cake_err(&d, &["log", "add", "--start", "10", "--end", "5"]).contains("before"));
+    let logs: Vec<_> = std::fs::read_dir(d.join(".cake/log")).unwrap().flatten().collect();
+    let text = std::fs::read_to_string(logs[0].path()).unwrap();
+    assert!(text.contains("\"kind\":\"agent\"") && text.contains("\"session\":\"s1\"") && text.contains("\"item\":\"w\""), "{}", text);
+}
+
+#[test]
 fn asks_block_work_until_answered_with_done_m() {
     let env = Env::new();
     let d = env.plain_store();

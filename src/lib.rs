@@ -246,6 +246,32 @@ pub enum UsageAction {
 }
 
 #[derive(Subcommand)]
+pub enum LogAction {
+    /// one span of activity; split it yourself where timers start and stop
+    Add {
+        /// start: unix seconds or RFC 3339
+        #[arg(long)]
+        start: String,
+        /// end: unix seconds or RFC 3339
+        #[arg(long)]
+        end: String,
+        /// who was active, default: you
+        #[arg(long)]
+        who: Option<String>,
+        /// what kind of activity, e.g. chat, agent, cake
+        #[arg(long, default_value = "chat")]
+        kind: String,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        session: Option<String>,
+        /// the item whose timer ran meanwhile
+        #[arg(long)]
+        item: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum Commands {
     /// capture: a new item in the inbox (--task, --note to skip sorting);
     /// the editor opens without -m
@@ -453,6 +479,11 @@ pub enum Commands {
     Migrate {
         #[arg(long)]
         apply: bool,
+    },
+    /// the session log: activity without a timer, e.g. from an agent harness adapter
+    Log {
+        #[command(subcommand)]
+        action: LogAction,
     },
     /// tokens per item, with an energy, CO2e and water estimate in show
     #[command(hide = true)]
@@ -1140,6 +1171,19 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             if config.usage_tracking {
                 usage::claude_hook(&mut store, Some(&config.user(&root)))?;
             }
+            commands::Report::None
+        }
+        Some(Commands::Log { action: LogAction::Add { start, end, who, kind, agent, session, item } }) => {
+            let at = |t: &str| t.parse::<i64>().or_else(|_| util::parse_timestamp(t)).map_err(|_| error::invalid(format!("'{}' is no time (unix seconds or RFC 3339)", t)));
+            let (s, e) = (at(start)?, at(end)?);
+            if e < s {
+                return Err(error::invalid("--end is before --start"));
+            }
+            let mut l = log::Line::new(s, e, who.as_deref().unwrap_or(&config.user(&root)), kind);
+            l.agent = agent.clone();
+            l.session = session.clone();
+            l.item = item.clone();
+            log::append(&root, &[l])?;
             commands::Report::None
         }
         Some(Commands::Usage { action: UsageAction::Log { start, end } }) => {

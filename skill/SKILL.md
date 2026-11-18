@@ -268,6 +268,15 @@ Selectors (and; `--or`): `-s TEXT`,
 `--blocked`, `--childless`, `-A` (with done/dropped), `--archive` (also
 archived items; `show` finds them by id anyway).
 
+## Harness adapters
+
+`hooks/` next to this file: one script per agent harness (`claude-code.py`,
+a Stop hook). An adapter only calls cake: tokens per item as free fields
+`tokens_in`, `tokens_out`, `tokens_cache_read`, `tokens_cache_write`
+(`cake edit <id> --add …`, only for items of its session whose timer ran),
+activity via `cake log add --start --end [--who] [--kind chat|agent]
+[--session] [--item]`. A new harness gets its own script with the same keys.
+
 ## Output
 
 - `{"v": 1, "items": [...]}` (after the change), `rm` → `{"v": 1, "removed": [ids]}`.
