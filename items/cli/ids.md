@@ -1,11 +1,12 @@
 ---
 id: ids
 status: review
+tags: [discuss]
 parent: "[[cli]]"
 created: 2026-11-18T16:20:08+01:00
 by: claude-code
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
-assignee: claude-code
+assignee: sevenuz
 owner: sevenuz
 ---
 # Ids: random on capture, named while sorting
