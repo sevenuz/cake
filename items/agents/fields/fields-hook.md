@@ -1,6 +1,6 @@
 ---
 id: fields-hook
-status: doing
+status: task
 parent: "[[fields]]"
 blocked_by: ["[[fields-map]]"]
 created: 2026-11-18T16:46:24+01:00
@@ -18,3 +18,6 @@ time:
 Why: the transcript hook only fits Claude Code and lives in the core (`cake usage claude-hook`).
 Change: `hooks/claude-code.py` in the skill dir writes tokens_in/out and session via `cake edit`; pending state in its own file; the key contract in the skill; `cake usage` removed.
 Done when: one chat session records tokens through the script, the command is gone.
+
+## Log
+- 2026-11-18 progress: cake log add and hooks/claude-code.py done (7ecb6f2), tested in a sandbox (tokens per item once, chat and agent log lines); open: switch the Stop hook in ~/.claude/settings.json to the script and remove cake usage claude-hook, only together with fields-stats (stats still reads the old usage key)
