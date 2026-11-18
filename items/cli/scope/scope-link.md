@@ -1,12 +1,13 @@
 ---
 id: scope-link
-status: review
+status: done
 parent: "[[scope]]"
 created: 2026-11-18T16:15:24+01:00
 by: claude-code
 commits: [5a9ec83]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 usage: {claude-opus-5-5: {in: 22, out: 8754, cache_read: 1649115, cache_write: 16070}}
+closed: 2026-11-18T17:09:24+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 2h
