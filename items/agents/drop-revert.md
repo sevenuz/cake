@@ -1,13 +1,14 @@
 ---
 id: drop-revert
-status: task
+status: done
 tags: [discuss]
 parent: "[[agents]]"
 created: 2026-11-16T02:25:18+01:00
 by: claude-code
 commits: [80ab744]
-sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
+sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 usage: {claude-opus-5-5: {in: 0, out: 197, cache_read: 152948, cache_write: 727}}
+closed: 2026-11-18T15:35:34+01:00
 assignee: sevenuz
 owner: sevenuz
 time:
@@ -23,3 +24,5 @@ time:
 changed: skill step 3: dropped items with commits and without #reverted get a revert task (assignee the agent, owner you) under the same parent, the dropped item gets #reverted; cake itself writes nothing
 
 discuss (sevenuz, 2026-11-16): do they get automatically reverted? explain how it works
+
+answer: not automatic; agent creates a revert task you review
