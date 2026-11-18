@@ -5,7 +5,7 @@ parent: "[[scope]]"
 blocked_by: ["[[scope-link]]"]
 created: 2026-11-18T16:15:24+01:00
 by: claude-code
-commits: [18391ab]
+commits: [18391ab, e47863f]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 assignee: claude-code
 owner: sevenuz
