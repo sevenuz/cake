@@ -1,6 +1,6 @@
 ---
 id: form-live-total
-status: task
+status: doing
 parent: "[[form]]"
 created: 2026-11-18T17:12:47+01:00
 by: claude-code
@@ -8,6 +8,8 @@ sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 assignee: claude-code
 owner: sevenuz
 estimate: 45m
+time:
+  - 2026-11-18T22:31:17+01:00/
 ---
 # Form: live total in the module header
 
