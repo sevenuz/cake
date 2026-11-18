@@ -13,10 +13,10 @@ owner: sevenuz
 estimate: 1h
 time:
   - 2026-11-18T17:12:47+01:00/2026-11-18T17:13:36+01:00
-tokens_in: 14
-tokens_out: 4753
-tokens_cache_read: 1341775
-tokens_cache_write: 6282
+tokens_in: 28
+tokens_out: 9506
+tokens_cache_read: 2683550
+tokens_cache_write: 12564
 ---
 # Scope: captures land under the default goal
 
