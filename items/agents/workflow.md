@@ -1,6 +1,6 @@
 ---
 id: workflow
-status: task
+status: review
 parent: "[[agents]]"
 created: 2026-11-18T16:15:08+01:00
 by: claude-code
