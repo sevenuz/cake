@@ -630,6 +630,15 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
         // done and the note line says how to go on
         // news is read only: nothing to decide, never "done"
         let all_done = !matches!(kind, Kind::All | Kind::News) && !rows.iter().any(|r| r.editable && !r.changed);
+        // items that arrive during the run (a parent goes to review when its
+        // last child closes) raise the module's count and the total
+        let here = rows.iter().filter(|r| r.editable).count();
+        if let Some(c) = ui.counts.get_mut(ui.step).filter(|c| here > **c && kind != Kind::All) {
+            if kind != Kind::News {
+                ui.total += here - *c;
+            }
+            *c = here;
+        }
         if let Some(d) = ui.done.get_mut(ui.step) {
             *d = all_done;
         }
