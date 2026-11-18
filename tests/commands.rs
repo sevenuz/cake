@@ -248,7 +248,7 @@ fn init_links_more_dirs_to_an_existing_store_with_a_default_goal() {
     let list = std::fs::read_to_string(env.path("config/cake/stores.json")).unwrap();
     assert!(list.contains("\"parent\": \"gekkofs\""), "{}", list);
     env.cake_ok(&gfs.join("src"), &["add", "x", "-m", "# X"]);
-    assert!(store.join("items/x.md").is_file(), "the linked dir finds the store");
+    assert!(store.join("items/gekkofs/x.md").is_file(), "the linked dir finds the store and its goal");
     env.cake_ok(&paper, &["rename", "gekkofs", "gfs"]);
     let list = std::fs::read_to_string(env.path("config/cake/stores.json")).unwrap();
     assert!(list.contains("\"parent\": \"gfs\""), "{}", list);
