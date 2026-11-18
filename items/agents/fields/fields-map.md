@@ -1,6 +1,6 @@
 ---
 id: fields-map
-status: task
+status: doing
 parent: "[[fields]]"
 created: 2026-11-18T16:46:24+01:00
 by: claude-code
@@ -8,6 +8,8 @@ sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 assignee: claude-code
 owner: sevenuz
 estimate: 3h
+time:
+  - 2026-11-18T16:58:55+01:00/
 ---
 # Fields: keep unknown header keys
 
