@@ -13,6 +13,10 @@ owner: sevenuz
 priority: 1
 time:
   - 2026-11-18T22:34:52+01:00/2026-11-18T22:37:11+01:00
+tokens_in: 16
+tokens_out: 4358
+tokens_cache_read: 2884553
+tokens_cache_write: 7624
 ---
 # Today, week and streak in cake status
 
