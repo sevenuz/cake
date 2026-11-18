@@ -1,6 +1,6 @@
 ---
 id: fields-stats
-status: task
+status: doing
 parent: "[[fields]]"
 blocked_by: ["[[fields-config]]"]
 created: 2026-11-18T16:46:24+01:00
@@ -9,6 +9,8 @@ sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 assignee: claude-code
 owner: sevenuz
 estimate: 4h
+time:
+  - 2026-11-18T22:00:00+01:00/
 ---
 # Fields: declarative stats sections and merge_by
 
