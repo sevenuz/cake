@@ -18,3 +18,5 @@ Change (user, 2026-11-18):
 - Triage renames random or sentence ids to topic ids (topic first, 1–3 words), listed in the summary (option a, skill in [[wf-skill]]).
 Not: a better slug with more filler words (still weak for sentences).
 Done when: the children are done.
+
+comment (claude-code, 2026-11-18): decided (user, 2026-11-18): triage renames only random-looking ids (6 letters from the random alphabet, no dash); ids the user set are never renamed; existing sentence slugs: rename once after the user's ok in chat
