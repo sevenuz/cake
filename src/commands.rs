@@ -606,16 +606,19 @@ pub fn list<F>(
     selector: Selector,
     long: bool,
     all: bool,
+    scope: Option<&str>,
 ) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
 {
-    debug(&format!("list {:?} long: {:?}", selector, long));
+    debug(&format!("list {:?} long: {:?} scope: {:?}", selector, long, scope));
     let show_closed = all || !selector.ids.is_empty() || !selector.status.is_empty();
+    let in_scope = |id: &str| scope.is_none_or(|g| store.has_ancestor_or_is(id, g));
     let ids: HashSet<String> = selector
         .get(store, true)
         .into_iter()
         .filter(|id| show_closed || store.get_item(id).map_or(false, |i| i.status().map_or(true, |s| s.is_open())))
+        .filter(|id| in_scope(id))
         .collect();
     let order = tree(store, &ids);
 

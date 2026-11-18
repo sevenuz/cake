@@ -284,6 +284,29 @@ fn captures_in_a_linked_dir_land_under_its_goal() {
 }
 
 #[test]
+fn a_linked_dir_sees_only_its_goal_unless_wide() {
+    let env = Env::new();
+    let (home, gfs) = (env.path("phd"), env.path("gekkofs"));
+    std::fs::create_dir_all(&gfs).unwrap();
+    std::fs::create_dir(&home).unwrap();
+    let st = env.path("stores/phd");
+    let st = st.to_str().unwrap();
+    env.cake_ok(&home, &["--store", st, "init"]);
+    env.cake_ok(&home, &["add", "gekkofs", "--note", "-m", "# GekkoFS"]);
+    env.cake_ok(&home, &["add", "paper", "--note", "-m", "# Paper"]);
+    env.cake_ok(&home, &["add", "g1", "--task", "-p", "gekkofs", "-m", "# G1"]);
+    env.cake_ok(&home, &["add", "p1", "--task", "-p", "paper", "-m", "# P1"]);
+    env.cake_ok(&gfs, &["--store", st, "init", "--parent", "gekkofs"]);
+    let mut ids = json_ids(&env, &gfs, &["ls"]);
+    ids.sort();
+    assert_eq!(ids, vec!["g1", "gekkofs"]);
+    assert_eq!(json_ids(&env, &gfs, &["ls", "--ready"]), vec!["g1"]);
+    assert_eq!(json_ids(&env, &gfs, &["ls", "--wide", "--ready"]).len(), 2);
+    assert!(json_ids(&env, &gfs, &["ls", "-p", "paper"]).contains(&"p1".to_string()), "-p picks another subtree");
+    assert_eq!(json_ids(&env, &home, &["ls"]).len(), 4, "the store's own dir sees all");
+}
+
+#[test]
 fn separate_store_is_found_from_its_dir_and_subtrees_move_between_stores() {
     let env = Env::new();
     let paper = env.path("paper");

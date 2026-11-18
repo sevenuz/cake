@@ -393,6 +393,10 @@ pub enum Commands {
         /// also the archived items (implies -A)
         #[arg(long)]
         archive: bool,
+
+        /// in a dir linked to a goal: the whole store, not only that goal
+        #[arg(long)]
+        wide: bool,
     },
     /// one line for prompts and tmux: your timers, others' timers, ready, today
     Status {},
@@ -1087,9 +1091,15 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 Some(st) => commands::set_status(debug, &mut store, selector, st, message)?,
             }
         }
-        Some(Commands::List { selector, long, all, archive }) => {
+        Some(Commands::List { selector, long, all, archive, wide }) => {
             let all = &(*all || *archive);
             let mut selector = selector.selector(&selector.ids)?;
+            // a dir linked to a goal sees that goal's subtree
+            let scope = if *wide || cli.global || !selector.ids.is_empty() || !selector.parents.is_empty() {
+                None
+            } else {
+                default_parent(&root, &store)
+            };
             if selector.ready {
                 // an agent sees its own tasks and those for any agent, and
                 // none while the reviews are full
@@ -1106,7 +1116,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             } else {
                 selector.rchildren = true;
             }
-            commands::list(debug, &config, &mut store, selector, *long, *all)?
+            commands::list(debug, &config, &mut store, selector, *long, *all, scope.as_deref())?
         }
         Some(Commands::Status {}) => commands::status(&config, &store)?,
         Some(Commands::Stats { period, all }) => commands::stats(&config, &store, period, *all)?,

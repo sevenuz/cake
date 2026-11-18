@@ -10,7 +10,8 @@ a separate store used from a project dir, or `~/.local/share/cake`
 (personal store, `-g`). All known stores: `~/.config/cake/stores.json`.
 A dir can use a store elsewhere (`cake --store <store> init [--parent
 <goal>]` there); with a goal, `cake add` without `-p` lands under it
-(`-p -`: top level).
+(`-p -`: top level), and `ls`, `ready` and the form show only that
+goal's subtree (`ls --wide`: the whole store; `-p` picks another subtree).
 The tree is on disk: children of `sync.md` live in `sync/`. Every change
 through `cake` is committed automatically. Your items get `by: <agent>`,
 changed items record your session in `sessions`, commits are tagged

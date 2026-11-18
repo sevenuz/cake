@@ -377,6 +377,19 @@ pub mod inner {
 
         /// gives `old` the id `new`: its file, its children's parent,
         /// blockers everywhere and `[[old]]` links in every body
+        /// `id` is `goal` or lies below it
+        pub fn has_ancestor_or_is(&self, id: &str, goal: &str) -> bool {
+            let mut cur = Some(id.to_string());
+            for _ in 0..=MAX_DEPTH * 10 {
+                match cur {
+                    Some(c) if c == goal => return true,
+                    Some(c) => cur = self.get_item(&c).and_then(|i| i.parents().first().cloned()),
+                    None => return false,
+                }
+            }
+            false
+        }
+
         pub fn rename(&mut self, old: &str, new: &str) -> Result<(), Box<dyn Error>> {
             crate::util::check_id(new)?;
             // archived children, blockers and links follow too
