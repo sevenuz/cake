@@ -1,0 +1,67 @@
+// Stats for agent work, to copy into ~/.config/cake/config.hjson.
+// Reads the fields an adapter writes (claude-code.py: tokens_in,
+// tokens_out, tokens_cache_read, tokens_cache_write).
+{
+  stats: {
+    // timers of items with the same value count once (the first key an item
+    // has): one agent session working on several items at a time
+    merge_by: ["sessions", "by"]
+
+    // named sums per item, in order (a later one may use an earlier one),
+    // added up per period by the share of the item's time in it
+    sums: [
+      { name: "tokens", of: "tokens_in + tokens_out + tokens_cache_read + tokens_cache_write" }
+
+      // Rough energy behind the tokens, leaning high; an order of magnitude.
+      // Wh per 1000 tokens for a large model, GPU only:
+      // - output: 0.1 to 2 Wh per 1000 output tokens depending on model size
+      //   (Epoch AI 2025, as cited in https://arxiv.org/pdf/2603.06630);
+      //   Llama 3.1 405B about 0.21 Wh for ~367 output tokens per query
+      //   (ML.ENERGY, NeurIPS 2025, reviewed in Joule,
+      //   https://www.cell.com/joule/fulltext/S2542-4351(26)00114-5).
+      //   Frontier models are larger: the top of the range, 2.0.
+      // - input: about 1/8 of an output token, 0.25 (OPT-30B on A100,
+      //   https://arxiv.org/html/2511.05597)
+      // - cache_write: like input (the prefill happens once), 0.25
+      // - cache_read: no measurement found; 1/10 of input like the price, 0.025
+      // Then 1.3 for the server around the GPUs (assumption) and 1.2 data
+      // center overhead (PUE, between hyperscale ~1.1 and older sites).
+      { name: "wh", of: "(tokens_in * 0.25 + tokens_out * 2.0 + tokens_cache_write * 0.25 + tokens_cache_read * 0.025) / 1000 * 1.3 * 1.2" }
+      // grid: EU 2021, 226.4 g CO2 per kWh (Climate Transparency Report 2022,
+      // https://www.climate-transparency.org/wp-content/uploads/2022/10/CT2022-EU-Web.pdf)
+      { name: "co2_g", of: "wh / 1000 * 226.4" }
+      // water: on site 1.8 l per kWh of IT energy (WUE, industry average),
+      // at the power plants 2 l per kWh drawn
+      // (https://www.hcltech.com/blogs/understanding-water-use-data-centers)
+      { name: "water_l", of: "wh / 1.2 / 1000 * 1.8 + wh / 1000 * 2.0" }
+    ]
+
+    // sums shown as columns in cake stats and on the dashboard
+    show: ["tokens", "co2_g"]
+
+    // more sections in the stats overlay (v); a row is a formula over the
+    // sums and you, agents (seconds), done, or the top items by a sum
+    sections: [
+      {
+        title: "cost (this period)"
+        rows: [
+          { label: "tokens per done item", value: "tokens / done" }
+          { label: "CO2e g per done item", value: "co2_g / done" }
+        ]
+      }
+      {
+        title: "most tokens (this period)"
+        rows: [ { top: 5, by: "tokens" } ]
+      }
+      {
+        title: "this period's footprint is about"
+        rows: [
+          { label: "km by car (120 g/km)", value: "co2_g / 120" }
+          { label: "cups of tea boiled (25 Wh)", value: "wh / 25" }
+          { label: "phone charges (15 Wh)", value: "wh / 15" }
+          { label: "glasses of water (0.25 l)", value: "water_l / 0.25" }
+        ]
+      }
+    ]
+  }
+}

@@ -972,7 +972,7 @@ pub fn run(root: &Path, user: &str, mut o: Options) -> Result<(), Box<dyn Error>
     ratatui::restore();
     // time with the form open goes to the session log of this store
     for (start, end) in crate::log::stretches(&ui.keys.active, None) {
-        let _ = Cake { root }.call(&["usage", "log", "--start", &start.to_string(), "--end", &end.to_string()]);
+        let _ = Cake { root }.call(&["log", "add", "--start", &start.to_string(), "--end", &end.to_string(), "--kind", "cake"]);
     }
     for (_, r) in &stores {
         if let Some(f) = last_run_file(r) {

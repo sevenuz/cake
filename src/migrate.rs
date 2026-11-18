@@ -75,6 +75,24 @@ pub fn run(store: &mut Store, user: &str, apply: bool) -> Result<Report, Box<dyn
                 next.set_status(Status::Inbox).ok();
             }
         }
+        // tokens per model (the old `usage` key) become the free fields an
+        // adapter writes: tokens_in, tokens_out, tokens_cache_read, tokens_cache_write
+        if let Some(serde_yaml_ng::Value::Mapping(models)) = item.field("usage") {
+            let mut sums = [0i64; 4];
+            for (_, u) in models {
+                for (n, k) in ["in", "out", "cache_read", "cache_write"].iter().enumerate() {
+                    sums[n] += u.get(*k).and_then(|v| v.as_i64()).unwrap_or(0);
+                }
+            }
+            let keys = ["tokens_in", "tokens_out", "tokens_cache_read", "tokens_cache_write"];
+            what.push(format!("usage → {}", keys.iter().zip(sums).map(|(k, v)| format!("{} {}", k, v)).collect::<Vec<_>>().join(", ")));
+            for (k, v) in keys.iter().zip(sums) {
+                if v > 0 {
+                    next.add_field(k, serde_yaml_ng::Value::Number(v.into()), false).ok();
+                }
+            }
+            next.unset_field("usage").ok();
+        }
         let tags: Vec<String> = item.tags().iter().filter(|t| OLD_TAGS.contains(&t.as_str())).cloned().collect();
         if !tags.is_empty() {
             what.push(format!("tags {} removed", tags.join(", ")));

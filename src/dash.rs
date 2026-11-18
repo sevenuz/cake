@@ -245,9 +245,9 @@ fn totals(srcs: &[Src], user: &str) -> String {
     for (s, l) in srcs.iter().zip(&logs) {
         n.add(&stats::window(&s.store, l, user, from, now));
     }
-    let co2 = if n.co2_g >= 1000.0 { format!("{:.1} kg", n.co2_g / 1000.0) } else { format!("{:.0} g", n.co2_g) };
     let since = chrono::TimeZone::timestamp_opt(&chrono::Local, from, 0).single().map_or(String::new(), |t| t.format("%H:%M").to_string());
-    format!("since {} · {} you · {} agents · {} tok · {} CO2e", since, hm(n.you), hm(n.agents), crate::footprint::human(n.tokens), co2)
+    let sums: String = stats::shown().iter().map(|c| format!(" · {} {}", stats::human(n.sum(c)), c)).collect();
+    format!("since {} · {} you · {} agents{}", since, hm(n.you), hm(n.agents), sums)
 }
 
 /// the card of the selected row: title, a meta line, the body
@@ -295,31 +295,35 @@ enum Kind {
 #[derive(Clone, Copy, PartialEq)]
 enum Measure {
     Time,
-    Tokens,
+    /// the n-th shown sum (config stats.show)
+    Sum(usize),
     Done,
 }
 
 impl Measure {
     fn next(self) -> Measure {
+        let n = stats::shown().len();
         match self {
-            Measure::Time => Measure::Tokens,
-            Measure::Tokens => Measure::Done,
+            Measure::Time if n > 0 => Measure::Sum(0),
+            Measure::Time => Measure::Done,
+            Measure::Sum(i) if i + 1 < n => Measure::Sum(i + 1),
+            Measure::Sum(_) => Measure::Done,
             Measure::Done => Measure::Time,
         }
     }
 
-    fn name(self) -> &'static str {
+    fn name(self) -> String {
         match self {
-            Measure::Time => "time",
-            Measure::Tokens => "tokens",
-            Measure::Done => "done",
+            Measure::Time => "time".into(),
+            Measure::Sum(i) => stats::shown().get(i).cloned().unwrap_or_default(),
+            Measure::Done => "done".into(),
         }
     }
 
     fn of(self, n: &stats::Numbers) -> f64 {
         match self {
             Measure::Time => (n.you + n.agents) as f64,
-            Measure::Tokens => n.tokens as f64,
+            Measure::Sum(_) => n.sum(&self.name()),
             Measure::Done => n.done as f64,
         }
     }
@@ -327,7 +331,7 @@ impl Measure {
     fn show(self, v: f64) -> String {
         match self {
             Measure::Time => hm(v as i64),
-            Measure::Tokens => crate::footprint::human(v as u64),
+            Measure::Sum(_) => stats::human(v),
             Measure::Done => format!("{}", v as u64),
         }
     }
@@ -571,8 +575,9 @@ fn paint_pie(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay) {
     let n = o.zoom.map_or_else(|| stats::sum(&o.stats), |z| o.stats[z].numbers.clone());
     lines.push(Line::default());
     lines.push(Line::from(Span::styled(format!("you {} · agents {}", hm(n.you), hm(n.agents)), dim())));
-    lines.push(Line::from(Span::styled(format!("{:.0} Wh · {:.0} g CO2e", n.wh, n.co2_g), dim())));
-    lines.push(Line::from(Span::styled(format!("{:.1} l water", n.water_l), dim())));
+    for s in &stats::conf().sums {
+        lines.push(Line::from(Span::styled(format!("{} {}", stats::human(n.sum(&s.name)), s.name), dim())));
+    }
     f.render_widget(Paragraph::new(lines), legend);
 }
 
@@ -742,21 +747,21 @@ fn paint_stats(f: &mut ratatui::Frame, area: Rect, srcs: &[Src], o: &Overlay, fu
     let inner = block.inner(area);
     f.render_widget(block, area);
     let w = srcs.iter().map(|s| s.name.chars().count()).max().unwrap_or(5).clamp(5, 16);
-    // narrow (the dashboard's side column): no kWh, no sparkline
+    // narrow (the dashboard's side column): no sparkline
     let compact = inner.width < 80;
+    let cols = stats::shown();
+    let sums_head: String = cols.iter().map(|c| format!("  {:>7}", cut(c, 7))).collect();
     let head = if compact {
-        format!("{:w$}  {:>6}  {:>6}  {:>7}  {:>7}  {:>4}", "", "you", "agents", "tokens", "CO2e", "done", w = w)
+        format!("{:w$}  {:>6}  {:>6}{}  {:>4}", "", "you", "agents", sums_head, "done", w = w)
     } else {
-        format!("{:w$}  {:>6}  {:>6}  {:>7}  {:>6}  {:>8}  {:>4}  {}", "", "you", "agents", "tokens", "kWh", "CO2e", "done", o.period.bucket(), w = w)
+        format!("{:w$}  {:>6}  {:>6}{}  {:>4}  {}", "", "you", "agents", sums_head, "done", o.period.bucket(), w = w)
     };
     let row = |name: &str, n: &stats::Numbers, buckets: String| {
+        let sums: String = cols.iter().map(|c| format!("  {:>7}", stats::human(n.sum(c)))).collect();
         if compact {
-            return format!("{:w$}  {:>6}  {:>6}  {:>7}  {:>5.0} g  {:>4}", cut(name, w), hm(n.you), hm(n.agents), crate::footprint::human(n.tokens), n.co2_g, n.done, w = w);
+            return format!("{:w$}  {:>6}  {:>6}{}  {:>4}", cut(name, w), hm(n.you), hm(n.agents), sums, n.done, w = w);
         }
-        format!(
-            "{:w$}  {:>6}  {:>6}  {:>7}  {:>6.2}  {:>6.0} g  {:>4}  {}",
-            cut(name, w), hm(n.you), hm(n.agents), crate::footprint::human(n.tokens), n.wh / 1000.0, n.co2_g, n.done, buckets, w = w
-        )
+        format!("{:w$}  {:>6}  {:>6}{}  {:>4}  {}", cut(name, w), hm(n.you), hm(n.agents), sums, n.done, buckets, w = w)
     };
     let mut lines = vec![Line::from(Span::styled(head, dim()))];
     let shown: Vec<usize> = o.only.map_or((0..srcs.len()).collect(), |n| vec![n]);

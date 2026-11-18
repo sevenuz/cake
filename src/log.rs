@@ -131,28 +131,6 @@ pub fn stretches(times: &[i64], after: Option<i64>) -> Vec<(i64, i64)> {
     out
 }
 
-/// splits [start, end] by the item timers `timers` (id, start, end): the
-/// parts with a timer get its id (the first that runs), the rest None;
-/// neighbours with the same id join
-pub fn split(start: i64, end: i64, timers: &[(String, i64, i64)]) -> Vec<(i64, i64, Option<String>)> {
-    let mut cuts = vec![start, end];
-    for (_, s, e) in timers {
-        cuts.extend([*s, *e].into_iter().filter(|c| *c > start && *c < end));
-    }
-    cuts.sort();
-    cuts.dedup();
-    let mut out: Vec<(i64, i64, Option<String>)> = vec![];
-    for w in cuts.windows(2) {
-        let mid = w[0] + (w[1] - w[0]) / 2;
-        let id = timers.iter().find(|(_, s, e)| *s <= mid && mid < *e).map(|(id, _, _)| id.clone());
-        match out.last_mut() {
-            Some(last) if last.2 == id => last.1 = w[1],
-            _ => out.push((w[0], w[1], id)),
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,16 +144,6 @@ mod tests {
         // the last stretch ended at 0: 10 min later continues it, 20 does not
         assert_eq!(stretches(&[10 * m, 12 * m], Some(0)), vec![(0, 12 * m)]);
         assert_eq!(stretches(&[20 * m, 22 * m], Some(0)), vec![(20 * m, 22 * m)]);
-    }
-
-    #[test]
-    fn split_gives_timer_parts_their_item() {
-        let t = vec![("a".to_string(), 10, 20), ("b".to_string(), 30, 50)];
-        assert_eq!(
-            split(0, 40, &t),
-            vec![(0, 10, None), (10, 20, Some("a".into())), (20, 30, None), (30, 40, Some("b".into()))]
-        );
-        assert_eq!(split(12, 18, &t), vec![(12, 18, Some("a".into()))]);
     }
 
     #[test]

@@ -8,7 +8,7 @@ use crate::item::{Item, Status};
 use crate::log::Line;
 use crate::store::Store;
 use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -120,16 +120,125 @@ fn union_in(spans: &[(i64, i64)], from: i64, to: i64) -> i64 {
     total + cur.map_or(0, |(s, e)| e - s)
 }
 
+/// config `stats`: what is summed beyond time and done items, and how
+/// agents' timers merge; see skill/hooks/stats.example.hjson
+#[derive(Deserialize, Serialize, Clone, Debug)]
+#[serde(default)]
+pub struct StatsConfig {
+    /// timers of items with the same value of the first key they have
+    /// count once (`sessions` and `by` are the item's own, others free fields)
+    pub merge_by: Vec<String>,
+    /// named formulas over an item's fields, in order
+    pub sums: Vec<Sum>,
+    /// sums shown as columns; empty: the first two
+    pub show: Vec<String>,
+    /// extra sections of the stats overlay
+    pub sections: Vec<Section>,
+}
+
+impl Default for StatsConfig {
+    fn default() -> Self {
+        StatsConfig { merge_by: vec!["sessions".into(), "by".into()], sums: vec![], show: vec![], sections: vec![] }
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct Sum {
+    pub name: String,
+    pub of: String,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct Section {
+    pub title: String,
+    pub rows: Vec<Row>,
+}
+
+/// `value`: a formula over the sums, you, agents (seconds) and done; or
+/// `top` items `by` a sum
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct Row {
+    pub label: String,
+    pub value: Option<String>,
+    pub top: Option<usize>,
+    pub by: Option<String>,
+}
+
+static CONF: std::sync::RwLock<Option<&'static StatsConfig>> = std::sync::RwLock::new(None);
+
+/// set once at start (a later call replaces it, for tests)
+pub fn init(c: StatsConfig) {
+    *CONF.write().unwrap() = Some(Box::leak(Box::new(c)));
+}
+
+pub fn conf() -> &'static StatsConfig {
+    if let Some(c) = *CONF.read().unwrap() {
+        return c;
+    }
+    let c: &'static StatsConfig = Box::leak(Box::new(StatsConfig::default()));
+    CONF.write().unwrap().get_or_insert(c)
+}
+
+/// the sums shown as columns
+pub fn shown() -> Vec<String> {
+    let c = conf();
+    if c.show.is_empty() {
+        c.sums.iter().take(2).map(|s| s.name.clone()).collect()
+    } else {
+        c.show.clone()
+    }
+}
+
+/// 950, 1.2k, 3.4M; small numbers with one decimal
+pub fn human(v: f64) -> String {
+    let a = v.abs();
+    if a >= 1e6 {
+        format!("{:.1}M", v / 1e6)
+    } else if a >= 1e3 {
+        format!("{:.1}k", v / 1e3)
+    } else if a >= 100.0 || v.fract() == 0.0 {
+        format!("{:.0}", v)
+    } else {
+        format!("{:.1}", v)
+    }
+}
+
+/// the configured sums of one item (its stored and derived fields)
+pub fn item_sums(store: &Store, i: &Item) -> Vec<f64> {
+    let c = conf();
+    if c.sums.is_empty() {
+        return vec![];
+    }
+    store.cached_sums(i.id(), || {
+        let named: Vec<(String, String)> = c.sums.iter().map(|s| (s.name.clone(), s.of.clone())).collect();
+        crate::fields::eval_all(&named, &store.fields_json(i))
+    })
+}
+
+/// the share of an item's numbers that falls into [from, to]: by its time
+/// there; without time, all of it when it was closed (or created) there
+pub fn share(i: &Item, from: i64, to: i64) -> f64 {
+    let spans = i.intervals();
+    let total: i64 = spans.iter().map(|(s, e)| e - s).sum();
+    if total > 0 {
+        spans.iter().map(|(s, e)| clip(*s, *e, from, to)).sum::<i64>() as f64 / total as f64
+    } else {
+        let at = i.closed().unwrap_or(i.timestamp());
+        if at >= from && at <= to { 1.0 } else { 0.0 }
+    }
+}
+
 #[derive(Serialize, Default, Debug, Clone, PartialEq)]
 pub struct Numbers {
     /// the user's time, overlaps once
     pub you: i64,
     /// agents' time, parallel agents add up
     pub agents: i64,
-    pub tokens: u64,
-    pub wh: f64,
-    pub co2_g: f64,
-    pub water_l: f64,
+    /// the configured sums (config stats.sums) by name
+    pub sums: BTreeMap<String, f64>,
     /// closed as done in the period
     pub done: usize,
 }
@@ -138,11 +247,24 @@ impl Numbers {
     pub fn add(&mut self, o: &Numbers) {
         self.you += o.you;
         self.agents += o.agents;
-        self.tokens += o.tokens;
-        self.wh += o.wh;
-        self.co2_g += o.co2_g;
-        self.water_l += o.water_l;
+        for (k, v) in &o.sums {
+            *self.sums.entry(k.clone()).or_default() += v;
+        }
         self.done += o.done;
+    }
+
+    pub fn sum(&self, name: &str) -> f64 {
+        self.sums.get(name).copied().unwrap_or(0.0)
+    }
+
+    /// a row formula over the sums, you, agents and done
+    pub fn eval(&self, formula: &str) -> f64 {
+        let mut vars: serde_json::Map<String, serde_json::Value> =
+            self.sums.iter().map(|(k, v)| (k.clone(), serde_json::json!(v))).collect();
+        vars.insert("you".into(), self.you.into());
+        vars.insert("agents".into(), self.agents.into());
+        vars.insert("done".into(), self.done.into());
+        crate::fields::eval_all(&[("v".into(), formula.into())], &vars)[0]
     }
 }
 
@@ -190,6 +312,20 @@ pub fn goal_of<'a>(store: &'a Store, id: &str) -> Option<&'a Item> {
     None
 }
 
+/// the value of the first `merge_by` key the item has
+fn merge_key(i: &Item) -> Option<String> {
+    conf().merge_by.iter().find_map(|k| match k.as_str() {
+        "sessions" => i.sessions().first().cloned(),
+        "by" => i.by().cloned(),
+        k => match i.field(k)? {
+            serde_yaml_ng::Value::Sequence(l) => l.first().and_then(|v| v.as_str()).map(String::from),
+            serde_yaml_ng::Value::String(s) => Some(s.clone()),
+            serde_yaml_ng::Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        },
+    })
+}
+
 /// the user's own work: assigned to them (else an agent's)
 fn users(i: &Item, user: &str) -> bool {
     i.assignee().is_some_and(|a| a == user)
@@ -207,7 +343,7 @@ pub fn agent_spans(store: &Store, ids: &[&str], log: &[Line], user: &str) -> Vec
         if users(i, user) {
             continue;
         }
-        let key = i.sessions().first().cloned().unwrap_or_else(|| format!("item:{}", id));
+        let key = merge_key(i).unwrap_or_else(|| format!("item:{}", id));
         by.entry(key).or_default().extend(i.intervals());
     }
     for l in log.iter().filter(|l| l.who != user) {
@@ -241,21 +377,15 @@ fn numbers(store: &Store, ids: &[&str], you_log: &[(i64, i64)], agent_log: &[Lin
         if users(i, user) {
             you.extend(spans.iter().copied());
         }
-        // tokens by the share of the item's time in the period; without
-        // time, by when it was closed (or created)
-        let total: i64 = spans.iter().map(|(s, e)| e - s).sum();
-        let share = if total > 0 {
-            spans.iter().map(|(s, e)| clip(*s, *e, from, to)).sum::<i64>() as f64 / total as f64
-        } else {
-            let at = i.closed().unwrap_or(i.timestamp());
-            if at >= from && at <= to { 1.0 } else { 0.0 }
-        };
-        if share > 0.0 && !i.usage().is_empty() {
-            let (wh, co2, water) = crate::footprint::amounts(i.usage());
-            n.tokens += (i.usage().values().map(|u| u.total()).sum::<u64>() as f64 * share).round() as u64;
-            n.wh += wh * share;
-            n.co2_g += co2 * share;
-            n.water_l += water * share;
+        // the sums by the share of the item's time in the period
+        let vals = item_sums(store, i);
+        if vals.iter().any(|v| *v != 0.0) {
+            let share = share(i, from, to);
+            if share > 0.0 {
+                for (s, v) in conf().sums.iter().zip(vals) {
+                    *n.sums.entry(s.name.clone()).or_default() += v * share;
+                }
+            }
         }
         if i.status() == Some(Status::Done) && i.closed().is_some_and(|c| c >= from && c <= to) {
             n.done += 1;
@@ -408,7 +538,6 @@ pub fn sum<'a>(stats: impl IntoIterator<Item = &'a StoreStats>) -> Numbers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::item::Usage;
 
     fn store() -> Store {
         Store::new(std::path::Path::new("/definitely/does/not/exist/cake-stats-test")).unwrap()
@@ -468,7 +597,8 @@ mod tests {
         a.set_status(Status::Done).unwrap();
         a.set_assignee(Some("claude-code".into()));
         a.set_timetrack(vec![now - 26 * h, now - 24 * h, now - 3 * h, now - 2 * h]);
-        a.add_usage("m", Usage { input: 0, output: 900, cache_read: 0, cache_write: 0 });
+        a.set_field("tokens_out", serde_yaml_ng::Value::Number(900.into())).unwrap();
+        init(StatsConfig { sums: vec![Sum { name: "tokens".into(), of: "tokens_in + tokens_out".into() }], ..Default::default() });
         s.add(a).unwrap();
         // the user's own task without a goal: a running timer for 30 min
         let mut u = item("mine", None);
@@ -483,7 +613,7 @@ mod tests {
         assert_eq!(st.numbers.agents, h);
         // chat 1 h + own timer: the timer ran until the real now, clipped at `now`
         assert_eq!(st.numbers.you, h + h / 2);
-        assert_eq!(st.numbers.tokens, 300, "a third of the item's time is today");
+        assert_eq!(st.numbers.sum("tokens"), 300.0, "a third of the item's time is today");
         let stats = st.goals.iter().find(|g| g.id == "stats").unwrap();
         assert_eq!((stats.numbers.you, stats.numbers.agents), (h, h));
         let other = st.goals.iter().find(|g| g.id.is_empty()).unwrap();
@@ -492,7 +622,7 @@ mod tests {
         // the week holds yesterday too
         let week = of_store(&s, &[], "jul", Period::Week, now);
         assert_eq!(week.numbers.agents, 3 * h);
-        assert_eq!(week.numbers.tokens, 900);
+        assert_eq!(week.numbers.sum("tokens"), 900.0);
     }
 
     #[test]

@@ -137,6 +137,54 @@ pub fn derive(defs: &Defs, fields: &Mapping) -> (BTreeMap<String, serde_json::Va
     (out, errors.into_values().collect())
 }
 
+fn json_to_ev(v: &serde_json::Value) -> Option<Ev<DefaultNumericTypes>> {
+    match v {
+        serde_json::Value::Number(n) => n.as_i64().map(Ev::Int).or_else(|| n.as_f64().map(Ev::Float)),
+        serde_json::Value::Bool(b) => Some(Ev::Boolean(*b)),
+        serde_json::Value::String(s) => Some(Ev::String(s.clone())),
+        serde_json::Value::Array(a) => Some(Ev::Int(a.len() as i64)),
+        _ => None,
+    }
+}
+
+fn number(v: &Ev<DefaultNumericTypes>) -> Option<f64> {
+    match v {
+        Ev::Int(i) => Some(*i as f64),
+        Ev::Float(f) if f.is_finite() => Some(*f),
+        _ => None,
+    }
+}
+
+/// the formulas `named` (name, formula), in order, over `vars`: each result
+/// is a variable for the later ones; missing variables are 0, a formula
+/// that fails or gives no number is 0
+pub fn eval_all(named: &[(String, String)], vars: &serde_json::Map<String, serde_json::Value>) -> Vec<f64> {
+    let mut ctx = HashMapContext::<DefaultNumericTypes>::new();
+    for (k, v) in vars {
+        if let Some(v) = json_to_ev(v) {
+            let _ = ctx.set_value(k.clone(), v);
+        }
+    }
+    let mut out = vec![];
+    for (name, formula) in named {
+        let v = build_operator_tree::<DefaultNumericTypes>(formula)
+            .and_then(|tree| {
+                let missing: Vec<String> =
+                    tree.iter_variable_identifiers().filter(|v| ctx.get_value(v).is_none()).map(String::from).collect();
+                for v in missing {
+                    let _ = ctx.set_value(v, Ev::Int(0));
+                }
+                tree.eval_with_context_mut(&mut ctx)
+            })
+            .ok()
+            .and_then(|v| number(&v))
+            .unwrap_or(0.0);
+        let _ = ctx.set_value(name.clone(), Ev::Float(v));
+        out.push(v);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,6 +210,13 @@ mod tests {
         let (out, errors) = derive(&d, &Mapping::new());
         assert_eq!(out["x"], serde_json::json!("?"));
         assert_eq!(errors.len(), 1);
+    }
+
+    #[test]
+    fn named_formulas_build_on_each_other() {
+        let vars = serde_json::json!({"a": 2, "b": 3.5, "s": "x"});
+        let named = vec![("t".to_string(), "a + b".to_string()), ("u".to_string(), "t * 2".to_string()), ("bad".to_string(), "s".to_string())];
+        assert_eq!(eval_all(&named, vars.as_object().unwrap()), vec![5.5, 11.0, 0.0]);
     }
 
     #[test]

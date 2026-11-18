@@ -3,7 +3,6 @@ mod config;
 mod dash;
 mod error;
 mod fields;
-mod footprint;
 mod git;
 mod item;
 mod log;
@@ -19,7 +18,6 @@ mod store;
 mod stores;
 mod style;
 mod theme;
-mod usage;
 #[cfg(test)]
 mod test_support;
 mod util;
@@ -215,35 +213,6 @@ impl SelectorArgs {
     }
 }
 
-#[derive(Subcommand)]
-pub enum UsageAction {
-    /// add tokens of one model to an item (any agent)
-    Add {
-        id: String,
-        #[arg(long)]
-        model: String,
-        #[arg(long = "in", default_value_t = 0)]
-        input: u64,
-        #[arg(long, default_value_t = 0)]
-        out: u64,
-        #[arg(long, default_value_t = 0)]
-        cache_read: u64,
-        #[arg(long, default_value_t = 0)]
-        cache_write: u64,
-    },
-    /// Claude Code Stop hook: hook JSON on stdin, attributes the session's
-    /// new answers to the items whose timer ran and logs the session's time
-    ClaudeHook {},
-    /// log time with cake open (the form and dashboard call it)
-    #[command(hide = true)]
-    Log {
-        /// unix seconds
-        #[arg(long)]
-        start: i64,
-        #[arg(long)]
-        end: i64,
-    },
-}
 
 #[derive(Subcommand)]
 pub enum LogAction {
@@ -427,7 +396,7 @@ pub enum Commands {
     },
     /// one line for prompts and tmux: your timers, others' timers, ready, today
     Status {},
-    /// time (you, agents), tokens, footprint and done items for a period,
+    /// time (you, agents), the configured sums (config stats) and done items for a period,
     /// per store and goal
     Stats {
         /// day, 7d (rolling), week, month or year
@@ -484,12 +453,6 @@ pub enum Commands {
     Log {
         #[command(subcommand)]
         action: LogAction,
-    },
-    /// tokens per item, with an energy, CO2e and water estimate in show
-    #[command(hide = true)]
-    Usage {
-        #[command(subcommand)]
-        action: UsageAction,
     },
     /// move done and dropped subtrees closed long ago to items/archive/;
     /// views skip them, `ls --archive` and `show` find them
@@ -593,7 +556,6 @@ impl Commands {
             {
                 one(target)?
             }
-            Commands::Usage { action: UsageAction::Add { id, .. } } => one(id)?,
             Commands::Rename { id, .. } => one(id)?,
             Commands::Mv { id, parent, .. } => {
                 one(id)?;
@@ -643,7 +605,6 @@ impl Commands {
                 | Commands::Mv { .. }
                 | Commands::Rename { .. }
                 | Commands::Archive { dry_run: false, .. }
-                | Commands::Usage { .. }
                 | Commands::Migrate { apply: true }
         )
     }
@@ -773,7 +734,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let config = Config::new()?;
     style::init(&config.style);
     theme::init()?;
-    footprint::init(config.footprint.clone());
+    stats::init(config.stats.clone());
     store::init_weights(config.score.clone());
     let mut aliases = config.aliases(&guess_root(&args)?)?;
     // agents and the form get the documented built-ins
@@ -1162,17 +1123,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
         Some(Commands::Form { .. }) => unreachable!("handled before the lock"),
         Some(Commands::Migrate { apply }) => crate::migrate::run(&mut store, &config.user(&root), *apply)?,
-        Some(Commands::Usage { action: UsageAction::Add { id, model, input, out, cache_read, cache_write } }) => {
-            let u = item::Usage { input: *input, output: *out, cache_read: *cache_read, cache_write: *cache_write };
-            store.get_item_mut(id).ok_or_else(|| error::not_found(id))?.add_usage(model, u);
-            commands::Report::Items(vec![id.to_owned()])
-        }
-        Some(Commands::Usage { action: UsageAction::ClaudeHook {} }) => {
-            if config.usage_tracking {
-                usage::claude_hook(&mut store, Some(&config.user(&root)))?;
-            }
-            commands::Report::None
-        }
         Some(Commands::Log { action: LogAction::Add { start, end, who, kind, agent, session, item } }) => {
             let at = |t: &str| t.parse::<i64>().or_else(|_| util::parse_timestamp(t)).map_err(|_| error::invalid(format!("'{}' is no time (unix seconds or RFC 3339)", t)));
             let (s, e) = (at(start)?, at(end)?);
@@ -1184,12 +1134,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             l.session = session.clone();
             l.item = item.clone();
             log::append(&root, &[l])?;
-            commands::Report::None
-        }
-        Some(Commands::Usage { action: UsageAction::Log { start, end } }) => {
-            if end > start {
-                log::append(&root, &[log::Line::new(*start, *end, &config.user(&root), "cake")])?;
-            }
             commands::Report::None
         }
         None => {
@@ -1214,7 +1158,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
     }
     if cli.command.as_ref().is_some_and(Commands::writes) {
-        usage::fold(&mut store)?;
         store.settle();
     }
     if let Some(session) = config.session() {

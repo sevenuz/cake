@@ -87,6 +87,8 @@ pub mod inner {
         field_defs: std::cell::OnceCell<crate::fields::Defs>,
         /// formula errors already printed
         field_errors: std::cell::RefCell<HashSet<String>>,
+        /// the configured stats sums per item, computed once per load
+        sums: std::cell::RefCell<HashMap<String, Vec<f64>>>,
         /// files to move without content changes (archive)
         relayout: bool,
     }
@@ -185,6 +187,7 @@ pub mod inner {
                 archive_hit: std::cell::Cell::new(false),
                 field_defs: Default::default(),
                 field_errors: Default::default(),
+                sums: Default::default(),
                 relayout: false,
             };
             // a parent that does not exist (e.g. a directory left by a merge) detaches
@@ -653,6 +656,16 @@ pub mod inner {
                 let _ = self.get_item_mut(id).unwrap().set_status(Status::Review);
             }
             ids
+        }
+
+        /// `compute` once per item and load (stats call it many times)
+        pub fn cached_sums(&self, id: &str, compute: impl FnOnce() -> Vec<f64>) -> Vec<f64> {
+            if let Some(v) = self.sums.borrow().get(id) {
+                return v.clone();
+            }
+            let v = compute();
+            self.sums.borrow_mut().insert(id.to_string(), v.clone());
+            v
         }
 
         pub fn field_defs(&self) -> &crate::fields::Defs {

@@ -390,49 +390,54 @@ fn ascii_style_replaces_every_special_character() {
 }
 
 #[test]
-fn claude_hook_gives_tokens_to_the_item_whose_timer_ran() {
+fn claude_code_adapter_gives_tokens_and_logs_through_the_cli() {
     let env = Env::new();
     let d = env.plain_store();
     let s = [("AI_AGENT", "claude-code"), ("CLAUDE_CODE_SESSION_ID", "s1")];
     env.cake_env(&d, &["add", "work", "--todo", "-m", "# Work"], &s);
     env.cake_env(&d, &["start", "work"], &s);
-    let now = chrono::Utc::now();
-    let line = |id: &str, t: chrono::DateTime<chrono::Utc>, model: &str| {
-        format!(
-            "{{\"type\":\"assistant\",\"timestamp\":\"{}\",\"message\":{{\"id\":\"{}\",\"model\":\"{}\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":100,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":50}}}}}}\n",
-            t.to_rfc3339(), id, model
-        )
-    };
+    let t0 = chrono::Utc::now();
+    std::thread::sleep(std::time::Duration::from_millis(2100));
+    let t1 = chrono::Utc::now();
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    env.cake_env(&d, &["stop", "work"], &s);
+    let fmt = |t: chrono::DateTime<chrono::Utc>| t.format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let transcript = env.path("t.jsonl");
-    let old = now - chrono::Duration::hours(2); // before the timer: nobody's
-    std::fs::write(&transcript, line("a", old, "m1") + &line("b", now, "m1")).unwrap();
-    let hook = |cwd: &std::path::Path| {
-        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_cake"))
-            .args(["usage", "claude-hook"])
-            .current_dir(cwd)
+    let answer = format!(
+        "{{\"type\":\"assistant\",\"timestamp\":\"{}\",\"message\":{{\"id\":\"a\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":7,\"cache_read_input_tokens\":3}}}}}}\n",
+        fmt(t1)
+    );
+    let prompt = format!("{{\"type\":\"user\",\"timestamp\":\"{}\",\"message\":{{\"content\":\"hi\"}}}}\n", fmt(t0));
+    std::fs::write(&transcript, format!("{}{}{}", prompt, answer, answer)).unwrap();
+
+    let bin = std::path::Path::new(env!("CARGO_BIN_EXE_cake")).parent().unwrap().to_path_buf();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("skill/hooks/claude-code.py");
+    let hook = format!("{{\"session_id\":\"s1\",\"transcript_path\":\"{}\",\"cwd\":\"{}\"}}", transcript.display(), d.display());
+    let run = || {
+        let mut child = std::process::Command::new("python3")
+            .arg(&script)
+            .env("PATH", &path)
             .env("XDG_CONFIG_HOME", env.path("config"))
             .env("XDG_DATA_HOME", env.path("data"))
             .env("XDG_STATE_HOME", env.path("state"))
-            .env("AI_AGENT", "claude-code")
+            .env_remove("AI_AGENT")
+            .env_remove("CLAUDE_CODE_SESSION_ID")
+            .env_remove("CAKE_STORE")
+            .envs([("GIT_AUTHOR_NAME", "jul"), ("GIT_AUTHOR_EMAIL", "j@x"), ("GIT_COMMITTER_NAME", "jul"), ("GIT_COMMITTER_EMAIL", "j@x")])
             .stdin(std::process::Stdio::piped())
             .spawn()
             .unwrap();
-        let input = format!("{{\"session_id\":\"s1\",\"transcript_path\":\"{}\"}}", transcript.display());
-        std::io::Write::write_all(child.stdin.as_mut().unwrap(), input.as_bytes()).unwrap();
+        std::io::Write::write_all(child.stdin.as_mut().unwrap(), hook.as_bytes()).unwrap();
         assert!(child.wait().unwrap().success());
     };
-    hook(&d);
-    assert!(!read_item(&d, "work").contains("usage:"), "running: still pending");
-
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-    env.cake_env(&d, &["stop", "work"], &s);
+    run();
+    run(); // nothing new: nothing twice
     let item = read_item(&d, "work");
-    assert!(item.contains("usage: {m1: {in: 10, out: 100, cache_read: 1000, cache_write: 50}}"), "{}", item);
-    let show = env.cake_ok(&d, &["show", "work"]);
-    assert!(show.contains("tokens 1.2k (m1)") && show.contains("Wh"), "{}", show);
-
-    env.cake_ok(&d, &["usage", "add", "wo", "--model", "local", "--out", "7"]);
-    assert!(read_item(&d, "work").contains("local: {in: 0, out: 7"));
+    assert!(item.contains("tokens_in: 10") && item.contains("tokens_out: 7") && item.contains("tokens_cache_read: 3"), "{}", item);
+    let logs: Vec<_> = std::fs::read_dir(d.join(".cake/log")).unwrap().flatten().collect();
+    let text: String = logs.iter().map(|l| std::fs::read_to_string(l.path()).unwrap()).collect();
+    assert!(text.contains("\"kind\":\"chat\"") && text.contains("\"kind\":\"agent\"") && text.contains("\"item\":\"work\""), "{}", text);
 }
 
 #[test]
@@ -914,51 +919,6 @@ fn archive_moves_old_closed_subtrees_and_show_still_finds_them() {
 }
 
 #[test]
-fn claude_hook_logs_session_time_split_by_the_running_timer() {
-    let env = Env::new();
-    let d = env.plain_store();
-    let s = [("AI_AGENT", "claude-code"), ("CLAUDE_CODE_SESSION_ID", "s1")];
-    env.cake_env(&d, &["add", "work", "--todo", "-m", "# Work"], &s);
-    env.cake_env(&d, &["start", "work"], &s);
-    std::thread::sleep(std::time::Duration::from_millis(2100));
-    let now = chrono::Utc::now();
-    let line = |kind: &str, t: chrono::DateTime<chrono::Utc>| {
-        format!("{{\"type\":\"{}\",\"timestamp\":\"{}\",\"message\":{{\"content\":\"hi\"}}}}\n", kind, t.to_rfc3339())
-    };
-    let transcript = env.path("t.jsonl");
-    // the user asked 10 minutes ago, the agent answers now
-    std::fs::write(&transcript, line("user", now - chrono::Duration::minutes(10)) + &line("assistant", now)).unwrap();
-    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_cake"))
-        .args(["usage", "claude-hook"])
-        .current_dir(&d)
-        .env("XDG_CONFIG_HOME", env.path("config"))
-        .env("XDG_DATA_HOME", env.path("data"))
-        .env("XDG_STATE_HOME", env.path("state"))
-        .env("AI_AGENT", "claude-code")
-        .env("CAKE_AUTHOR", "jul")
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    let input = format!("{{\"session_id\":\"s1\",\"transcript_path\":\"{}\"}}", transcript.display());
-    std::io::Write::write_all(child.stdin.as_mut().unwrap(), input.as_bytes()).unwrap();
-    assert!(child.wait().unwrap().success());
-    let log = d.join(".cake/log");
-    let files: Vec<_> = std::fs::read_dir(&log).unwrap().map(|e| e.unwrap().path()).collect();
-    assert_eq!(files.len(), 1, "one file for this month and machine");
-    let lines: Vec<serde_json::Value> =
-        std::fs::read_to_string(&files[0]).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
-    let chat: Vec<&serde_json::Value> = lines.iter().filter(|l| l["kind"] == "chat").collect();
-    assert_eq!(chat.len(), 2, "{:?}", lines);
-    assert!(chat.iter().all(|l| l["who"] == "jul" && l["session"] == "s1"));
-    assert!(chat[0].get("item").is_none(), "before the timer: the store only");
-    assert_eq!(chat[1]["item"], "work");
-    // the agent's turn (prompt to answer) is its own time
-    let agent: Vec<&serde_json::Value> = lines.iter().filter(|l| l["kind"] == "agent").collect();
-    assert_eq!(agent.len(), 2, "{:?}", lines);
-    assert!(agent.iter().all(|l| l["who"] == "claude-code"));
-}
-
-#[test]
 fn estimate_round_trips_and_clears() {
     let env = Env::new();
     let d = env.plain_store();
@@ -969,6 +929,33 @@ fn estimate_round_trips_and_clears() {
     assert!(env.cake_err(&d, &["edit", "work", "--est", "soon"]).contains("estimate"));
     env.cake_ok(&d, &["edit", "work", "--est", "-"]);
     assert!(!read_item(&d, "work").contains("estimate"));
+}
+
+#[test]
+fn stats_sum_configured_formulas_and_migrate_turns_usage_into_fields() {
+    let env = Env::new();
+    let d = env.plain_store();
+    std::fs::create_dir_all(env.path("config/cake")).unwrap();
+    std::fs::write(
+        env.path("config/cake/config.hjson"),
+        r#"{ stats: { sums: [ { name: "tokens", of: "tokens_in + tokens_out" }, { name: "double", of: "tokens * 2" } ] } }"#,
+    )
+    .unwrap();
+    env.cake_ok(&d, &["add", "t", "--todo", "-m", "# task"]);
+    // an item from before: tokens per model under `usage`
+    let file = d.join(".cake/items/t.md");
+    let text = std::fs::read_to_string(&file).unwrap();
+    std::fs::write(&file, text.replacen("---\n# task", "usage: {m1: {in: 10, out: 5, cache_read: 0, cache_write: 0}, m2: {in: 1, out: 4}}\n---\n# task", 1)).unwrap();
+    env.cake_ok(&d, &["migrate", "--apply"]);
+    let item = read_item(&d, "t");
+    assert!(item.contains("tokens_in: 11") && item.contains("tokens_out: 9") && !item.contains("usage"), "{}", item);
+    env.cake_ok(&d, &["done", "t"]);
+    let v = json_value(&env, &d, &["stats", "-p", "week"]);
+    let s = &v["stores"][0]["stats"];
+    assert_eq!(s["sums"]["tokens"], 20.0);
+    assert_eq!(s["sums"]["double"], 40.0);
+    let table = env.cake_ok(&d, &["stats", "-p", "week"]);
+    assert!(table.contains("tokens") && table.contains("double"), "{}", table);
 }
 
 #[test]

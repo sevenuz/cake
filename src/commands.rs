@@ -475,12 +475,12 @@ pub fn stats(config: &Config, store: &Store, period: &str, all: bool) -> Result<
     if !out::json() {
         let w = rows.iter().map(|(n, _)| n.chars().count()).max().unwrap_or(5).max(5);
         println!("{} {}", period.name(), util::format_timestamp(from)[..10].to_string() + " – now");
-        println!("{:w$}  {:>6}  {:>6}  {:>7}  {:>8}  {:>4}  {}", "", "you", "agents", "tokens", "CO2e", "done", period.bucket(), w = w);
+        let cols = stats::shown();
+        let head: String = cols.iter().map(|c| format!("  {:>7}", cut_to(c, 7))).collect();
+        println!("{:w$}  {:>6}  {:>6}{}  {:>4}  {}", "", "you", "agents", head, "done", period.bucket(), w = w);
         let line = |name: &str, n: &stats::Numbers, buckets: &str| {
-            println!(
-                "{:w$}  {:>6}  {:>6}  {:>7}  {:>6.1} g  {:>4}  {}",
-                name, hm(n.you), hm(n.agents), crate::footprint::human(n.tokens), n.co2_g, n.done, buckets, w = w
-            )
+            let sums: String = cols.iter().map(|c| format!("  {:>7}", stats::human(n.sum(c)))).collect();
+            println!("{:w$}  {:>6}  {:>6}{}  {:>4}  {}", name, hm(n.you), hm(n.agents), sums, n.done, buckets, w = w)
         };
         for (name, s) in &rows {
             line(name, &s.numbers, &spark(&s.buckets.iter().map(|(_, v)| *v).collect::<Vec<_>>()));
@@ -905,4 +905,9 @@ where
         .arg(util::config_file()?)
         .status()?;
     Ok(Report::None)
+}
+
+/// at most `n` characters of `s`
+fn cut_to(s: &str, n: usize) -> String {
+    s.chars().take(n).collect()
 }

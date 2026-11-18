@@ -276,6 +276,8 @@ a Stop hook). An adapter only calls cake: tokens per item as free fields
 (`cake edit <id> --add …`, only for items of its session whose timer ran),
 activity via `cake log add --start --end [--who] [--kind chat|agent]
 [--session] [--item]`. A new harness gets its own script with the same keys.
+What stats make of them is config: `hooks/stats.example.hjson` (tokens,
+energy, CO2e, water) goes into the user's config.
 
 ## Output
 
@@ -284,7 +286,7 @@ activity via `cake log add --start --end [--who] [--kind chat|agent]
   `parent`, `children`, `blocked_by`, `blocks`, `ready`, `score`, `due`,
   `deadline`, `priority`, `running`, `by`, `assignee`, `owner`. Use `-l` or
   `show` for the rest: `body`, `created`, `closed`, `sessions`, `time`,
-  `tracked_seconds`, `usage`, `footprint`, `path`.
+  `tracked_seconds`, `fields` (free and derived), `path`.
 - List short to choose, then read what you work on: `cake show <id>` before
   editing, answering, implementing or reviewing. Every listed item costs
   tokens; prefer narrow selectors.

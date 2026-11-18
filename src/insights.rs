@@ -239,7 +239,6 @@ pub fn flow(srcs: &[Src], user: &str, from: i64, to: i64, look: &Look) -> Vec<Li
 pub fn agents(srcs: &[Src], user: &str, from: i64, to: i64, look: &Look) -> Vec<Line<'static>> {
     let mut out = vec![head("estimates vs real time (done tasks)")];
     let mut ratios = vec![];
-    let mut tokens: Vec<(u64, String)> = vec![];
     let mut n = stats::Numbers::default();
     for s in srcs {
         n.add(&stats::window(s.store, s.log, user, from, to));
@@ -249,11 +248,6 @@ pub fn agents(srcs: &[Src], user: &str, from: i64, to: i64, look: &Look) -> Vec<
                     ratios.push(i.tracked_seconds() * 100 / e.max(1));
                 }
             }
-            let t: u64 = i.usage().values().map(|u| u.total()).sum();
-            let touched = i.intervals().iter().any(|(a, b)| *b >= from && *a <= to) || i.closed().is_some_and(|c| c >= from && c <= to);
-            if t > 0 && touched {
-                tokens.push((t, i.title()));
-            }
         }
     }
     match median(ratios.clone()) {
@@ -261,24 +255,53 @@ pub fn agents(srcs: &[Src], user: &str, from: i64, to: i64, look: &Look) -> Vec<
         None => out.push(Line::from(Span::styled("  no done task with an estimate yet", look.dim))),
     }
     out.push(Line::default());
-    out.push(head("cost (this period)"));
-    if n.done > 0 {
-        out.push(kv(look, "tokens per done item", crate::footprint::human(n.tokens / n.done as u64)));
-        out.push(kv(look, "CO2e per done item", format!("{:.0} g", n.co2_g / n.done as f64)));
-    }
     out.push(kv(look, "agent time per done item", if n.done > 0 { hm(n.agents / n.done as i64) } else { "-".into() }));
-    out.push(Line::default());
-    out.push(head("most tokens (this period)"));
-    tokens.sort_by(|a, b| b.0.cmp(&a.0));
-    for (t, title) in tokens.iter().take(5) {
-        out.push(Line::from(vec![Span::styled(format!("  {:>7}  ", crate::footprint::human(*t)), look.dim), Span::raw(title.clone())]));
-    }
     out.push(Line::default());
     out.push(head("parallel"));
     let agent_spans: Vec<(i64, i64)> = spans(srcs, user).into_iter().filter(|s| !s.2).map(|s| (s.0.max(from), s.1.min(to))).filter(|(a, b)| b > a).collect();
     let busy: i64 = merged(&agent_spans).iter().map(|(a, b)| b - a).sum();
     let sum: i64 = agent_spans.iter().map(|(a, b)| b - a).sum();
     out.push(kv(look, "agents at once, avg", if busy > 0 { format!("{:.1}", sum as f64 / busy as f64) } else { "-".into() }));
+    out.extend(configured(srcs, user, from, to, look));
+    out
+}
+
+/// the sections of config stats.sections
+pub fn configured(srcs: &[Src], user: &str, from: i64, to: i64, look: &Look) -> Vec<Line<'static>> {
+    let sections = &stats::conf().sections;
+    if sections.is_empty() {
+        return vec![];
+    }
+    let mut n = stats::Numbers::default();
+    for s in srcs {
+        n.add(&stats::window(s.store, s.log, user, from, to));
+    }
+    let mut out = vec![];
+    for sec in sections {
+        out.push(Line::default());
+        out.push(head(&sec.title));
+        for row in &sec.rows {
+            if let (Some(top), Some(by)) = (row.top, &row.by) {
+                let idx = stats::conf().sums.iter().position(|s| &s.name == by);
+                let mut best: Vec<(f64, String)> = vec![];
+                for s in srcs {
+                    for i in s.store.get().values() {
+                        let v = idx.and_then(|k| stats::item_sums(s.store, i).get(k).copied()).unwrap_or(0.0) * stats::share(i, from, to);
+                        if v > 0.0 {
+                            best.push((v, i.title()));
+                        }
+                    }
+                }
+                best.sort_by(|a, b| b.0.total_cmp(&a.0));
+                for (v, title) in best.into_iter().take(top) {
+                    out.push(Line::from(vec![Span::styled(format!("  {:>7}  ", stats::human(v)), look.dim), Span::raw(title)]));
+                }
+            } else if let Some(f) = &row.value {
+                let v = n.eval(f);
+                out.push(kv(look, &row.label, if v.is_finite() { stats::human(v) } else { "-".into() }));
+            }
+        }
+    }
     out
 }
 
@@ -287,13 +310,7 @@ pub fn fun(srcs: &[Src], user: &str, from: i64, to: i64, look: &Look) -> Vec<Lin
     for s in srcs {
         n.add(&stats::window(s.store, s.log, user, from, to));
     }
-    let mut out = vec![head("this period's footprint is about")];
-    out.push(kv(look, "driving a car", format!("{:.1} km  (120 g/km)", n.co2_g / 120.0)));
-    out.push(kv(look, "boiling tea", format!("{:.0} cups  (25 Wh each)", n.wh / 25.0)));
-    out.push(kv(look, "charging a phone", format!("{:.0} times  (15 Wh)", n.wh / 15.0)));
-    out.push(kv(look, "drinking water", format!("{:.0} glasses  (0.25 l)", n.water_l / 0.25)));
-    out.push(Line::default());
-    out.push(head("words in items: you vs agents"));
+    let mut out = vec![head("words in items: you vs agents")];
     let (mut you, mut them) = (0usize, 0usize);
     for s in srcs {
         for i in s.store.get().values() {

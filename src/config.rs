@@ -27,9 +27,8 @@ pub struct Config {
     pub tree_depth: usize,
     pub sort_who: String,
     pub keys: BTreeMap<String, String>,
-    pub usage_tracking: bool,
     pub score: crate::store::ScoreWeights,
-    pub footprint: crate::footprint::Footprint,
+    pub stats: crate::stats::StatsConfig,
 }
 
 impl Default for Config {
@@ -51,9 +50,8 @@ impl Default for Config {
             tree_depth: 2,
             sort_who: "ai".to_string(),
             keys: BTreeMap::new(),
-            usage_tracking: true,
             score: Default::default(),
-            footprint: Default::default(),
+            stats: Default::default(),
         }
     }
 }
@@ -119,9 +117,6 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
   //   escape (leaving text input) "<esc> jk"; cards choose with 1-9
   keys: {}
 
-  // tokens per item from agents (cake usage); false: the Claude hook does nothing
-  usage_tracking: true
-
   // order of ls, ready and the form: higher first
   score: {
     // hard deadline: deadline_today points on the day, +/- per day, capped
@@ -140,55 +135,14 @@ pub const TEMPLATE: &str = r##"// cake configuration (hjson: comments, quotes op
     age_max: 20
   }
 
-  // Rough estimate of energy, CO2e and water behind the tokens of an item,
-  // leaning high. Real values depend on model, hardware, batching, data
-  // center and grid; read it as an order of magnitude.
-  footprint: {
-    // Wh per 1000 tokens for a large model, GPU only:
-    // - output: 0.1 to 2 Wh per 1000 output tokens depending on model size
-    //   (Epoch AI 2025, as cited in https://arxiv.org/pdf/2603.06630);
-    //   Llama 3.1 405B about 0.21 Wh for ~367 output tokens per query
-    //   (ML.ENERGY, NeurIPS 2025, reviewed in Joule,
-    //   https://www.cell.com/joule/fulltext/S2542-4351(26)00114-5).
-    //   Frontier models are larger: the top of the range.
-    // - input: about 1/8 of an output token; 800 more output tokens cost
-    //   ~10x the base energy, 800 more input tokens ~1.2x (OPT-30B on A100,
-    //   https://arxiv.org/html/2511.05597)
-    // - cache_write: like input (the prefill happens once)
-    // - cache_read: no measurement found; assumed 1/10 of input, like the
-    //   price ratio. In long agent sessions this term dominates.
-    wh_per_1k: {
-      output: 2.0
-      input: 0.25
-      cache_write: 0.25
-      cache_read: 0.025
-    }
-    // factor per model name part, the longest match wins, * otherwise.
-    // Assumption: sizes relative to the largest model, no published numbers.
-    model_factor: {
-      "*": 1.0
-      opus: 1.0
-      sonnet: 0.5
-      haiku: 0.2
-    }
-    // server around the GPUs (CPU, memory, network): the measurements above
-    // are GPU only. Assumption.
-    server_overhead: 1.3
-    // data center overhead (power usage effectiveness); assumption between
-    // hyperscale (~1.1) and older facilities
-    pue: 1.2
-    // grid carbon intensity: EU 2021, 226.4 g CO2 per kWh (Climate
-    // Transparency Report 2022, EU profile,
-    // https://www.climate-transparency.org/wp-content/uploads/2022/10/CT2022-EU-Web.pdf).
-    // Where the model runs is unknown; set your own grid.
-    co2_g_per_kwh: 226.4
-    // water on site per kWh of IT energy (WUE): industry average about
-    // 1.8 l/kWh, hyperscale down to ~0.2
-    // (https://www.hcltech.com/blogs/understanding-water-use-data-centers)
-    wue_l_per_kwh: 1.8
-    // water at the power plants per kWh drawn: thermoelectric plants about
-    // 2 l/kWh, wind and solar near 0 (same source); taken high
-    ewif_l_per_kwh: 2.0
+  // what stats sum beyond time and done items: named formulas over the
+  // items' fields, columns, overlay sections; timers merged by key. An
+  // example for agent tokens and their footprint: skill/hooks/stats.example.hjson
+  stats: {
+    merge_by: ["sessions", "by"]
+    sums: []
+    show: []
+    sections: []
   }
 }
 "##;
@@ -367,7 +321,7 @@ mod tests {
         let _sandbox = Sandbox::new();
         Config::new().unwrap();
         let text = fs::read_to_string(util::config_file().unwrap()).unwrap();
-        assert!(text.contains("// grid carbon intensity") && text.contains("226.4"));
+        assert!(text.contains("// what stats sum") && text.contains("stats.example.hjson"));
         let reference = util::config_path().unwrap().join("config.default.hjson");
         assert_eq!(fs::read_to_string(reference).unwrap(), TEMPLATE);
     }
