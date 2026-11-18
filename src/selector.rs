@@ -27,6 +27,10 @@ pub struct Selector {
     /// any of these assignees
     pub assignee: Vec<String>,
     pub childless: bool,
+    /// free fields that must be set
+    pub has: Vec<String>,
+    /// free fields with this value (lists: containing it)
+    pub where_: Vec<(String, String)>,
 }
 
 impl Selector {
@@ -62,6 +66,8 @@ impl Selector {
             by: None,
             assignee: vec![],
             childless: false,
+            has: vec![],
+            where_: vec![],
         })
     }
 
@@ -102,7 +108,9 @@ impl Selector {
             && !self.blocked
             && self.by.is_none()
             && self.assignee.is_empty()
-            && !self.childless;
+            && !self.childless
+            && self.has.is_empty()
+            && self.where_.is_empty();
     }
 
     fn matches_search(&self, content: &str) -> bool {
@@ -176,6 +184,8 @@ impl Selector {
                     || self.by.is_some() && item.by() == self.by.as_ref()
                     || item.assignee().is_some_and(|a| self.assignee.contains(a))
                     || self.childless && item.children().is_empty()
+                    || self.has.iter().any(|k| item.field(k).is_some())
+                    || self.where_.iter().any(|(k, v)| field_is(item, k, v))
             })
             .map(|s| s.to_owned())
             .collect::<Vec<String>>();
@@ -204,10 +214,28 @@ impl Selector {
                     && (self.by.is_none() || item.by() == self.by.as_ref())
                     && (self.assignee.is_empty() || item.assignee().is_some_and(|a| self.assignee.contains(a)))
                     && (!self.childless || item.children().is_empty())
+                    && self.has.iter().all(|k| item.field(k).is_some())
+                    && self.where_.iter().all(|(k, v)| field_is(item, k, v))
             })
             .map(|s| s.to_owned())
             .collect::<Vec<_>>();
         keys
+    }
+}
+
+/// the free field `key` is `value` (compared as text), or a list holding it
+fn field_is(item: &crate::item::Item, key: &str, value: &str) -> bool {
+    use serde_yaml_ng::Value;
+    let text = |v: &Value| match v {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        _ => String::new(),
+    };
+    match item.field(key) {
+        Some(Value::Sequence(l)) => l.iter().any(|x| text(x) == value),
+        Some(v) => text(v) == value,
+        None => false,
     }
 }
 

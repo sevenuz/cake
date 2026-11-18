@@ -87,6 +87,21 @@ impl fmt::Display for Item {
     }
 }
 
+/// header keys cake reads itself; every other key is a free field
+pub const CORE_KEYS: &[&str] = &[
+    "id", "kind", "status", "assignee", "owner", "tags", "parent", "blocked_by", "created", "by", "sessions", "commits",
+    "usage", "closed", "due", "deadline", "priority", "estimate", "time",
+];
+
+/// a value from the command line: a number or bool if it reads as one,
+/// else text
+pub fn field_value(v: &str) -> Value {
+    match serde_yaml_ng::from_str::<Value>(v) {
+        Ok(x @ (Value::Number(_) | Value::Bool(_))) => x,
+        _ => Value::String(v.to_string()),
+    }
+}
+
 fn err(message: String) -> ParseError {
     ParseError { message }
 }
@@ -668,6 +683,58 @@ impl Item {
         };
     }
 
+    pub fn field(&self, key: &str) -> Option<&Value> {
+        self.extra.get(key)
+    }
+
+    fn free_key(key: &str) -> Result<(), String> {
+        if key.trim().is_empty() || key.contains(char::is_whitespace) {
+            return Err(format!("'{}' is no field name", key));
+        }
+        if CORE_KEYS.contains(&key) {
+            return Err(format!("'{}' is set by its own option, not as a field", key));
+        }
+        Ok(())
+    }
+
+    /// sets a free field, replacing its value
+    pub fn set_field(&mut self, key: &str, value: Value) -> Result<(), String> {
+        Self::free_key(key)?;
+        self.extra.insert(Value::String(key.into()), value);
+        Ok(())
+    }
+
+    /// numbers are summed, lists get the value appended; a new key becomes
+    /// a number (for a number) or a list
+    pub fn add_field(&mut self, key: &str, value: Value) -> Result<(), String> {
+        Self::free_key(key)?;
+        let k = Value::String(key.into());
+        let new = match (self.extra.shift_remove(&k), value) {
+            (None, v @ Value::Number(_)) => v,
+            (None, v) => Value::Sequence(vec![v]),
+            (Some(Value::Number(a)), Value::Number(b)) => match (a.as_i64(), b.as_i64()) {
+                (Some(x), Some(y)) => Value::Number(x.saturating_add(y).into()),
+                _ => Value::Number((a.as_f64().unwrap_or(0.0) + b.as_f64().unwrap_or(0.0)).into()),
+            },
+            (Some(Value::Sequence(mut l)), v) => {
+                l.push(v);
+                Value::Sequence(l)
+            }
+            (Some(old), _) => {
+                self.extra.insert(k, old);
+                return Err(format!("'{}' is neither a number nor a list: use --set", key));
+            }
+        };
+        self.extra.insert(k, new);
+        Ok(())
+    }
+
+    pub fn unset_field(&mut self, key: &str) -> Result<(), String> {
+        Self::free_key(key)?;
+        self.extra.shift_remove(key);
+        Ok(())
+    }
+
     /// 1 (high) .. 3 (low)
     pub fn set_priority(&mut self, priority: Option<u64>) -> Result<(), String> {
         if priority.is_some_and(|p| !(1..=3).contains(&p)) {
@@ -728,7 +795,7 @@ impl Item {
             "time": time,
             "tracked_seconds": self.tracked_seconds(),
             "running": self.is_started(),
-            "extra": serde_json::to_value(&self.extra).unwrap_or_default(),
+            "fields": serde_json::to_value(&self.extra).unwrap_or_default(),
             "title": self.title(),
             "body": self.content,
             "children": self.children,

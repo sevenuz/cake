@@ -120,7 +120,7 @@ fn title_and_json_fields() {
     assert_eq!(json["running"], true);
     assert_eq!(json["time"][0]["end"], "2026-10-22T10:40:00+02:00");
     assert!(json["time"][1]["end"].is_null());
-    assert_eq!(json["extra"]["custom"], "kept");
+    assert_eq!(json["fields"]["custom"], "kept");
     assert!(json["tracked_seconds"].as_i64().unwrap() > 85 * 60);
 
     item.set_content("\nplain first line\nmore".into());

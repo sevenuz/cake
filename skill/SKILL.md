@@ -243,6 +243,7 @@ cake set <status> <ids> [-m TEXT] [--commit H1,H2] --json   # inbox note task do
 # aliases: done, drop, do (task), note, review: `cake review <id> -m "changed …"`
 cake edit <ids> --json [-m BODY] [--prio N] [--due D] [--deadline D] [--est 2h|-] [--commit H1,H2] [--assignee WHO] [--owner WHO]
           [--tag a,~b] [--blocked-by x,~y] [--parent ID|-] [--comment TEXT]
+          [--set key=value] [--add key=value] [--unset key]   # free header fields
 # -m replaces the body (your items only); --comment appends and gives it back to the assignee
 # dates: 2026-11-30, 30.11., today, tomorrow, mon..sun, +3d, 2w; stored as YYYY-MM-DD
 # who: me (the user), ai (any agent), an agent or person name, - nobody
@@ -256,6 +257,7 @@ cake archive [--older 3m] [-n] --json   # -n: only list; closed subtrees → ite
 Ids: any unique prefix (≥ 2 chars); several ids space or comma separated.
 Selectors (and; `--or`): `-s TEXT`,
 `--status inbox,note,task,doing,review,done,dropped`, `-t tag,~not`,
+`--where key=value`, `--has key` (free fields),
 `-p PARENT`, `--assignee WHO`, `--mine`, `--by NAME`, `--ready`,
 `--blocked`, `--childless`, `-A` (with done/dropped), `--archive` (also
 archived items; `show` finds them by id anyway).

@@ -175,6 +175,27 @@ fn commit_hashes_are_added_once_and_removed_with_a_tilde() {
 }
 
 #[test]
+fn free_fields_are_set_added_unset_and_selected() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "w", "--task", "-m", "# Work"]);
+    env.cake_ok(&d, &["add", "v", "--task", "-m", "# Other"]);
+    env.cake_ok(&d, &["edit", "w", "--set", "venue=SC26", "--add", "tokens_in=100", "--add", "session=s1"]);
+    env.cake_ok(&d, &["edit", "w", "--add", "tokens_in=50", "--add", "session=s2", "--set", "draft=true"]);
+    let item = read_item(&d, "w");
+    assert!(item.contains("venue: SC26") && item.contains("tokens_in: 150") && item.contains("- s2") && item.contains("draft: true"), "{}", item);
+    assert_eq!(json_ids(&env, &d, &["ls", "--where", "session=s1"]), vec!["w"]);
+    assert_eq!(json_ids(&env, &d, &["ls", "--where", "tokens_in=150", "--has", "venue"]), vec!["w"]);
+    assert_eq!(json_ids(&env, &d, &["ls", "--has", "nope"]), Vec::<String>::new());
+    assert!(env.cake_err(&d, &["edit", "w", "--add", "venue=x"]).contains("neither a number nor a list"));
+    assert!(env.cake_err(&d, &["edit", "w", "--set", "status=done"]).contains("own option"));
+    env.cake_ok(&d, &["edit", "w", "--unset", "venue"]);
+    assert!(!read_item(&d, "w").contains("venue"));
+    let show = env.cake_ok(&d, &["show", "w", "--json"]);
+    assert!(show.contains("\"fields\"") && show.contains("\"tokens_in\":150"), "{}", show);
+}
+
+#[test]
 fn asks_block_work_until_answered_with_done_m() {
     let env = Env::new();
     let d = env.plain_store();

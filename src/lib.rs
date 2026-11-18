@@ -140,6 +140,14 @@ pub struct SelectorArgs {
     /// assigned to any of these (comma separated; me = you)
     #[arg(long, value_name = "WHO")]
     assignee: Option<String>,
+
+    /// a free field has this value (a list: contains it), repeatable
+    #[arg(long = "where", value_name = "KEY=VALUE")]
+    where_fields: Vec<String>,
+
+    /// a free field is set, repeatable
+    #[arg(long = "has", value_name = "KEY")]
+    has_fields: Vec<String>,
 }
 
 /// replaces id prefixes in `opt` (comma separated) by full ids
@@ -182,6 +190,8 @@ impl SelectorArgs {
         .map(|mut s| {
             s.childless = self.childless;
             s.assignee = self.assignee.iter().flat_map(|a| a.split(',')).map(String::from).filter(|a| !a.is_empty()).collect();
+            s.has = self.has_fields.clone();
+            s.where_ = self.where_fields.iter().map(|kv| kv.split_once('=').map_or((kv.clone(), String::new()), |(k, v)| (k.trim().into(), v.trim().into()))).collect();
             s
         })
     }
@@ -319,6 +329,18 @@ pub enum Commands {
         /// labels: a,b adds, ~a removes
         #[arg(short, long, value_name = "TAGS")]
         tag: Option<String>,
+
+        /// a free header field: KEY=VALUE (numbers and true/false stay typed), repeatable
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        set_fields: Vec<String>,
+
+        /// adds to a free field: numbers are summed, lists appended, repeatable
+        #[arg(long = "add", value_name = "KEY=VALUE")]
+        add_fields: Vec<String>,
+
+        /// removes a free field, repeatable
+        #[arg(long = "unset", value_name = "KEY")]
+        unset_fields: Vec<String>,
 
         /// order: x,y must be closed first, ~x removes x
         #[arg(long, value_name = "IDS")]
@@ -810,7 +832,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             blocked_by: None,
             parent: None,
             comment: None,
-        }) if ids.len() == 1 => edited = Some(commands::edit_in_editor(&config, &root, &ids[0])?),
+            set_fields,
+            add_fields,
+            unset_fields,
+        }) if ids.len() == 1 && set_fields.is_empty() && add_fields.is_empty() && unset_fields.is_empty() => edited = Some(commands::edit_in_editor(&config, &root, &ids[0])?),
         // stdin may come from another cake command that needs the lock
         Some(Commands::Edit { message: m, comment: c, .. }) => {
             message = read_message(m)?;
@@ -907,7 +932,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 blocked_by: util::split_comma_cleanup(blocked_by.to_owned().unwrap_or_default()),
             },
         )?,
-        Some(Commands::Edit { ids, prio, due, deadline, est, assignee, owner, tag, blocked_by, parent, .. }) => {
+        Some(Commands::Edit { ids, prio, due, deadline, est, assignee, owner, tag, blocked_by, parent, set_fields, add_fields, unset_fields, .. }) => {
+            let pair = |kv: &String| -> Result<(String, serde_yaml_ng::Value), Box<dyn Error>> {
+                let (k, v) = kv.split_once('=').ok_or_else(|| error::invalid(format!("'{}': use KEY=VALUE", kv)))?;
+                Ok((k.trim().to_string(), item::field_value(v.trim())))
+            };
+            let sets = set_fields.iter().map(pair).collect::<Result<Vec<_>, _>>()?;
+            let adds = add_fields.iter().map(pair).collect::<Result<Vec<_>, _>>()?;
             let fields = edited.is_some()
                 || message.is_some()
                 || est.is_some()
@@ -937,6 +968,18 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                             owner: owner.clone(),
                         },
                     )?;
+                }
+                {
+                    let item = store.get_item_mut(id).unwrap();
+                    for (k, v) in &sets {
+                        item.set_field(k, v.clone()).map_err(error::invalid)?;
+                    }
+                    for (k, v) in &adds {
+                        item.add_field(k, v.clone()).map_err(error::invalid)?;
+                    }
+                    for k in unset_fields {
+                        item.unset_field(k).map_err(error::invalid)?;
+                    }
                 }
                 if let Some(t) = tag {
                     store
