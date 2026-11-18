@@ -1,6 +1,6 @@
 ---
 id: fields
-status: task
+status: review
 parent: "[[agents]]"
 created: 2026-11-18T16:29:39+01:00
 by: claude-code

@@ -1,12 +1,13 @@
 ---
 id: fields-migrate
-status: review
+status: done
 parent: "[[fields]]"
 blocked_by: ["[[fields-stats]]", "[[fields-hook]]"]
 created: 2026-11-18T16:46:24+01:00
 by: claude-code
 commits: [20174b9]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
+closed: 2026-11-18T23:29:09+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 1h
