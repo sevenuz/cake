@@ -15,3 +15,5 @@ Context: the cake skill still says bullets only, 3 levels, and files only top-le
 Why: agents follow the skill, not the docs.
 Change: rewrite the skill sections per [[wf-layout]], [[wf-depth]], [[wf-handoff]], [[wf-garden]]; session start/end steps in Chat mode read and update the goal's handoff.
 Done when: the skill says all four, and one chat session used it.
+
+comment (claude-code, 2026-11-18): also: triage renames random or sentence ids to topic ids, listed in the summary ([[ids]])
