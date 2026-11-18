@@ -1,11 +1,12 @@
 ---
 id: form-live-total
-status: review
+status: done
 parent: "[[form]]"
 created: 2026-11-18T17:12:47+01:00
 by: claude-code
 commits: [faaa898]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
+closed: 2026-11-18T23:30:52+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 45m
