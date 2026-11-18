@@ -13,10 +13,10 @@ owner: sevenuz
 estimate: 2h
 time:
   - 2026-11-18T17:15:22+01:00/2026-11-18T17:20:42+01:00
-tokens_in: 30
-tokens_out: 8207
-tokens_cache_read: 3211996
-tokens_cache_write: 12188
+tokens_in: 60
+tokens_out: 16414
+tokens_cache_read: 6423992
+tokens_cache_write: 24376
 ---
 # Scope: ls, ready and form show the goal's subtree
 
