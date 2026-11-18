@@ -469,11 +469,14 @@ impl Item {
         &self.commits
     }
 
-    /// adds commit hashes, each once
+    /// adds commit hashes, each once; `~hash` removes one (e.g. after a
+    /// rebase)
     pub fn add_commits(&mut self, hashes: &[String]) {
         for h in hashes {
-            if !h.is_empty() && !self.commits.contains(h) {
-                self.commits.push(h.clone());
+            match h.strip_prefix('~') {
+                Some(rm) => self.commits.retain(|c| c != rm && c != h),
+                None if !h.is_empty() && !self.commits.contains(h) => self.commits.push(h.clone()),
+                None => (),
             }
         }
     }

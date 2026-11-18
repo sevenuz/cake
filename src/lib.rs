@@ -300,7 +300,7 @@ pub enum Commands {
         #[arg(long, value_name = "DATE")]
         deadline: Option<String>,
 
-        /// add git commits of the work (comma separated)
+        /// add git commits of the work (comma separated), ~hash removes one
         #[arg(long, value_name = "HASHES")]
         commit: Option<String>,
 

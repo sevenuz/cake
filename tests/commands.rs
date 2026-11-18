@@ -164,6 +164,17 @@ fn comments_and_notes_go_under_the_log_heading() {
 }
 
 #[test]
+fn commit_hashes_are_added_once_and_removed_with_a_tilde() {
+    let env = Env::new();
+    let d = env.plain_store();
+    env.cake_ok(&d, &["add", "w", "--task", "-m", "# Work"]);
+    env.cake_ok(&d, &["edit", "w", "--commit", "aaa,bbb,aaa"]);
+    env.cake_ok(&d, &["edit", "w", "--commit", "~aaa,ccc"]);
+    let item = read_item(&d, "w");
+    assert!(item.contains("bbb") && item.contains("ccc") && !item.contains("aaa"), "{}", item);
+}
+
+#[test]
 fn asks_block_work_until_answered_with_done_m() {
     let env = Env::new();
     let d = env.plain_store();
