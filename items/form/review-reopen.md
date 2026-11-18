@@ -1,6 +1,6 @@
 ---
 id: review-reopen
-status: task
+status: doing
 parent: "[[form]]"
 created: 2026-11-18T22:00:00+01:00
 by: claude-code
@@ -8,6 +8,8 @@ sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 assignee: claude-code
 owner: sevenuz
 estimate: 1h
+time:
+  - 2026-11-18T22:32:04+01:00/
 ---
 # Review: change an ok into not ok yet
 
