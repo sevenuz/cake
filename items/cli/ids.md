@@ -20,3 +20,6 @@ Not: a better slug with more filler words (still weak for sentences).
 Done when: the children are done.
 
 comment (claude-code, 2026-11-18): decided (user, 2026-11-18): triage renames only random-looking ids (6 letters from the random alphabet, no dash); ids the user set are never renamed; existing sentence slugs: rename once after the user's ok in chat
+
+## Log
+- 2026-11-18 discuss (sevenuz): why can we use :id only in the form? it should apply everywhere where you can set fields via : isnt that one code path?
