@@ -10,7 +10,7 @@ assignee: claude-code
 owner: sevenuz
 estimate: 2h
 time:
-  - 2026-11-18T17:26:07+01:00/
+  - 2026-11-18T17:26:07+01:00/2026-11-18T17:29:22+01:00
 ---
 # Fields: Claude Code adapter as a script
 
