@@ -4,13 +4,16 @@ status: done
 parent: "[[cli]]"
 created: 2026-11-15T18:19:20+01:00
 by: claude-code
-sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 14, out: 3729, cache_read: 1643261, cache_write: 6405}}
+sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-15T19:48:42+01:00
 assignee: ai
 owner: sevenuz
 time:
   - 2026-11-15T18:19:20+01:00/2026-11-15T18:21:10+01:00
+tokens_in: 14
+tokens_out: 3729
+tokens_cache_read: 1643261
+tokens_cache_write: 6405
 ---
 # Rename an item's id
 

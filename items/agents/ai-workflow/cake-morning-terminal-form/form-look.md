@@ -5,11 +5,14 @@ tags: [tui]
 parent: "[[cake-morning-terminal-form]]"
 created: 2026-11-13T20:22:42+01:00
 by: claude-code
-sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
-usage: {claude-opus-5-5: {in: 24, out: 25274, cache_read: 6371015, cache_write: 32945}}
+sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-13T23:07:21+01:00
 time:
   - 2026-11-13T21:04:20+01:00/2026-11-13T21:15:09+01:00
+tokens_in: 24
+tokens_out: 25274
+tokens_cache_read: 6371015
+tokens_cache_write: 32945
 ---
 # Friendlier form: centered cards, step header, cake animation
 

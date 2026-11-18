@@ -4,13 +4,16 @@ status: done
 parent: "[[form-polish]]"
 created: 2026-11-15T22:56:23+01:00
 by: claude-code
-sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 18, out: 6945, cache_read: 1963515, cache_write: 14436}}
+sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-15T23:17:24+01:00
 assignee: claude-code
 owner: sevenuz
 time:
   - 2026-11-15T22:56:23+01:00/2026-11-15T22:58:48+01:00
+tokens_in: 18
+tokens_out: 6945
+tokens_cache_read: 1963515
+tokens_cache_write: 14436
 ---
 # Tree: tags on rows, in the card, and zz
 

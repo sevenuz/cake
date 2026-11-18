@@ -7,13 +7,16 @@ created: 2026-11-18T16:46:24+01:00
 by: claude-code
 commits: [695dd95]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
-usage: {claude-opus-5-5: {in: 28, out: 11485, cache_read: 3266734, cache_write: 16371}}
 closed: 2026-11-18T21:55:13+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 2h
 time:
   - 2026-11-18T17:22:38+01:00/2026-11-18T17:26:04+01:00
+tokens_in: 28
+tokens_out: 11485
+tokens_cache_read: 3266734
+tokens_cache_write: 16371
 ---
 # Fields: types and derived formulas in config
 

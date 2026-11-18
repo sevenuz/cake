@@ -5,13 +5,16 @@ parent: "[[cgm3gx]]"
 blocked_by: ["[[gantt-stores]]", "[[estimate-field]]"]
 created: 2026-11-15T22:31:55+01:00
 by: claude-code
-sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 10, out: 8501, cache_read: 1681438, cache_write: 9971}}
+sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-16T00:03:08+01:00
 assignee: claude-code
 owner: sevenuz
 time:
   - 2026-11-15T23:54:12+01:00/2026-11-15T23:56:56+01:00
+tokens_in: 10
+tokens_out: 8501
+tokens_cache_read: 1681438
+tokens_cache_write: 9971
 ---
 # Gantt G3: items and critical path to a deadline
 

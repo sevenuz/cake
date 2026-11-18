@@ -5,13 +5,16 @@ parent: "[[form-polish]]"
 created: 2026-11-16T02:25:18+01:00
 by: claude-code
 commits: [b637502, 359c1f5]
-sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 7, out: 6932, cache_read: 1792272, cache_write: 9392}}
+sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-16T17:04:19+01:00
 assignee: claude-code
 owner: sevenuz
 time:
   - 2026-11-16T02:25:19+01:00/2026-11-16T02:29:22+01:00
+tokens_in: 7
+tokens_out: 6932
+tokens_cache_read: 1792272
+tokens_cache_write: 9392
 ---
 # TUI texts: short and intuitive
 

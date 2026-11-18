@@ -6,13 +6,16 @@ created: 2026-11-18T17:14:29+01:00
 by: claude-code
 commits: [5490a50]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
-usage: {claude-opus-5-5: {in: 6, out: 2518, cache_read: 615181, cache_write: 3737}}
 closed: 2026-11-18T21:56:06+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 30m
 time:
   - 2026-11-18T17:14:29+01:00/2026-11-18T17:14:55+01:00
+tokens_in: 6
+tokens_out: 2518
+tokens_cache_read: 615181
+tokens_cache_write: 3737
 ---
 # Dev rules: AGENTS.md instead of the skill
 

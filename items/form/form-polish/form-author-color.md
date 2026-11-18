@@ -4,13 +4,16 @@ status: done
 parent: "[[form-polish]]"
 created: 2026-11-15T18:21:10+01:00
 by: claude-code
-sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 24, out: 5703, cache_read: 1363684, cache_write: 13478}}
+sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-15T20:43:05+01:00
 assignee: ai
 owner: sevenuz
 time:
   - 2026-11-15T20:38:16+01:00/2026-11-15T20:40:41+01:00
+tokens_in: 24
+tokens_out: 5703
+tokens_cache_read: 1363684
+tokens_cache_write: 13478
 ---
 # Your own items in their own color in the tree
 

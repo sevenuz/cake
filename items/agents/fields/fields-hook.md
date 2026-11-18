@@ -7,12 +7,15 @@ created: 2026-11-18T16:46:24+01:00
 by: claude-code
 commits: [7ecb6f2]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
-usage: {claude-opus-5-5: {in: 18, out: 10996, cache_read: 2272589, cache_write: 19261}}
 assignee: claude-code
 owner: sevenuz
 estimate: 2h
 time:
   - 2026-11-18T17:26:07+01:00/2026-11-18T17:29:22+01:00
+tokens_in: 18
+tokens_out: 10996
+tokens_cache_read: 2272589
+tokens_cache_write: 19261
 ---
 # Fields: Claude Code adapter as a script
 

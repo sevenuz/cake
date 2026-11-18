@@ -5,13 +5,16 @@ parent: "[[tree-form]]"
 blocked_by: ["[[tree-widget]]", "[[tree-sticky]]", "[[tree-edit-line]]"]
 created: 2026-11-14T11:59:44+01:00
 by: claude-code
-sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a, eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 2, out: 211, cache_read: 68242, cache_write: 419}}
+sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-14T20:32:44+01:00
 assignee: ai
 owner: sevenuz
 time:
   - 2026-11-14T12:32:04+01:00/2026-11-14T12:32:04+01:00
+tokens_in: 2
+tokens_out: 211
+tokens_cache_read: 68242
+tokens_cache_write: 419
 ---
 # News, review, mine on the tree
 

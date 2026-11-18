@@ -5,13 +5,16 @@ parent: "[[cake-dash-terminal-dashboard]]"
 created: 2026-11-16T00:42:21+01:00
 by: claude-code
 commits: [36fcb8a]
-sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 55, out: 19139, cache_read: 10895422, cache_write: 29819}}
+sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-16T02:25:18+01:00
 assignee: claude-code
 owner: sevenuz
 time:
   - 2026-11-16T00:42:21+01:00/2026-11-16T00:51:09+01:00
+tokens_in: 55
+tokens_out: 19139
+tokens_cache_read: 10895422
+tokens_cache_write: 29819
 ---
 # Dashboard: q per layer, work day, form keys, queue fields
 

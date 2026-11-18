@@ -4,14 +4,17 @@ status: done
 parent: "[[tree-form]]"
 created: 2026-11-14T20:51:27+01:00
 by: claude-code
-sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 16, out: 6050, cache_read: 1072647, cache_write: 9398}}
+sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-15T16:48:50+01:00
 assignee: ai
 owner: sevenuz
 time:
   - 2026-11-14T20:54:49+01:00/2026-11-14T20:57:18+01:00
   - 2026-11-14T22:44:47+01:00/2026-11-14T22:45:08+01:00
+tokens_in: 16
+tokens_out: 6050
+tokens_cache_read: 1072647
+tokens_cache_write: 9398
 ---
 # `:` commands per table, also in review
 

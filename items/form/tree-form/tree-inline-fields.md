@@ -4,13 +4,16 @@ status: done
 parent: "[[tree-form]]"
 created: 2026-11-14T20:51:27+01:00
 by: claude-code
-sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 8, out: 4986, cache_read: 570290, cache_write: 8316}}
+sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-14T21:28:50+01:00
 assignee: ai
 owner: sevenuz
 time:
   - 2026-11-14T21:11:35+01:00/2026-11-14T21:13:03+01:00
+tokens_in: 8
+tokens_out: 4986
+tokens_cache_read: 570290
+tokens_cache_write: 8316
 ---
 # Tree rows: colored fields instead of the mini table
 

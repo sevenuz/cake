@@ -4,13 +4,16 @@ status: done
 parent: "[[tree-form]]"
 created: 2026-11-14T21:34:43+01:00
 by: claude-code
-sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 16, out: 4566, cache_read: 1411524, cache_write: 8087}}
+sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-15T16:48:59+01:00
 assignee: ai
 owner: sevenuz
 time:
   - 2026-11-14T22:41:35+01:00/2026-11-14T22:43:08+01:00
+tokens_in: 16
+tokens_out: 4566
+tokens_cache_read: 1411524
+tokens_cache_write: 8087
 ---
 # Detail box: fixed height, own scrolling, contained keys
 

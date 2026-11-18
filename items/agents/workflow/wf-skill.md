@@ -6,13 +6,16 @@ created: 2026-11-18T16:15:08+01:00
 by: claude-code
 commits: [5329b96]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
-usage: {claude-opus-5-5: {in: 10, out: 4739, cache_read: 641130, cache_write: 7245}}
 closed: 2026-11-18T17:09:09+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 1h30m
 time:
   - 2026-11-18T16:52:48+01:00/2026-11-18T16:53:31+01:00
+tokens_in: 10
+tokens_out: 4739
+tokens_cache_read: 641130
+tokens_cache_write: 7245
 ---
 # Skill text for layout, depth, handoff, gardening
 

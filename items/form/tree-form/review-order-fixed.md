@@ -4,13 +4,16 @@ status: done
 parent: "[[tree-form]]"
 created: 2026-11-14T20:51:27+01:00
 by: claude-code
-sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 6, out: 934, cache_read: 303745, cache_write: 3641}}
+sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-14T21:28:46+01:00
 assignee: ai
 owner: sevenuz
 time:
   - 2026-11-14T20:52:00+01:00/2026-11-14T20:52:13+01:00
+tokens_in: 6
+tokens_out: 934
+tokens_cache_read: 303745
+tokens_cache_write: 3641
 ---
 # Review rows keep their order after accepting
 

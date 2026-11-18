@@ -7,12 +7,15 @@ created: 2026-11-18T16:46:24+01:00
 by: claude-code
 commits: [4c878d6, 20174b9]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
-usage: {claude-opus-5-5: {in: 84, out: 37147, cache_read: 12951358, cache_write: 68836}}
 assignee: claude-code
 owner: sevenuz
 estimate: 4h
 time:
   - 2026-11-18T22:00:00+01:00/2026-11-18T22:08:22+01:00
+tokens_in: 84
+tokens_out: 37147
+tokens_cache_read: 12951358
+tokens_cache_write: 68836
 ---
 # Fields: declarative stats sections and merge_by
 

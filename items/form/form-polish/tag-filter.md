@@ -4,13 +4,16 @@ status: done
 parent: "[[form-polish]]"
 created: 2026-11-15T22:56:23+01:00
 by: claude-code
-sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 16, out: 4197, cache_read: 1862855, cache_write: 8655}}
+sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-15T23:17:24+01:00
 assignee: claude-code
 owner: sevenuz
 time:
   - 2026-11-15T23:07:04+01:00/2026-11-15T23:10:21+01:00
+tokens_in: 16
+tokens_out: 4197
+tokens_cache_read: 1862855
+tokens_cache_write: 8655
 ---
 # Tree: filter by tag
 

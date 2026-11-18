@@ -4,13 +4,15 @@ status: done
 parent: "[[tree-form]]"
 created: 2026-11-14T13:14:14+01:00
 by: claude-code
-sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a, eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 0, out: 2058, cache_read: 423142, cache_write: 3650}}
+sessions: [9dc30da3-12f6-4942-83f6-605fbb210d3a, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-15T17:36:37+01:00
 assignee: ai
 owner: sevenuz
 time:
   - 2026-11-15T17:14:43+01:00/2026-11-15T17:23:59+01:00
+tokens_out: 2058
+tokens_cache_read: 423142
+tokens_cache_write: 3650
 ---
 # Dump and end screens in the new layout
 

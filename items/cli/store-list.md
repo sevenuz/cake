@@ -5,11 +5,14 @@ tags: [cli]
 parent: "[[cli]]"
 created: 2026-11-13T18:28:48+01:00
 by: claude-code
-sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 26, out: 17364, cache_read: 2571921, cache_write: 25972}}
+sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-13T20:13:09+01:00
 time:
   - 2026-11-13T18:28:48+01:00/2026-11-13T18:31:43+01:00
+tokens_in: 26
+tokens_out: 17364
+tokens_cache_read: 2571921
+tokens_cache_write: 25972
 ---
 # Store list in the global config
 

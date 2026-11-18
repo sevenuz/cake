@@ -4,13 +4,16 @@ status: done
 parent: "[[tree-form]]"
 created: 2026-11-14T21:34:43+01:00
 by: claude-code
-sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 8, out: 3751, cache_read: 675453, cache_write: 4696}}
+sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-15T16:49:01+01:00
 assignee: ai
 owner: sevenuz
 time:
   - 2026-11-14T22:39:50+01:00/2026-11-14T22:41:21+01:00
+tokens_in: 8
+tokens_out: 3751
+tokens_cache_read: 675453
+tokens_cache_write: 4696
 ---
 # Holding j lags and jumps a random amount
 

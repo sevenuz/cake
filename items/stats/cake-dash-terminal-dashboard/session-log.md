@@ -4,13 +4,16 @@ status: done
 parent: "[[cake-dash-terminal-dashboard]]"
 created: 2026-11-15T22:31:55+01:00
 by: claude-code
-sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 48, out: 19055, cache_read: 4206304, cache_write: 33770}}
+sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-15T22:44:15+01:00
 assignee: claude-code
 owner: sevenuz
 time:
   - 2026-11-15T22:32:04+01:00/2026-11-15T22:37:30+01:00
+tokens_in: 48
+tokens_out: 19055
+tokens_cache_read: 4206304
+tokens_cache_write: 33770
 ---
 # Session log: your time per store from Claude and cake
 

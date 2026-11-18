@@ -4,13 +4,16 @@ status: done
 parent: "[[what-does-do-assign]]"
 created: 2026-11-14T11:18:26+01:00
 by: claude-code
-sessions: [4fa59fcd-dfb0-420a-8037-705b420d66a2, eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 8, out: 1810, cache_read: 764323, cache_write: 3821}}
+sessions: [4fa59fcd-dfb0-420a-8037-705b420d66a2, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-15T19:48:42+01:00
 assignee: ai
 owner: sevenuz
 time:
   - 2026-11-15T17:47:55+01:00/2026-11-15T17:49:43+01:00
+tokens_in: 8
+tokens_out: 1810
+tokens_cache_read: 764323
+tokens_cache_write: 3821
 ---
 # Remove w from the news table
 

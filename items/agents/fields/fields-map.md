@@ -6,13 +6,16 @@ created: 2026-11-18T16:46:24+01:00
 by: claude-code
 commits: [5fda1ab]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
-usage: {claude-opus-5-5: {in: 48, out: 13203, cache_read: 4191015, cache_write: 27840}}
 closed: 2026-11-18T17:09:21+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 3h
 time:
   - 2026-11-18T16:58:55+01:00/2026-11-18T17:04:57+01:00
+tokens_in: 48
+tokens_out: 13203
+tokens_cache_read: 4191015
+tokens_cache_write: 27840
 ---
 # Fields: keep unknown header keys
 

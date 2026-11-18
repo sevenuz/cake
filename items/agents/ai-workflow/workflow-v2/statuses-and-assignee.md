@@ -5,13 +5,16 @@ tags: [plan]
 parent: "[[workflow-v2]]"
 created: 2026-11-13T23:04:17+01:00
 by: claude-code
-sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
-usage: {claude-opus-5-5: {in: 98, out: 43840, cache_read: 30590236, cache_write: 66781}}
+sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-13T23:50:19+01:00
 assignee: claude-code
 owner: sevenuz
 time:
   - 2026-11-13T23:16:48+01:00/2026-11-13T23:25:40+01:00
+tokens_in: 98
+tokens_out: 43840
+tokens_cache_read: 30590236
+tokens_cache_write: 66781
 ---
 # Statuses inbox/note/task/review, assignee and owner
 

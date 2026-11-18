@@ -4,13 +4,16 @@ status: done
 parent: "[[cake-dash-terminal-dashboard]]"
 created: 2026-11-16T00:29:54+01:00
 by: claude-code
-sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac]
-usage: {claude-opus-5-5: {in: 8, out: 3860, cache_read: 1493844, cache_write: 9194}}
+sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
 closed: 2026-11-16T02:25:18+01:00
 assignee: claude-code
 owner: sevenuz
 time:
   - 2026-11-16T00:29:54+01:00/2026-11-16T00:32:05+01:00
+tokens_in: 8
+tokens_out: 3860
+tokens_cache_read: 1493844
+tokens_cache_write: 9194
 ---
 # Dashboard: item gantt, header time and user
 
