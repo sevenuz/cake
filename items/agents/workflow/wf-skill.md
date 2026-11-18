@@ -4,7 +4,7 @@ status: review
 parent: "[[workflow]]"
 created: 2026-11-18T16:15:08+01:00
 by: claude-code
-commits: [c455e3f]
+commits: [5329b96]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 assignee: claude-code
 owner: sevenuz
