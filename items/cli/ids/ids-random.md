@@ -6,6 +6,7 @@ created: 2026-11-18T16:20:08+01:00
 by: claude-code
 commits: [acba13c]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
+usage: {claude-opus-5-5: {in: 8, out: 2080, cache_read: 335237, cache_write: 3656}}
 assignee: claude-code
 owner: sevenuz
 estimate: 30m
