@@ -12,10 +12,10 @@ owner: sevenuz
 estimate: 2h
 time:
   - 2026-11-18T16:55:24+01:00/2026-11-18T16:58:52+01:00
-tokens_in: 22
-tokens_out: 8754
-tokens_cache_read: 1649115
-tokens_cache_write: 16070
+tokens_in: 44
+tokens_out: 17508
+tokens_cache_read: 3298230
+tokens_cache_write: 32140
 ---
 # Scope: dirs entries with a default goal
 
