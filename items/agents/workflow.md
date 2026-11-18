@@ -1,10 +1,11 @@
 ---
 id: workflow
-status: review
+status: done
 parent: "[[agents]]"
 created: 2026-11-18T16:15:08+01:00
 by: claude-code
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
+closed: 2026-11-18T17:09:52+01:00
 assignee: claude-code
 owner: sevenuz
 ---
