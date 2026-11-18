@@ -1220,7 +1220,7 @@ mod tests {
             let tree = Tree::new(&all, all.iter().filter(|i| matches(kind, i, &all, "jul", 0)).map(|i| str_of(i, "id").to_string()), 2);
             let rows = tree.rows();
             let at = rows.iter().position(|r| r.id == cur).unwrap();
-            let view = View { kind, user: "jul", since: 0, results: &results };
+            let view = View { kind, user: "jul", since: 0, results: &results, reopen: false };
             for width in [60u16, 100] {
                 let inner = column_width(width, 100);
                 let it = tree.item(cur).unwrap();
