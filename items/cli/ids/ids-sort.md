@@ -1,6 +1,6 @@
 ---
 id: ids-sort
-status: task
+status: doing
 parent: "[[ids]]"
 created: 2026-11-18T16:20:08+01:00
 by: claude-code
@@ -8,6 +8,8 @@ sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 assignee: claude-code
 owner: sevenuz
 estimate: 2h
+time:
+  - 2026-11-18T16:46:28+01:00/
 ---
 # Ids: the sort step offers a new id
 
