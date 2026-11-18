@@ -13,10 +13,10 @@ owner: sevenuz
 estimate: 1h
 time:
   - 2026-11-18T17:20:51+01:00/2026-11-18T17:22:34+01:00
-tokens_in: 4
-tokens_out: 1562
-tokens_cache_read: 444020
-tokens_cache_write: 2616
+tokens_in: 8
+tokens_out: 3124
+tokens_cache_read: 888040
+tokens_cache_write: 5232
 ---
 # Scope: sort module shows the preset parent
 
