@@ -1,6 +1,6 @@
 ---
 id: scope-sort
-status: task
+status: doing
 parent: "[[scope]]"
 blocked_by: ["[[scope-link]]"]
 created: 2026-11-18T16:15:24+01:00
@@ -9,6 +9,8 @@ sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 assignee: claude-code
 owner: sevenuz
 estimate: 1h
+time:
+  - 2026-11-18T17:20:51+01:00/
 ---
 # Scope: sort module shows the preset parent
 
