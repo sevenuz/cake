@@ -222,7 +222,7 @@ pub enum Commands {
     /// capture: a new item in the inbox (--task, --note to skip sorting);
     /// the editor opens without -m
     Add {
-        /// custom id, default: slug of the title (e.g. fix-merge-driver)
+        /// custom id, e.g. merge-driver; default: a random one (kqejfn)
         ids: Option<String>,
 
         /// move these items under the new one

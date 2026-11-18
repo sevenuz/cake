@@ -131,17 +131,11 @@ mod tests {
     }
 
     #[test]
-    fn slug_id_takes_the_first_words_without_stop_words() {
-        assert_eq!(slug_id("Fix the merge driver for sync conflicts", |_| false), "fix-merge-driver-sync");
-        assert_eq!(slug_id("Café menu!", |_| false), "café-menu");
-        assert_eq!(slug_id("the a", |_| false), "the-a");
-        assert_eq!(slug_id("supercalifragilisticexpialidocious-and-more words", |_| false).chars().count(), 30);
-    }
-
-    #[test]
-    fn slug_id_counts_up_on_collisions_and_falls_back_to_random() {
-        assert_eq!(slug_id("edit lock", |id| id == "edit-lock" || id == "edit-lock-2"), "edit-lock-3");
-        assert_eq!(slug_id("!!", |_| false).len(), 6);
+    fn free_id_skips_taken_ids() {
+        let first = free_id(|_| false);
+        let other = free_id(|id| id == first);
+        assert_eq!(other.len(), 6);
+        assert_ne!(first, other);
     }
 
     #[test]
@@ -171,36 +165,9 @@ mod tests {
     }
 }
 
-const SLUG_WORDS: usize = 4;
-const SLUG_MAX: usize = 30;
-const STOP_WORDS: &[&str] = &[
-    "a", "an", "the", "to", "of", "in", "on", "for", "and", "or", "with", "is",
-];
-
-/// kebab-case id from the first words of `title`, `-2`, `-3` .. if `taken`;
-/// a random id if the title has no usable word
-pub fn slug_id(title: &str, taken: impl Fn(&str) -> bool) -> String {
-    let lower = title.to_lowercase();
-    let words: Vec<&str> = lower.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
-    let kept: Vec<&str> = words.iter().copied().filter(|w| !STOP_WORDS.contains(w)).collect();
-    let mut slug = String::new();
-    for w in (if kept.is_empty() { &words } else { &kept }).iter().take(SLUG_WORDS) {
-        if !slug.is_empty() && slug.chars().count() + 1 + w.chars().count() > SLUG_MAX {
-            break;
-        }
-        if !slug.is_empty() {
-            slug.push('-');
-        }
-        slug.push_str(w);
-    }
-    let slug: String = slug.chars().take(SLUG_MAX).collect();
-    if slug.chars().count() < 2 {
-        return generate_id();
-    }
-    (1..)
-        .map(|n| if n == 1 { slug.clone() } else { format!("{}-{}", slug, n) })
-        .find(|id| !taken(id))
-        .unwrap()
+/// a random id that `taken` does not hold yet
+pub fn free_id(taken: impl Fn(&str) -> bool) -> String {
+    std::iter::repeat_with(generate_id).find(|id| !taken(id)).unwrap()
 }
 
 /// ids are file and directory names in the store

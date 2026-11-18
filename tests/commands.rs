@@ -138,13 +138,14 @@ fn mv_reparents_refuses_cycles_and_detaches() {
 }
 
 #[test]
-fn add_derives_a_slug_id_from_the_title() {
+fn add_without_an_id_gets_a_random_one() {
     let env = Env::new();
     let d = env.plain_store();
     env.cake_ok(&d, &["add", "-m", "# Fix the merge driver for sync conflicts"]);
-    env.cake_ok(&d, &["add", "-p", "fix", "-m", "# Fix the merge driver for sync conflicts"]);
-    assert!(d.join(".cake/items/fix-merge-driver-sync.md").is_file());
-    assert!(d.join(".cake/items/fix-merge-driver-sync/fix-merge-driver-sync-2.md").is_file());
+    let ids = json_ids(&env, &d, &["ls"]);
+    assert_eq!(ids.len(), 1);
+    assert_eq!(ids[0].len(), 6);
+    assert!(ids[0].chars().all(|c| c.is_ascii_lowercase()));
     assert!(env.cake_err(&d, &["add", "a/b", "-m", "x"]).contains("not a valid id"));
 }
 

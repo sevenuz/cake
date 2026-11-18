@@ -60,7 +60,7 @@ where
     let content = content.ok_or_else(|| error::invalid("No content, use -m TEXT (- for stdin)."))?;
     let id = match selector.ids.first() {
         Some(id) => id.to_string(),
-        None => util::slug_id(&crate::item::title_of(&content), |id| store.get_item(id).is_some() || store.is_archived(id) || id == crate::store::inner::ARCHIVE),
+        None => util::free_id(|id| store.get_item(id).is_some() || store.is_archived(id) || id == crate::store::inner::ARCHIVE),
     };
     util::check_id(&id)?;
     let mut item = Item::new(
