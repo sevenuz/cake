@@ -1,6 +1,6 @@
 ---
 id: ids
-status: task
+status: review
 parent: "[[cli]]"
 created: 2026-11-18T16:20:08+01:00
 by: claude-code
