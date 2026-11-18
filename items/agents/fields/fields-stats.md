@@ -1,6 +1,6 @@
 ---
 id: fields-stats
-status: task
+status: review
 parent: "[[fields]]"
 blocked_by: ["[[fields-config]]"]
 created: 2026-11-18T16:46:24+01:00
@@ -25,3 +25,4 @@ Done when: the example config shows the same numbers as today on this store, tes
 
 ## Log
 - 2026-11-18 comment (claude-code): progress (claude-code): code done and tested (4c878d6, 20174b9); live switch-over waits for the user's ok: release build, Stop hook to hooks/claude-code.py, stats block into the user's config, migrate --only usage on the cake store (69 items)
+- 2026-11-18 changed: config stats (merge_by, sums, show, sections) replaces tokens and footprint in dashboard, cake stats and the overlay; footprint, usage, cake usage and the Rust hook removed; example with sources in skill/hooks/stats.example.hjson; live: release built, your config has the stats block (usage_tracking and footprint removed, backup in the session scratchpad), week shows 57.2M tokens again; try: cake stats -p week, dashboard v
