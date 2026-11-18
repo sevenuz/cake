@@ -12,10 +12,10 @@ owner: sevenuz
 estimate: 2h
 time:
   - 2026-11-18T17:26:07+01:00/2026-11-18T17:29:22+01:00
-tokens_in: 18
-tokens_out: 10996
-tokens_cache_read: 2272589
-tokens_cache_write: 19261
+tokens_in: 36
+tokens_out: 21992
+tokens_cache_read: 4545178
+tokens_cache_write: 38522
 ---
 # Fields: Claude Code adapter as a script
 
