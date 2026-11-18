@@ -256,6 +256,34 @@ fn init_links_more_dirs_to_an_existing_store_with_a_default_goal() {
 }
 
 #[test]
+fn captures_in_a_linked_dir_land_under_its_goal() {
+    let env = Env::new();
+    let (home, gfs) = (env.path("phd"), env.path("gekkofs"));
+    std::fs::create_dir_all(gfs.join("src")).unwrap();
+    std::fs::create_dir(&home).unwrap();
+    let store = env.path("stores/phd");
+    let st = store.to_str().unwrap();
+    env.cake_ok(&home, &["--store", st, "init"]);
+    env.cake_ok(&home, &["add", "gekkofs", "--note", "-m", "# GekkoFS"]);
+    env.cake_ok(&gfs, &["--store", st, "init", "--parent", "gekkofs"]);
+    env.cake_ok(&gfs.join("src"), &["add", "a", "-m", "# A"]);
+    assert!(store.join("items/gekkofs/a.md").is_file(), "under the goal");
+    env.cake_ok(&gfs, &["add", "b", "-p", "-", "-m", "# B"]);
+    assert!(store.join("items/b.md").is_file(), "-p - is the top level");
+    env.cake_ok(&home, &["add", "c", "-m", "# C"]);
+    assert!(store.join("items/c.md").is_file(), "the store's own dir has no goal");
+    env.cake_ok(&gfs, &["add", "d", "-p", "c", "-m", "# D"]);
+    assert!(store.join("items/c/d.md").is_file(), "-p wins");
+    env.cake_ok(&gfs, &["-g", "init"]);
+    env.cake_ok(&gfs, &["-g", "add", "e", "-m", "# E"]);
+    assert!(!store.join("items/gekkofs/e.md").exists(), "-g ignores the goal");
+    env.cake_ok(&home, &["rm", "gekkofs", "a"]);
+    let out = env.cake(&gfs, &["add", "f", "-m", "# F"]);
+    assert!(out.status.success() && store.join("items/f.md").is_file());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("is gone"));
+}
+
+#[test]
 fn separate_store_is_found_from_its_dir_and_subtrees_move_between_stores() {
     let env = Env::new();
     let paper = env.path("paper");

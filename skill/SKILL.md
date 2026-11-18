@@ -8,6 +8,9 @@ description: Track tasks, plans, docs and ideas with the cake CLI (markdown item
 One markdown file per item in `.cake/items/` (project store, own git branch),
 a separate store used from a project dir, or `~/.local/share/cake`
 (personal store, `-g`). All known stores: `~/.config/cake/stores.json`.
+A dir can use a store elsewhere (`cake --store <store> init [--parent
+<goal>]` there); with a goal, `cake add` without `-p` lands under it
+(`-p -`: top level).
 The tree is on disk: children of `sync.md` live in `sync/`. Every change
 through `cake` is committed automatically. Your items get `by: <agent>`,
 changed items record your session in `sessions`, commits are tagged

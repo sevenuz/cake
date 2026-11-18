@@ -150,6 +150,23 @@ pub struct SelectorArgs {
     has_fields: Vec<String>,
 }
 
+/// the default goal of the dir we run in, when it links to `root`; a goal
+/// that is gone: the top level, with a warning
+fn default_parent(root: &std::path::Path, store: &Store) -> Option<String> {
+    let cwd = current_dir().ok()?;
+    let (linked, parent) = stores::link_of(&stores::load().ok()?, &cwd)?;
+    let same = |a: &std::path::Path| std::fs::canonicalize(a).unwrap_or_else(|_| a.to_path_buf());
+    if same(&linked) != same(root) {
+        return None;
+    }
+    let parent = parent?;
+    if store.get_item(&parent).is_none() {
+        eprintln!("the goal {} of this dir is gone: added at the top level (cake --store … init --parent <id> to fix)", parent);
+        return None;
+    }
+    Some(parent)
+}
+
 /// replaces id prefixes in `opt` (comma separated) by full ids
 fn resolve_opt(store: &Store, opt: &mut Option<String>) -> Result<(), Box<dyn Error>> {
     if let Some(v) = opt {
@@ -519,7 +536,9 @@ impl Commands {
         match self {
             Commands::Add { children, parents, blocked_by, .. } => {
                 resolve_opt(store, children)?;
-                resolve_opt(store, parents)?;
+                if parents.as_deref() != Some("-") {
+                    resolve_opt(store, parents)?;
+                }
                 resolve_opt(store, blocked_by)?;
             }
             Commands::Edit { ids, blocked_by, parent, .. } => {
@@ -906,12 +925,20 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             est,
             blocked_by,
             ..
-        }) => commands::add(
+        }) => {
+            // -p - : the top level; no -p: the goal of the linked dir
+            let parents = match parents.as_deref() {
+                Some("-") => None,
+                Some(_) => parents.clone(),
+                None if cli.global => None,
+                None => default_parent(&root, &store),
+            };
+            let report = commands::add(
             &debug,
             &config,
             &mut store,
             Selector::new(
-                ids, children, parents, tags, &None, &None, &false, &false, &0, &false,
+                ids, children, &parents, tags, &None, &None, &false, &false, &0, &false,
             )?,
             message,
             commands::AddOptions {
@@ -931,7 +958,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 estimate: est.to_owned(),
                 blocked_by: util::split_comma_cleanup(blocked_by.to_owned().unwrap_or_default()),
             },
-        )?,
+        )?;
+            if let (Some(p), commands::Report::Items(ids)) = (&parents, &report) {
+                if !out::json() {
+                    eprintln!("{} → {}", ids.join(", "), p);
+                }
+            }
+            report
+        }
         Some(Commands::Edit { ids, prio, due, deadline, est, assignee, owner, tag, blocked_by, parent, set_fields, add_fields, unset_fields, .. }) => {
             let pair = |kv: &String| -> Result<(String, serde_yaml_ng::Value), Box<dyn Error>> {
                 let (k, v) = kv.split_once('=').ok_or_else(|| error::invalid(format!("'{}': use KEY=VALUE", kv)))?;
