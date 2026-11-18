@@ -1,6 +1,6 @@
 ---
 id: scope-views
-status: review
+status: task
 parent: "[[scope]]"
 blocked_by: ["[[scope-link]]"]
 created: 2026-11-18T16:15:24+01:00
@@ -22,3 +22,4 @@ Done when: tested in a linked dir with and without `--all`, and `cake ready` the
 
 ## Log
 - 2026-11-18 changed: in a dir linked to a goal, ls and ready (also an agent's) show only the goal and what lies below; the form follows since it lists through ls; ls --wide lifts it (not --all: -A already means closed items); -p or ids pick something else; -g and the store's own dir unscoped; checked in tmux; try: cd a linked dir, cake ls, cake ls --wide
+- 2026-11-18 discuss (sevenuz): do you think that this is good default behaviour or should we overwrite it in the config? but if someone wants it different, they can overwrite it to always use --all i guess
