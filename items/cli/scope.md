@@ -1,6 +1,6 @@
 ---
 id: scope
-status: task
+status: review
 parent: "[[cli]]"
 created: 2026-11-18T16:15:24+01:00
 by: claude-code
