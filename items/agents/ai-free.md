@@ -1,5 +1,5 @@
 ---
-id: we-want-make-cake
+id: ai-free
 status: review
 parent: "[[agents]]"
 created: 2026-11-14T11:23:55+01:00
