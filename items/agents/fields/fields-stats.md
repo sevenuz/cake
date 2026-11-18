@@ -10,7 +10,7 @@ assignee: claude-code
 owner: sevenuz
 estimate: 4h
 time:
-  - 2026-11-18T22:00:00+01:00/
+  - 2026-11-18T22:00:00+01:00/2026-11-18T22:08:22+01:00
 ---
 # Fields: declarative stats sections and merge_by
 
