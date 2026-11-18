@@ -1,12 +1,13 @@
 ---
 id: wf-log
-status: review
+status: done
 parent: "[[workflow]]"
 created: 2026-11-18T16:15:08+01:00
 by: claude-code
 commits: [8b663d7]
 sessions: [0282881a-f64f-4b2f-ba4d-30f5d674e657]
 usage: {claude-opus-5-5: {in: 16, out: 4250, cache_read: 1090405, cache_write: 7308}}
+closed: 2026-11-18T17:08:38+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 2h
