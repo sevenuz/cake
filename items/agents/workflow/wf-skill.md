@@ -12,10 +12,10 @@ owner: sevenuz
 estimate: 1h30m
 time:
   - 2026-11-18T16:52:48+01:00/2026-11-18T16:53:31+01:00
-tokens_in: 10
-tokens_out: 4739
-tokens_cache_read: 641130
-tokens_cache_write: 7245
+tokens_in: 20
+tokens_out: 9478
+tokens_cache_read: 1282260
+tokens_cache_write: 14490
 ---
 # Skill text for layout, depth, handoff, gardening
 
