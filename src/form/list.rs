@@ -64,8 +64,8 @@ impl Kind {
     /// (and move in the inbox); answer has none
     fn commands(self) -> &'static [&'static str] {
         match self {
-            Kind::Sort => &["id", "due", "deadline", "who", "prio", "est", "tag", "move", "all"],
-            Kind::Mine | Kind::Review | Kind::All => &["id", "due", "deadline", "who", "prio", "est", "tag"],
+            Kind::Sort => &["id", "parent", "due", "deadline", "who", "prio", "est", "tag", "move", "all"],
+            Kind::Mine | Kind::Review | Kind::All => &["id", "parent", "due", "deadline", "who", "prio", "est", "tag"],
             // news is read only, answer has its options
             Kind::Answer | Kind::News => &[],
         }
@@ -75,6 +75,7 @@ impl Kind {
     fn command_hint(self) -> String {
         let example = |c: &str| match c {
             "id" => "id merge-driver",
+            "parent" => "parent gekkofs",
             "due" => "due fri",
             "deadline" => "deadline 30.11.",
             "who" => "who ai",
@@ -288,6 +289,8 @@ enum Change {
     Move(String),
     /// a new id; children, blockers and links follow
     Rename(String),
+    /// under another item, `-` the top level
+    Parent(String),
     Timer(bool),
     /// news: back to you; a started item waits as a task
     Hold,
@@ -357,6 +360,10 @@ fn apply(cake: &Cake, item: &Value, change: &Change, user: &str, sort_who: Optio
             to_task(cake)?;
             cake.call(&["edit", id, "--deadline", &opt(d)])?;
             String::new()
+        }
+        Change::Parent(p) => {
+            cake.call(&["edit", id, "--parent", p])?;
+            if p == "-" { "at the top level".into() } else { format!("under {}", p) }
         }
         Change::Rename(new) => {
             cake.call(&["rename", id, new])?;
@@ -926,6 +933,8 @@ pub(super) fn run(ui: &mut Ui, cake: &Cake, root: &Path, kind: Kind, user: &str,
                     "est" if ours => change = Some(Change::Est(if arg.is_empty() { "-".into() } else { arg.to_string() })),
                     "tag" if ours && !arg.is_empty() => change = Some(Change::Tags(arg.split([',', ' ']).filter(|t| !t.is_empty()).map(|t| t.trim_start_matches('#')).collect::<Vec<_>>().join(","))),
                     "tag" if ours => st.note = Some(("tag doc · tag ~doc".into(), true)),
+                    "parent" if ours && !arg.is_empty() => change = Some(Change::Parent(arg.to_string())),
+                    "parent" if ours => st.note = Some(("parent <id> · parent - (top level)".into(), true)),
                     "id" if ours && !arg.is_empty() => change = Some(Change::Rename(arg.to_string())),
                     "id" if ours => st.note = Some(("id <new>: topic first, 1–3 words, e.g. id merge-driver".into(), true)),
                     "move" if ours && stores.iter().any(|s| s == arg) => change = Some(Change::Move(arg.to_string())),
@@ -1060,6 +1069,9 @@ fn commit(
             ui.results.insert(to, r);
         }
         *note = Some((result, false));
+    } else if let Change::Parent(_) = change {
+        // not a decision either: the item still waits to be sorted
+        *note = Some((result, false));
     } else if let Change::Undo(_) = change {
         changed.remove(&id);
         ui.before.remove(&key);
@@ -1123,8 +1135,8 @@ mod tests {
 
     #[test]
     fn command_hints_list_only_what_works() {
-        assert_eq!(Kind::Review.command_hint(), "id merge-driver · due fri · deadline 30.11. · who ai · prio 1 · est 2h · tag doc,~old · filter doc · w · q");
-        assert_eq!(Kind::Sort.command_hint(), "id merge-driver · due fri · deadline 30.11. · who ai · prio 1 · est 2h · tag doc,~old · move <store> · all · filter doc · w · q");
+        assert_eq!(Kind::Review.command_hint(), "id merge-driver · parent gekkofs · due fri · deadline 30.11. · who ai · prio 1 · est 2h · tag doc,~old · filter doc · w · q");
+        assert_eq!(Kind::Sort.command_hint(), "id merge-driver · parent gekkofs · due fri · deadline 30.11. · who ai · prio 1 · est 2h · tag doc,~old · move <store> · all · filter doc · w · q");
         assert_eq!(Kind::Answer.command_hint(), "filter doc · w · q");
     }
 
