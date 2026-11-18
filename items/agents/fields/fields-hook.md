@@ -2,7 +2,7 @@
 id: fields-hook
 status: task
 parent: "[[fields]]"
-blocked_by: ["[[fields-map]]", "[[fields-stats]]"]
+blocked_by: ["[[fields-map]]"]
 created: 2026-11-18T16:46:24+01:00
 by: claude-code
 commits: [7ecb6f2]
