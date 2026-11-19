@@ -1,6 +1,6 @@
 ---
 id: store-docs
-status: task
+status: doing
 parent: "[[cli]]"
 created: 2026-11-19T12:16:28+01:00
 by: claude-code
@@ -8,6 +8,8 @@ sessions: [59209220-8a77-4046-9145-aa74c0881358]
 assignee: claude-code
 owner: sevenuz
 estimate: 1h
+time:
+  - 2026-11-19T12:24:14+01:00/
 ---
 # Docs: how stores work and how to set them up
 
