@@ -134,9 +134,11 @@ pub fn exclude(repo: &Path, pattern: &str) -> Result<(), Box<dyn Error>> {
 }
 
 /// creates a new repository in `dir` on branch `main`
-pub fn init_repo(dir: &Path) -> Result<(), Box<dyn Error>> {
+/// a new repo on main with an empty first commit, so worktrees can branch off
+pub fn init_repo(dir: &Path, message: &str) -> Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(dir)?;
     git(dir, &["init", "-q", "-b", "main"])?;
+    git(dir, &["commit", "-q", "--allow-empty", "-m", message])?;
     Ok(())
 }
 

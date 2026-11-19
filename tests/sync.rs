@@ -87,7 +87,7 @@ fn conflict_blocks_writes_until_resolved() {
 }
 
 #[test]
-fn global_store_is_its_own_repo() {
+fn global_store_is_a_cake_dir_like_every_store() {
     let env = Env::new();
     let a = env.repo("a");
     env.cake_ok(&a, &["init"]);
@@ -98,12 +98,28 @@ fn global_store_is_its_own_repo() {
     assert!(env.cake_err(&a, &["-g", "init"]).contains("already"));
     env.cake_ok(&a, &["-g", "add", "note", "-m", "# personal"]);
 
-    let global = env.path("data/cake");
+    let global = env.path("data/cake/.cake");
     assert!(global.join("items/note.md").exists());
     assert!(!a.join(".cake/items/note.md").exists());
     assert_eq!(git(&global, &["log", "--format=%s"]), "cake -g add note -m # personal\ncake: init");
     assert_eq!(git(&global, &["ls-files"]), ".gitignore\nitems/early.md\nitems/note.md");
-    assert_eq!(git(&global, &["branch", "--show-current"]), "main");
+    assert_eq!(git(&global, &["branch", "--show-current"]), "cake/main");
+    assert!(!env.path("data/cake/.cake-adopt").exists());
+    let list = fs::read_to_string(env.path("config/cake/stores.json")).unwrap_or_default();
+    assert!(!list.contains("data/cake"), "the global store stays `global`: {}", list);
+}
+
+#[test]
+fn init_adopts_a_plain_store_used_before_git() {
+    let env = Env::new();
+    let dir = env.path("late");
+    fs::create_dir(&dir).unwrap();
+    env.cake_ok(&dir, &["init"]);
+    env.cake_ok(&dir, &["add", "x", "-m", "# x"]);
+    git(&dir, &["init", "-q", "-b", "main"]);
+    git(&dir, &["commit", "-q", "--allow-empty", "-m", "code"]);
+    env.cake_ok(&dir, &["init"]);
+    assert_eq!(git(&dir.join(".cake"), &["ls-files"]), ".gitignore\nitems/x.md");
 }
 
 #[test]

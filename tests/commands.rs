@@ -277,19 +277,22 @@ fn ready_orders_by_score_deadline_before_prio() {
 #[test]
 fn init_links_more_dirs_to_an_existing_store_with_a_default_goal() {
     let env = Env::new();
-    let (paper, gfs) = (env.path("paper"), env.path("gekkofs"));
+    let (phd, paper, gfs) = (env.path("phd"), env.path("paper"), env.path("gekkofs"));
     std::fs::create_dir_all(gfs.join("src")).unwrap();
     std::fs::create_dir(&paper).unwrap();
-    let store = env.path("phd/.cake");
-    let st = store.to_str().unwrap();
+    std::fs::create_dir(&phd).unwrap();
+    let st = phd.to_str().unwrap();
+    assert!(env.cake_err(&paper, &["--store", st, "init"]).contains("No store at"), "--store only links");
+    env.cake_ok(&phd, &["init"]);
     env.cake_ok(&paper, &["--store", st, "init"]);
+    assert!(env.cake_err(&phd.join(".cake"), &["--store", st, "init"]).contains("already"));
     assert!(env.cake_err(&gfs, &["--store", st, "init", "--parent", "gekkofs"]).contains("not found"));
     env.cake_ok(&paper, &["add", "gekkofs", "-m", "# GekkoFS"]);
-    env.cake_ok(&gfs, &["--store", st, "init", "--parent", "gekkofs"]);
+    env.cake_ok(&gfs, &["--store", &format!("{}/.cake", st), "init", "--parent", "gekkofs"]);
     let list = std::fs::read_to_string(env.path("config/cake/stores.json")).unwrap();
     assert!(list.contains("\"parent\": \"gekkofs\""), "{}", list);
     env.cake_ok(&gfs.join("src"), &["add", "x", "-m", "# X"]);
-    assert!(store.join("items/gekkofs/x.md").is_file(), "the linked dir finds the store and its goal");
+    assert!(phd.join(".cake/items/gekkofs/x.md").is_file(), "the linked dir finds the store and its goal");
     env.cake_ok(&paper, &["rename", "gekkofs", "gfs"]);
     let list = std::fs::read_to_string(env.path("config/cake/stores.json")).unwrap();
     assert!(list.contains("\"parent\": \"gfs\""), "{}", list);
@@ -302,9 +305,9 @@ fn captures_in_a_linked_dir_land_under_its_goal() {
     let (home, gfs) = (env.path("phd"), env.path("gekkofs"));
     std::fs::create_dir_all(gfs.join("src")).unwrap();
     std::fs::create_dir(&home).unwrap();
-    let store = env.path("stores/phd");
-    let st = store.to_str().unwrap();
-    env.cake_ok(&home, &["--store", st, "init"]);
+    env.cake_ok(&home, &["init"]);
+    let store = home.join(".cake");
+    let st = home.to_str().unwrap();
     env.cake_ok(&home, &["add", "gekkofs", "--note", "-m", "# GekkoFS"]);
     env.cake_ok(&gfs, &["--store", st, "init", "--parent", "gekkofs"]);
     env.cake_ok(&gfs.join("src"), &["add", "a", "-m", "# A"]);
@@ -330,9 +333,8 @@ fn a_linked_dir_sees_only_its_goal_unless_wide() {
     let (home, gfs) = (env.path("phd"), env.path("gekkofs"));
     std::fs::create_dir_all(&gfs).unwrap();
     std::fs::create_dir(&home).unwrap();
-    let st = env.path("stores/phd");
-    let st = st.to_str().unwrap();
-    env.cake_ok(&home, &["--store", st, "init"]);
+    env.cake_ok(&home, &["init"]);
+    let st = home.to_str().unwrap();
     env.cake_ok(&home, &["add", "gekkofs", "--note", "-m", "# GekkoFS"]);
     env.cake_ok(&home, &["add", "paper", "--note", "-m", "# Paper"]);
     env.cake_ok(&home, &["add", "g1", "--task", "-p", "gekkofs", "-m", "# G1"]);
@@ -348,12 +350,14 @@ fn a_linked_dir_sees_only_its_goal_unless_wide() {
 }
 
 #[test]
-fn separate_store_is_found_from_its_dir_and_subtrees_move_between_stores() {
+fn a_linked_store_is_found_from_its_dirs_and_subtrees_move_between_stores() {
     let env = Env::new();
-    let paper = env.path("paper");
+    let (paper, home) = (env.path("paper"), env.path("stores/paper"));
     std::fs::create_dir(&paper).unwrap();
-    let store = env.path("stores/paper");
-    env.cake_ok(&paper, &["--store", store.to_str().unwrap(), "init"]);
+    std::fs::create_dir_all(&home).unwrap();
+    env.cake_ok(&home, &["init"]);
+    let store = home.join(".cake");
+    env.cake_ok(&paper, &["--store", home.to_str().unwrap(), "init"]);
     env.cake_ok(&paper.join(""), &["add", "outline", "-m", "# Outline"]);
     assert!(store.join("items/outline.md").is_file(), "found via the dirs of stores.json");
 
@@ -367,11 +371,37 @@ fn separate_store_is_found_from_its_dir_and_subtrees_move_between_stores() {
     assert!(store.join("items/idea/sub.md").is_file());
     assert!(!d.join(".cake/items/idea.md").exists() && !d.join(".cake/items/idea").exists());
 
-    env.cake_ok(&paper, &["mv", "idea", "--to-store", "p"]);
-    assert!(d.join(".cake/items/idea/sub.md").is_file());
+    env.cake_ok(&paper, &["mv", "idea", "--to-store", d.to_str().unwrap()]);
+    assert!(d.join(".cake/items/idea/sub.md").is_file(), "a path names the dir of the store");
     assert!(env.cake_err(&paper, &["mv", "outline", "--to-store", "nowhere"]).contains("not a store"));
     env.cake_ok(&d, &["add", "outline", "-m", "# Outline"]);
     assert!(env.cake_err(&paper, &["mv", "outline", "--to-store", "p"]).contains("already exists"));
+}
+
+#[test]
+fn stores_of_the_old_layout_move_into_a_cake_dir_on_first_use() {
+    let env = Env::new();
+    let old = env.path("stores/old");
+    std::fs::create_dir_all(old.join("items")).unwrap();
+    std::fs::write(old.join("items/x.md"), "---\ncreated: 2026-11-01T10:00:00+01:00\n---\n# X\n").unwrap();
+    std::fs::create_dir_all(env.path("config/cake")).unwrap();
+    let list = format!("{{\"old\": {{\"store\": \"{}\"}}}}", old.display());
+    std::fs::write(env.path("config/cake/stores.json"), list).unwrap();
+    let out = env.cake(&env.path(""), &["--store", "stores/old", "ls"]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("moved the store"));
+    assert!(old.join(".cake/items/x.md").is_file() && !old.join("items").exists());
+    assert_eq!(json_ids(&env, &old, &["ls"]), vec!["x"]);
+
+    let global = env.path("data/cake");
+    std::fs::create_dir_all(global.join("items")).unwrap();
+    std::fs::write(global.join("items/y.md"), "---\ncreated: 2026-11-01T10:00:00+01:00\n---\n# Y\n").unwrap();
+    assert_eq!(json_ids(&env, &env.path(""), &["-g", "ls"]), vec!["y"]);
+    assert!(global.join(".cake/items/y.md").is_file());
+
+    let code = env.path("code");
+    std::fs::create_dir_all(code.join("items")).unwrap();
+    env.cake(&env.path(""), &["--store", code.to_str().unwrap(), "ls"]);
+    assert!(code.join("items").is_dir() && !code.join(".cake").exists(), "an unlisted dir is not touched");
 }
 
 #[test]

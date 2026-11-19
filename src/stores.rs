@@ -1,5 +1,5 @@
-//! the known stores, ~/.config/cake/stores.json: name -> store dir and the
-//! project dirs that use it without a .cake inside (e.g. a paper repo).
+//! the known stores, ~/.config/cake/stores.json: name -> store (a .cake)
+//! and the dirs that use it without a .cake of their own (e.g. a paper repo).
 //! Written by cake (init, first use), may be edited by hand.
 
 use crate::util;
@@ -72,7 +72,7 @@ pub fn load() -> Result<Stores, Box<dyn Error>> {
     let mut stores: Stores =
         serde_json::from_str(&text).map_err(|e| format!("{}: {}", file().unwrap().display(), e))?;
     for e in stores.values_mut() {
-        e.store = expand(&e.store);
+        e.store = util::store_dir(&expand(&e.store));
         e.dirs = e.dirs.iter().map(|d| Dir::new(expand(d.path()), d.parent().map(String::from))).collect();
     }
     Ok(stores)
@@ -160,7 +160,7 @@ pub fn link_of(stores: &Stores, path: &Path) -> Option<(PathBuf, Option<String>)
         .map(|(d, s)| (s.clone(), d.parent().map(String::from)))
 }
 
-/// a name from the list, `global`, or a path
+/// a name from the list, `global`, or a path (a dir or its .cake)
 pub fn resolve(stores: &Stores, target: &str) -> Result<PathBuf, Box<dyn Error>> {
     if let Some(e) = stores.get(target) {
         return Ok(e.store.clone());
@@ -168,17 +168,22 @@ pub fn resolve(stores: &Stores, target: &str) -> Result<PathBuf, Box<dyn Error>>
     if target == "global" || target == "-g" {
         return util::global_store();
     }
-    Ok(expand(Path::new(target)))
+    Ok(util::store_dir(&expand(Path::new(target))))
 }
 
 /// (name, store) of every known store that exists, the global one last
 pub fn all() -> Result<Vec<(String, PathBuf)>, Box<dyn Error>> {
-    let mut out: Vec<(String, PathBuf)> = load()?
+    let stores = load()?;
+    for e in stores.values() {
+        util::upgrade_layout(&e.store)?;
+    }
+    let global = util::global_store()?;
+    util::upgrade_layout(&global)?;
+    let mut out: Vec<(String, PathBuf)> = stores
         .into_iter()
         .filter(|(_, e)| e.store.join("items").is_dir())
         .map(|(n, e)| (n, e.store))
         .collect();
-    let global = util::global_store()?;
     if global.join("items").is_dir() && !out.iter().any(|(_, s)| absolute(s) == absolute(&global)) {
         out.push(("global".to_string(), global));
     }
@@ -195,7 +200,7 @@ mod tests {
     #[serial]
     fn links_carry_a_default_goal_that_follows_renames() {
         let sandbox = Sandbox::new();
-        let (s, t, g, p) = (sandbox.path().join("s"), sandbox.path().join("t"), sandbox.path().join("g"), sandbox.path().join("p"));
+        let (s, t, g, p) = (sandbox.path().join("s/.cake"), sandbox.path().join("t/.cake"), sandbox.path().join("g"), sandbox.path().join("p"));
         for x in [&s, &t, &g, &p, &g.join("sub")] {
             std::fs::create_dir_all(x).unwrap();
         }
@@ -219,7 +224,7 @@ mod tests {
     #[serial]
     fn register_names_uniquely_and_merges_dirs() {
         let sandbox = Sandbox::new();
-        let (a, b, d) = (sandbox.path().join("a"), sandbox.path().join("b"), sandbox.path().join("d"));
+        let (a, b, d) = (sandbox.path().join("a/.cake"), sandbox.path().join("b/.cake"), sandbox.path().join("d"));
         for p in [&a, &b, &d] {
             std::fs::create_dir_all(p).unwrap();
         }
@@ -232,5 +237,6 @@ mod tests {
         assert_eq!(for_dir(&stores, &d.join("sub")), Some(absolute(&a)));
         assert_eq!(for_dir(&stores, &b), None);
         assert_eq!(resolve(&stores, "paper-2").unwrap(), absolute(&b));
+        assert_eq!(resolve(&stores, a.parent().unwrap().to_str().unwrap()).unwrap(), a, "a dir means its .cake");
     }
 }

@@ -461,9 +461,50 @@ pub fn lock(lock: &mut fd_lock::RwLock<File>, exclusive: bool) -> Result<LockGua
 
 pub const STORE_GITIGNORE: &str = "index.sqlite\n.lock\n.*.md.tmp\n.obsidian/workspace*.json\n";
 
-pub fn global_store() -> Result<PathBuf, Box<dyn Error>> {
+/// the dir of the global store, e.g. ~/.local/share/cake
+pub fn global_dir() -> Result<PathBuf, Box<dyn Error>> {
     let base_dirs = BaseDirs::new().ok_or("Could not find data directory")?;
     Ok(base_dirs.data_dir().join(PKG_NAME))
+}
+
+/// the global store: a .cake like every other store
+pub fn global_store() -> Result<PathBuf, Box<dyn Error>> {
+    Ok(global_dir()?.join(STORE_DIR))
+}
+
+/// a store as given (--store, CAKE_STORE, stores.json) names a dir or its
+/// .cake; the store is always the .cake
+pub fn store_dir(p: &Path) -> PathBuf {
+    if p.file_name().is_some_and(|n| n == STORE_DIR) {
+        p.to_path_buf()
+    } else {
+        p.join(STORE_DIR)
+    }
+}
+
+/// moves a store of the old layout (items/ right in its dir, as the global
+/// store and `cake --store DIR init` made them) with its git repo into
+/// <dir>/.cake. Only the global dir and stores listed in stores.json move:
+/// any other dir with an items/ folder may be a code repo.
+pub fn upgrade_layout(store: &Path) -> Result<(), Box<dyn Error>> {
+    let Some(dir) = store.parent().filter(|_| store.file_name().is_some_and(|n| n == STORE_DIR)) else {
+        return Ok(());
+    };
+    if store.exists() || !dir.join("items").is_dir() {
+        return Ok(());
+    }
+    let same = |a: &Path| fs::canonicalize(a).ok() == fs::canonicalize(dir).ok();
+    let listed = crate::stores::load()?.values().any(|e| e.store.parent().is_some_and(same));
+    if !listed && !same(&global_dir()?) {
+        return Ok(());
+    }
+    let mut tmp = dir.as_os_str().to_owned();
+    tmp.push(".cake-move");
+    fs::rename(dir, &tmp)?;
+    fs::create_dir(dir)?;
+    fs::rename(&tmp, store)?;
+    eprintln!("moved the store {} into {} (all stores live in a .cake now)", dir.display(), store.display());
+    Ok(())
 }
 
 /// the nearest .cake with an items dir, else a listed store whose dirs hold

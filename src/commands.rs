@@ -765,10 +765,12 @@ where
     Ok(Report::Value(serde_json::json!({ "path": target, "content": data })))
 }
 
-/// Creates the store: inside a git repo a worktree of `config.git_branch` at
-/// `<repo>/.cake` (attached if the branch exists locally or on the remote),
-/// otherwise a plain `.cake` dir in the current directory.
-/// With `global`, the global store becomes a git repo on `main`.
+/// Creates the store `.cake` of the current dir, or with `global` of the
+/// global dir (made a git repo first): in a git repo a worktree of
+/// `config.git_branch` at `<repo>/.cake`, attached if the branch exists
+/// locally or on the remote, else a plain `.cake`. A plain `.cake` with
+/// items, used before git, is adopted. With `store` (an existing store) the
+/// current dir is linked to it instead; captures there go under `parent`.
 pub fn init<F>(debug: F, config: &Config, global: bool, store: Option<&Path>, parent: Option<&str>, items: &Store) -> Result<Report, Box<dyn Error>>
 where
     F: Fn(&str),
@@ -776,90 +778,114 @@ where
     if parent.is_some() && (store.is_none() || global) {
         return Err(error::invalid("--parent links a dir to a store: use it with --store DIR."));
     }
-    // a separate store, used from the current dir (e.g. a paper repo)
-    if let Some(p) = store.filter(|_| !global) {
-        if p.join("items").is_dir() {
-            // an existing store: link this dir to it
-            let cwd = std::env::current_dir()?;
-            let abs = fs::canonicalize(p)?;
-            if cwd.starts_with(&abs) || abs.parent().is_some_and(|r| cwd.starts_with(r) && abs.ends_with(util::STORE_DIR)) {
-                return Err(error::invalid(format!("There is already a store at {}.", p.display())));
-            }
-            if let Some(id) = parent.filter(|id| items.get_item(id).is_none()) {
-                return Err(error::not_found(id));
-            }
-            let name = abs.parent().filter(|_| abs.ends_with(util::STORE_DIR)).unwrap_or(&abs).file_name().map_or("store".into(), |n| n.to_string_lossy().to_string());
-            crate::stores::link(&abs, &name, &cwd, parent)?;
-            say!("{} uses the store {}{}.", cwd.display(), p.display(), parent.map_or(String::new(), |g| format!(", captures go under {}", g)));
-            return Ok(store_report(p));
-        }
-        if parent.is_some() {
-            return Err(error::invalid("--parent needs an existing store with that item; create the store first."));
-        }
-        let files = create_store_files(p)?;
-        if !config.disable_git {
-            git::init_repo(p)?;
-            git::commit(p, &files, "cake: init")?;
-        }
-        let cwd = std::env::current_dir()?;
-        let abs = fs::canonicalize(p)?;
-        let dirs = if cwd.starts_with(&abs) { vec![] } else { vec![cwd.clone()] };
-        let name = cwd.file_name().map_or("store".into(), |n| n.to_string_lossy().to_string());
-        crate::stores::register(&abs, &name, &dirs)?;
-        say!("New store {} created, used from {} :)", p.display(), cwd.display());
-        return Ok(store_report(p));
+    if let Some(p) = store {
+        return link(p, parent, items);
     }
-    if global {
-        let p = util::global_store()?;
-        debug(&format!("init: global store {:?}", p));
-        let exists = if config.disable_git {
-            p.join("items").is_dir()
-        } else {
-            git::is_store_repo(&p)
-        };
-        if exists {
-            return Err(error::invalid(format!("There is already a store at {}.", p.display())));
+    let dir = if global {
+        let dir = util::global_dir()?;
+        if !config.disable_git && !git::is_store_repo(&dir) {
+            debug(&format!("init: global repo {:?}", dir));
+            git::init_repo(&dir, "cake: init")?;
         }
-        // an existing plain global store is adopted with its items
-        let mut files = create_store_files(&p)?;
-        if fs::read_dir(p.join("items"))?.next().is_some() {
-            files.push(p.join("items"));
-        }
-        if !config.disable_git {
-            git::init_repo(&p)?;
-            git::commit(&p, &files, "cake: init")?;
-        }
-        say!("New global store {} created :)", p.display());
-        return Ok(store_report(&p));
-    }
-    let cwd = std::env::current_dir()?;
-    if config.disable_git || !git::is_repo(&cwd) {
-        let p = cwd.join(util::STORE_DIR);
+        dir
+    } else {
+        std::env::current_dir()?
+    };
+    if config.disable_git || !git::is_repo(&dir) {
+        let p = dir.join(util::STORE_DIR);
         debug(&format!("init: new store {:?}", p));
         if p.join("items").is_dir() {
-            return Err(error::invalid("There is already a store here."));
+            return Err(error::invalid(format!("There is already a store at {}.", p.display())));
         }
         create_store_files(&p)?;
         say!("New store {} created :)", p.display());
         return Ok(store_report(&p));
     }
-    let repo = git::toplevel(&cwd)?;
+    let repo = git::toplevel(&dir)?;
     let p = repo.join(util::STORE_DIR);
-    if p.exists() {
-        return Err(error::invalid(format!("{} already exists.", p.display())));
+    if git::is_store_repo(&p) {
+        return Err(error::invalid(format!("There is already a store at {}.", p.display())));
     }
+    // a plain .cake with items, used before git: set aside and moved in
+    let adopt = match p.exists() {
+        false => None,
+        true if p.join("items").is_dir() => {
+            let tmp = repo.join(".cake-adopt");
+            fs::rename(&p, &tmp)?;
+            Some(tmp)
+        }
+        true => return Err(error::invalid(format!("{} already exists.", p.display()))),
+    };
     debug(&format!("init: worktree {:?} on {}", p, config.git_branch));
-    let attached = git::add_worktree(&repo, &p, &config.git_branch, &config.git_remote_name)?;
+    let attached = match git::add_worktree(&repo, &p, &config.git_branch, &config.git_remote_name) {
+        Ok(a) => a,
+        Err(e) => {
+            if let Some(tmp) = &adopt {
+                let _ = fs::rename(tmp, &p);
+            }
+            return Err(e);
+        }
+    };
     git::exclude(&repo, &format!("/{}/", util::STORE_DIR))?;
-    if attached {
+    let mut files = if attached {
         fs::create_dir_all(p.join("items"))?;
-        say!("Attached store {} on branch {} :)", p.display(), config.git_branch);
+        vec![]
     } else {
-        let files = create_store_files(&p)?;
-        git::commit(&p, &files, "cake: init")?;
-        say!("New store {} created on branch {} :)", p.display(), config.git_branch);
+        create_store_files(&p)?
+    };
+    if let Some(tmp) = adopt {
+        move_into(&tmp, &p, &mut files).map_err(|e| format!("{} (the rest is in {})", e, tmp.display()))?;
+        fs::remove_dir_all(&tmp)?;
+    }
+    git::commit(&p, &files, "cake: init")?;
+    match attached {
+        true => say!("Attached store {} on branch {} :)", p.display(), config.git_branch),
+        false => say!("New store {} created on branch {} :)", p.display(), config.git_branch),
     }
     Ok(store_report(&p))
+}
+
+/// links the current dir to the existing store `p`
+fn link(p: &Path, parent: Option<&str>, items: &Store) -> Result<Report, Box<dyn Error>> {
+    if !p.join("items").is_dir() {
+        let dir = p.parent().unwrap_or(p);
+        return Err(error::coded("not_found", format!("No store at {}: run `cake init` in {} first.", p.display(), dir.display())));
+    }
+    let cwd = std::env::current_dir()?;
+    let abs = fs::canonicalize(p)?;
+    let dir = abs.parent().unwrap_or(&abs);
+    if cwd.starts_with(dir) {
+        return Err(error::invalid(format!("{} uses the store {} already.", cwd.display(), p.display())));
+    }
+    if let Some(id) = parent.filter(|id| items.get_item(id).is_none()) {
+        return Err(error::not_found(id));
+    }
+    let name = dir.file_name().map_or("store".into(), |n| n.to_string_lossy().to_string());
+    crate::stores::link(&abs, &name, &cwd, parent)?;
+    say!("{} uses the store {}{}.", cwd.display(), p.display(), parent.map_or(String::new(), |g| format!(", captures go under {}", g)));
+    Ok(store_report(p))
+}
+
+/// moves the entries of `from` into `to`, dirs merged; the lock and the
+/// .gitignore of `from` stay behind; an entry in both is an error
+fn move_into(from: &Path, to: &Path, files: &mut Vec<PathBuf>) -> Result<(), Box<dyn Error>> {
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name == ".lock" || name == ".gitignore" {
+            continue;
+        }
+        let target = to.join(&name);
+        if !target.exists() {
+            fs::rename(entry.path(), &target)?;
+            files.push(target);
+        } else if target.is_dir() && entry.path().is_dir() {
+            move_into(&entry.path(), &target, files)?;
+        } else {
+            return Err(error::invalid(format!("{} exists already", target.display())));
+        }
+    }
+    Ok(())
 }
 
 /// creates `items/` and `.gitignore` in `root`, returns the files to commit

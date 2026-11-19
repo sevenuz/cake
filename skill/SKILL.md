@@ -5,11 +5,12 @@ description: Track tasks, plans, docs and ideas with the cake CLI (markdown item
 
 # cake
 
-One markdown file per item in `.cake/items/` (project store, own git branch),
-a separate store used from a project dir, or `~/.local/share/cake`
-(personal store, `-g`). All known stores: `~/.config/cake/stores.json`.
-A dir can use a store elsewhere (`cake --store <store> init [--parent
-<goal>]` there); with a goal, `cake add` without `-p` lands under it
+One markdown file per item in `.cake/items/`. Every store is a `.cake` dir:
+in a project (own git branch), in a repo of its own used from other dirs,
+or `~/.local/share/cake/.cake` (personal store, `-g`). All known stores:
+`~/.config/cake/stores.json`. A dir can use a store elsewhere (`cake
+--store <dir> init [--parent <goal>]` there; `<dir>` or `<dir>/.cake`);
+with a goal, `cake add` without `-p` lands under it
 (`-p -`: top level), and `ls`, `ready` and the form show only that
 goal's subtree (`ls --wide`: the whole store; `-p` picks another subtree).
 The tree is on disk: children of `sync.md` live in `sync/`. Every change

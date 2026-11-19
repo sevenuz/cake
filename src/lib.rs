@@ -33,7 +33,7 @@ use std::io::IsTerminal;
 use std::{
     env::{args, current_dir},
     error::Error,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 use ratatui::crossterm::style::Stylize;
 
@@ -41,7 +41,8 @@ use ratatui::crossterm::style::Stylize;
 #[derive(Parser)]
 #[command(version)]
 pub struct Cli {
-    /// store directory, default: nearest .cake, else the global store
+    /// store: a dir with a .cake or the .cake itself; default: nearest .cake,
+    /// else a linked dir (stores.json), else the global store
     #[arg(long, value_name = "DIR", env = "CAKE_STORE")]
     pub store: Option<PathBuf>,
 
@@ -502,9 +503,9 @@ pub enum Commands {
         #[arg(long, group = "mode")]
         abort: bool,
     },
-    /// create a store; in a git repo on its own branch, attached if it exists on the remote;
-    /// with --store DIR a separate store used from here (listed in stores.json); an existing
-    /// one is linked to this dir
+    /// create the store .cake here (-g: the global one); in a git repo on its own branch,
+    /// attached if it exists on the remote; with --store DIR link this dir to the store in
+    /// DIR instead (listed in stores.json)
     Init {
         /// with --store: what is captured here goes under this item (a goal)
         #[arg(long)]
@@ -693,15 +694,15 @@ fn guess_root(args: &[String]) -> Result<PathBuf, Box<dyn Error>> {
     let mut it = args.iter().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
-            "--store" => return Ok(it.next().map(PathBuf::from).unwrap_or_default()),
+            "--store" => return Ok(util::store_dir(&it.next().map(PathBuf::from).unwrap_or_default())),
             "-g" | "--global" => return util::global_store(),
-            _ if a.starts_with("--store=") => return Ok(PathBuf::from(&a[8..])),
+            _ if a.starts_with("--store=") => return Ok(util::store_dir(Path::new(&a[8..]))),
             _ if !a.starts_with('-') => break,
             _ => (),
         }
     }
     match std::env::var("CAKE_STORE") {
-        Ok(s) if !s.is_empty() => Ok(PathBuf::from(s)),
+        Ok(s) if !s.is_empty() => Ok(util::store_dir(Path::new(&s))),
         _ => util::find_store(&current_dir()?),
     }
 }
@@ -790,13 +791,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     debug(&format!("{:?}", args));
 
     let root = match &cli.store {
-        Some(p) => p.to_owned(),
+        Some(p) => util::store_dir(p),
         None if cli.global => util::global_store()?,
         None => util::find_store(&current_dir()?)?,
     };
+    util::upgrade_layout(&root)?;
     debug(&format!("Store: {}", root.display()));
-    // project stores join the list on first use
-    if root.file_name().is_some_and(|n| n == util::STORE_DIR) && root.join("items").is_dir() {
+    // stores join the list on first use, the global one stays `global`
+    if root.join("items").is_dir() && root != util::global_store()? {
         let name = root.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string());
         stores::register(&root, name.as_deref().unwrap_or("store"), &[])?;
     }
@@ -1121,7 +1123,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Some(Commands::Status {}) => commands::status(&config, &store)?,
         Some(Commands::Stats { period, all }) => commands::stats(&config, &store, period, *all)?,
         Some(Commands::Show { target }) => commands::show(debug, &config, &store, target)?,
-        Some(Commands::Init { parent }) => commands::init(debug, &config, cli.global, cli.store.as_deref(), parent.as_deref(), &store)?,
+        Some(Commands::Init { parent }) => commands::init(debug, &config, cli.global, cli.store.is_some().then_some(root.as_path()), parent.as_deref(), &store)?,
         Some(Commands::Config {}) => commands::config(debug, &config)?,
         Some(Commands::Sync { .. }) => unreachable!("handled before loading the store"),
         Some(Commands::Form { .. }) => unreachable!("handled before the lock"),
