@@ -11,6 +11,10 @@ owner: sevenuz
 estimate: 1h
 time:
   - 2026-11-19T12:24:14+01:00/2026-11-19T13:34:28+01:00
+tokens_in: 11
+tokens_out: 5144
+tokens_cache_read: 554070
+tokens_cache_write: 130082
 ---
 # Docs: how stores work and how to set them up
 
