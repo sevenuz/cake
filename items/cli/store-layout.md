@@ -1,6 +1,6 @@
 ---
 id: store-layout
-status: task
+status: doing
 parent: "[[cli]]"
 created: 2026-11-19T12:16:28+01:00
 by: claude-code
@@ -8,6 +8,8 @@ sessions: [59209220-8a77-4046-9145-aa74c0881358]
 assignee: claude-code
 owner: sevenuz
 estimate: 3h
+time:
+  - 2026-11-19T12:16:28+01:00/
 ---
 # Stores: one layout, every store in a .cake dir
 
