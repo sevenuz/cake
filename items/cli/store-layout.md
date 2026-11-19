@@ -11,6 +11,10 @@ owner: sevenuz
 estimate: 3h
 time:
   - 2026-11-19T12:16:28+01:00/2026-11-19T12:24:14+01:00
+tokens_in: 53
+tokens_out: 21746
+tokens_cache_read: 3505785
+tokens_cache_write: 34678
 ---
 # Stores: one layout, every store in a .cake dir
 
