@@ -1,14 +1,15 @@
 ---
 id: rule-read
-status: doing
+status: review
 parent: "[[rule-notes]]"
 created: 2026-10-27T14:51:01+01:00
 by: claude-code
+commits: [9fa6d3b]
 sessions: [69b1d969-f2c3-4f41-b58d-a996441f99e2, 81954e9f-9185-4d55-a366-5581de2aacd6, 1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 assignee: claude-code
 owner: sevenuz
 time:
-  - 2026-11-20T23:07:41+01:00/
+  - 2026-11-20T23:07:41+01:00/2026-11-20T23:09:54+01:00
 ---
 # Rule and goal notes that agents read first
 
@@ -22,3 +23,6 @@ time:
   way up to the top (the skill says so)
 - later maybe: `cake rules <id>` prints that list
 - done when: the skill does it, and 1–2 real rules exist in this store
+
+## Log
+- 2026-11-20 changed: new command cake rules [ID]: top-level rule notes, then on the way down to ID each goal note and the rule notes filed directly under each step; without ID the top-level rules and goals. The skill uses it in the agent run (step 2) and at session start; it notes that -t rule,goal means both tags (that is why agents found nothing). First real rule: rule-principles (from AGENTS.md). try: cake rules gantt-view; cake rules
