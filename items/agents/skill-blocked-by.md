@@ -1,6 +1,6 @@
 ---
 id: skill-blocked-by
-status: task
+status: doing
 parent: "[[agents]]"
 created: 2026-11-20T22:11:11+01:00
 by: claude-code
@@ -8,6 +8,8 @@ sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 assignee: claude-code
 owner: sevenuz
 estimate: 20m
+time:
+  - 2026-11-20T22:11:14+01:00/
 ---
 # Triage proposes missing blocked_by links
 
