@@ -11,6 +11,10 @@ owner: sevenuz
 estimate: 20m
 time:
   - 2026-11-20T22:11:14+01:00/2026-11-20T22:12:29+01:00
+tokens_in: 8
+tokens_out: 1376
+tokens_cache_read: 418229
+tokens_cache_write: 1888
 ---
 # Triage proposes missing blocked_by links
 
