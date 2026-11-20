@@ -11,6 +11,10 @@ assignee: claude-code
 owner: sevenuz
 time:
   - 2026-11-20T23:12:46+01:00/2026-11-20T23:14:34+01:00
+tokens_in: 14
+tokens_out: 4787
+tokens_cache_read: 1564090
+tokens_cache_write: 8045
 ---
 # Sync errors that say what failed and what to do
 
