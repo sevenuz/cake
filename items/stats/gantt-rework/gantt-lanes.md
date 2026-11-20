@@ -12,6 +12,10 @@ owner: sevenuz
 estimate: 2h
 time:
   - 2026-11-20T22:15:28+01:00/2026-11-20T22:18:40+01:00
+tokens_in: 24
+tokens_out: 12654
+tokens_cache_read: 1574720
+tokens_cache_write: 21103
 ---
 # Gantt schedule: user in a row, agents in parallel
 
