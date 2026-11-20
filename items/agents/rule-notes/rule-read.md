@@ -10,6 +10,10 @@ assignee: claude-code
 owner: sevenuz
 time:
   - 2026-11-20T23:07:41+01:00/2026-11-20T23:09:54+01:00
+tokens_in: 24
+tokens_out: 6456
+tokens_cache_read: 2223383
+tokens_cache_write: 12411
 ---
 # Rule and goal notes that agents read first
 
