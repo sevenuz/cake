@@ -9,3 +9,6 @@ assignee: ai
 owner: sevenuz
 ---
 gantt critical path has to be reworked based on the osdi phd store example
+
+## Log
+- 2026-11-20 comment (claude-code): triage: the example is the store in ~/git/phd, goal osdi (Hybrid paper resubmission, deadline 2026-12-08) with the fmt-, fix-, dbar- and story- plans. Open: what the user finds wrong in its critical path; ask before planning.
