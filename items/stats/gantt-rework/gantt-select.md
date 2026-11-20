@@ -12,6 +12,10 @@ owner: sevenuz
 estimate: 1h
 time:
   - 2026-11-20T22:22:07+01:00/2026-11-20T22:23:59+01:00
+tokens_in: 10
+tokens_out: 4914
+tokens_cache_read: 844678
+tokens_cache_write: 8338
 ---
 # Gantt view: select rows and act on them
 
