@@ -1,6 +1,6 @@
 ---
 id: gantt-select
-status: task
+status: doing
 parent: "[[gantt-rework]]"
 blocked_by: ["[[gantt-view]]"]
 created: 2026-11-20T21:56:29+01:00
@@ -9,6 +9,8 @@ sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 assignee: claude-code
 owner: sevenuz
 estimate: 1h
+time:
+  - 2026-11-20T22:22:07+01:00/
 ---
 # Gantt view: select rows and act on them
 
