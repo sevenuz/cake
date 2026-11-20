@@ -1,5 +1,5 @@
 ---
-id: pscs0p
+id: design-model
 tags: [design, doc]
 parent: "[[design]]"
 created: 2026-10-27T12:28:19+01:00
