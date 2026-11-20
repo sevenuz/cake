@@ -3,6 +3,7 @@ id: ryyteb
 status: task
 created: 2026-11-19T14:02:30+01:00
 by: sevenuz
+assignee: ai
 owner: sevenuz
 ---
 if i create a new item with cake add, is it a note automatically or do i always have to add --note?
