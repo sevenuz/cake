@@ -1,12 +1,14 @@
 ---
 id: debug-git-cmds
-status: task
+status: doing
 parent: "[[cli]]"
 created: 2026-11-19T11:45:33+01:00
 by: sevenuz
 sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-20T23:14:42+01:00/
 ---
 -d debug output should show git commands before executing them
 
