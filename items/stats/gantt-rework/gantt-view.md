@@ -12,6 +12,10 @@ owner: sevenuz
 estimate: 2h30m
 time:
   - 2026-11-20T22:18:52+01:00/2026-11-20T22:22:04+01:00
+tokens_in: 28
+tokens_out: 12175
+tokens_cache_read: 2152438
+tokens_cache_write: 22360
 ---
 # Gantt view: all targets in one view
 
