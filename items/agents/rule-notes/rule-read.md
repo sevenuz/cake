@@ -1,5 +1,5 @@
 ---
-id: kqejfn
+id: rule-read
 status: task
 parent: "[[rule-notes]]"
 created: 2026-10-27T14:51:01+01:00

@@ -4,7 +4,7 @@ tags: [doc]
 parent: "[[workflow-v2]]"
 created: 2026-11-13T23:13:42+01:00
 by: claude-code
-sessions: [81954e9f-9185-4d55-a366-5581de2aacd6]
+sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, 1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 ---
 # Workflow v2 design: decisions, reasons, details
 
@@ -87,7 +87,7 @@ Rejected:
   scope; otherwise it decides and says so in its review note
 - rules: notes tagged `rule`/`goal` apply to their subtree (top level:
   whole store); agents read the ones up the tree before splitting,
-  working or asking ([[kqejfn]])
+  working or asking ([[rule-read]])
 
 Rejected: a cap of items per run. It does not match the real limit,
 which is the user's review capacity.
