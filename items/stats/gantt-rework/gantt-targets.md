@@ -1,11 +1,12 @@
 ---
 id: gantt-targets
-status: review
+status: done
 parent: "[[gantt-rework]]"
 created: 2026-11-20T21:56:28+01:00
 by: claude-code
 commits: [1f4b9fe]
 sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
+closed: 2026-11-20T23:06:58+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 1h
