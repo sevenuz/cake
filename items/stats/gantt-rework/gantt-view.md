@@ -1,12 +1,13 @@
 ---
 id: gantt-view
-status: review
+status: done
 parent: "[[gantt-rework]]"
 blocked_by: ["[[gantt-lanes]]"]
 created: 2026-11-20T21:56:29+01:00
 by: claude-code
 commits: [b9d0f00]
 sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
+closed: 2026-11-20T23:07:04+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 2h30m
