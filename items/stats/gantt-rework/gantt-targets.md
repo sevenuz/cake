@@ -1,6 +1,6 @@
 ---
 id: gantt-targets
-status: task
+status: doing
 parent: "[[gantt-rework]]"
 created: 2026-11-20T21:56:28+01:00
 by: claude-code
@@ -8,6 +8,8 @@ sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 assignee: claude-code
 owner: sevenuz
 estimate: 1h
+time:
+  - 2026-11-20T22:12:32+01:00/
 ---
 # Gantt targets: every open item with a deadline or due
 
