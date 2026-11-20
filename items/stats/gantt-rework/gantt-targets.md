@@ -11,6 +11,10 @@ owner: sevenuz
 estimate: 1h
 time:
   - 2026-11-20T22:12:32+01:00/2026-11-20T22:14:45+01:00
+tokens_in: 24
+tokens_out: 5904
+tokens_cache_read: 1374544
+tokens_cache_write: 13744
 ---
 # Gantt targets: every open item with a deadline or due
 
