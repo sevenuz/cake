@@ -1,6 +1,6 @@
 ---
 id: gantt-view
-status: task
+status: doing
 parent: "[[gantt-rework]]"
 blocked_by: ["[[gantt-lanes]]"]
 created: 2026-11-20T21:56:29+01:00
@@ -9,6 +9,8 @@ sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 assignee: claude-code
 owner: sevenuz
 estimate: 2h30m
+time:
+  - 2026-11-20T22:18:52+01:00/
 ---
 # Gantt view: all targets in one view
 
