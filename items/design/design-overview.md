@@ -22,4 +22,4 @@ Stages:
 No migration from `cake.md` / `cake.json`. The single-file formats, `-i/-o`
 and the json store are deleted.
 
-Design notes: [[pscs0p]], [[design-sync]], [[nkee04]], [[m15dd2]]; the skill lives in `skill/SKILL.md`. Open work: `cake ready`, `cake ls --status todo,doing`.
+Design notes: [[pscs0p]], [[design-sync]], [[design-cli]], [[m15dd2]]; the skill lives in `skill/SKILL.md`. Open work: `cake ready`, `cake ls --status todo,doing`.
