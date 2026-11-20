@@ -1,12 +1,13 @@
 ---
 id: gantt-select
-status: review
+status: done
 parent: "[[gantt-rework]]"
 blocked_by: ["[[gantt-view]]"]
 created: 2026-11-20T21:56:29+01:00
 by: claude-code
 commits: [212bc1a]
 sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
+closed: 2026-11-20T23:07:06+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 1h
