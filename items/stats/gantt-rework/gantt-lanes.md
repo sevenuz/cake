@@ -10,8 +10,8 @@ assignee: claude-code
 owner: sevenuz
 estimate: 2h
 ---
-# Gantt schedule: one task at a time per assignee
+# Gantt schedule: user in a row, agents in parallel
 
 Context: plan() in src/gantt.rs starts every task at now after its blockers, so unrelated tasks all overlap, see [[gantt-doc]].
-Change: one store-wide schedule: a lane per assignee (unassigned: owner, else the user), inside a lane earliest target date first then score, never before blockers; plans become summary bars over their children; questions take the user's median answer time, else 1 day.
-Done when: unit tests show two tasks of one assignee back to back, two assignees in parallel, a plan spanning its children and a question with the median length.
+Change: one store-wide schedule. The user's lane runs their tasks, unassigned tasks and the review steps of agent tasks one after another, earliest target date first then score, never before blockers. Agent tasks run in parallel, at most max_review at once (running or waiting for review); each ends with a review step in the user's lane (median review-to-done time, else 15 min). Plans are summary bars over their children; questions take the user's median answer time, else 1 day.
+Done when: unit tests show two user tasks back to back, agent tasks in parallel capped by max_review, the review step in the user's lane, a plan spanning its children and a question with the median length.
