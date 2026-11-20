@@ -4,7 +4,7 @@ tags: [design, doc]
 parent: "[[design]]"
 created: 2026-10-27T12:28:19+01:00
 by: claude-code
-sessions: [69b1d969-f2c3-4f41-b58d-a996441f99e2, eb1412a2-56ac-4478-9717-6ebac99000ac]
+sessions: [69b1d969-f2c3-4f41-b58d-a996441f99e2, eb1412a2-56ac-4478-9717-6ebac99000ac, 1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 ---
 # Data model: one markdown file per item, store discovery
 
@@ -133,7 +133,7 @@ Order:
 1. `--store <path>` flag / `CAKE_STORE` env.
 2. Walk up from `$PWD`: first dir containing `.cake/items/` → project store.
 3. Inside a git repo whose remote has `cake/main` but no `.cake/`
-   worktree yet → hint to run `cake init` (attach, see [[56gwt9]]).
+   worktree yet → hint to run `cake init` (attach, see [[design-sync]]).
 4. Fallback: global store `$XDG_DATA_HOME/cake` (`~/.local/share/cake`),
    itself a plain git repo on `main` (optional remote).
 
