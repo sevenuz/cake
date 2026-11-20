@@ -1,5 +1,5 @@
 ---
-id: nmqs6e
+id: search-index
 tags: [search]
 parent: "[[cli]]"
 blocked_by: ["[[mcp]]"]
