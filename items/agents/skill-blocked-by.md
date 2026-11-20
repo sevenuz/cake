@@ -1,11 +1,12 @@
 ---
 id: skill-blocked-by
-status: review
+status: done
 parent: "[[agents]]"
 created: 2026-11-20T22:11:11+01:00
 by: claude-code
 commits: [2c09135]
 sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
+closed: 2026-11-20T23:06:55+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 20m
