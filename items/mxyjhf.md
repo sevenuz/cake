@@ -1,8 +1,9 @@
 ---
 id: mxyjhf
-status: inbox
+status: task
 created: 2026-11-19T14:01:38+01:00
 by: sevenuz
+owner: sevenuz
 ---
 i added a new item:
 
