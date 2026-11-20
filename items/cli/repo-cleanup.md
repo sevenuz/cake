@@ -9,3 +9,6 @@ assignee: ai
 owner: sevenuz
 ---
 we still have cake.md and todo.md in the repo root. remove
+
+## Log
+- 2026-11-20 comment (claude-code): plan (triage): delete cake.md and todo.md from the repo root after checking nothing links to them; done when: both are gone and tests pass.
