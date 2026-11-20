@@ -16,11 +16,14 @@ Decided (user, 2026-11-20):
 - Targets: every open item with a deadline or a due, in the whole store, not only notes tagged goal. Goals sort first among targets with the same date.
 - One view for the whole store, one block per target, ordered by date. Inside a block the rows are the target's open tasks (its subtree; a leaf target is its own row).
 - Rows are selectable with j/k across all blocks and do what selected items do elsewhere in the dashboard: the card of the item under the gantt, enter opens the tree at it (`cake form all --at <id>`), e edits it.
-- No capacity model: one assignee does one task at a time, so tasks of the same assignee run one after another in clock time. Different assignees run in parallel. Hours per day are parked in [[gantt-capacity]].
+- No capacity model: the user does one task at a time, in clock time. Hours per day are parked in [[gantt-capacity]].
+- Agents (assignee ai or an agent name) run in parallel, at most max_review (store config, default 8, -1 no limit) at once: the review brake. Each agent task is followed by a review step in the owner's queue (the user's lane), so the path shows the user as the bottleneck (decided 2026-11-20).
 
 Scheduling, one pass over the whole store so every block shows the same plan:
-- Each assignee gets a lane; unassigned tasks go to the owner's lane, else the user's.
-- Order inside a lane: earliest target date first (deadline, else due, of the nearest target above the task or the task itself), then score; a task never starts before its blockers end.
+- The user's lane: their own tasks, unassigned tasks and the review steps of agent tasks, one after another. Other people each get such a lane.
+- Agent tasks: start after their blockers and when fewer than max_review agent tasks are running or waiting for review; a slot frees when the review step ends.
+- A review step: the median time from review to done of agent tasks in the history, else 15 min; already in review: only the step.
+- Order in the user's lane and of waiting agent tasks: earliest target date first (deadline, else due, of the nearest target above the task or the task itself), then score; a task never starts before its blockers end.
 - Length: own estimate, else the history median (shown with ~), else 1h.
 - A plan (task with work children) has no length of its own: a summary bar from its first child's start to its last child's end.
 - A question (task assigned to the user that blocks another) takes the median time the user needed to close questions (created to closed), else 1 day; drawn as ◆ plus a dim waiting bar.
