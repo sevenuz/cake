@@ -12,3 +12,4 @@ there is still quite a bit of AI stuff in the default config at least. we might 
 
 ## Log
 - 2026-11-20 comment (claude-code): plan (triage): split into 1) AI parts of the default config (sort_who ai, the claude triage alias) move into the skill's hooks examples, 2) an alias example in the default config, 3) the review brake: max_review is already set per store (-1 off); add a time budget for agent runs (work until ready is empty or N minutes). Done when: default config has no agent-specific commands, has an alias example, and the budget is documented in the skill.
+- 2026-11-20 comment (claude-code): decided (user, 2026-11-20): the store config shows max_review with a comment (default 8, -1 off) as part of this task.
