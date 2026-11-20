@@ -21,3 +21,6 @@ xurkat → gekkofs
 
 
 what i dont like here is the last line, the relation. its already in the header and it looks like it would be content of the note
+
+## Log
+- 2026-11-20 comment (claude-code): plan (triage): plain cake add output ends after the header and body; the 'id → parent' line goes, the parent stays in the header; done when: the CLI test for add shows no relation line.
