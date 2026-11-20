@@ -4,7 +4,7 @@ status: task
 parent: "[[triage-output]]"
 created: 2026-11-14T22:57:07+01:00
 by: claude-code
-sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
+sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657, 1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 assignee: ai
 owner: sevenuz
 ---
@@ -15,3 +15,6 @@ owner: sevenuz
 - how: the alias runs `claude -p … --output-format json`; cake reads the result (usage, duration, last summary line) when the alias output is JSON
 - items created: count by agent and time window of the run
 - done when: `cake triage` prints one line; the triage note's usage grows per run
+
+## Log
+- 2026-11-20 comment (claude-code): merged in: triage-spacing (user): the triage summary needs better spacing: blank lines between parts, full sentences, readable without context.
