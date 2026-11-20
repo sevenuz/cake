@@ -1,5 +1,5 @@
 ---
-id: fq5jbv
+id: sync-merge
 tags: [git]
 parent: "[[sync]]"
 created: 2026-10-27T12:30:10+01:00
