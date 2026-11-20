@@ -1,6 +1,6 @@
 ---
 id: gantt-lanes
-status: task
+status: doing
 parent: "[[gantt-rework]]"
 blocked_by: ["[[gantt-targets]]"]
 created: 2026-11-20T21:56:29+01:00
@@ -9,6 +9,8 @@ sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 assignee: claude-code
 owner: sevenuz
 estimate: 2h
+time:
+  - 2026-11-20T22:15:28+01:00/
 ---
 # Gantt schedule: user in a row, agents in parallel
 
