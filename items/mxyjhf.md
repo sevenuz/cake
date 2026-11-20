@@ -3,6 +3,7 @@ id: mxyjhf
 status: task
 created: 2026-11-19T14:01:38+01:00
 by: sevenuz
+assignee: ai
 owner: sevenuz
 ---
 i added a new item:
