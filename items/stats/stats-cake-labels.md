@@ -9,3 +9,6 @@ assignee: ai
 owner: sevenuz
 ---
 in the stats we have that field, cake baked and slices eaten. how is that defined and is it hard coded? i dont know if we need that. no one will understand it currently anyway
+
+## Log
+- 2026-11-20 comment (claude-code): plan (triage, user chose a): the labels 'baking time' and 'slices eaten' (hard-coded in the stats summary, src/insights.rs) become 'time tracked' (your time plus agents) and 'done'; done when: cake stats and the dashboard show the plain labels, tests updated.
