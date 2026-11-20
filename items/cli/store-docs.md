@@ -1,11 +1,12 @@
 ---
 id: store-docs
-status: review
+status: done
 parent: "[[cli]]"
 created: 2026-11-19T12:16:28+01:00
 by: claude-code
 commits: [ca7c763]
 sessions: [59209220-8a77-4046-9145-aa74c0881358]
+closed: 2026-11-20T19:28:09+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 1h
