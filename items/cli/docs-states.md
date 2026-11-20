@@ -11,3 +11,6 @@ owner: sevenuz
 if i create a new item with cake add, is it a note automatically or do i always have to add --note?
 
 we need docs defining exactly the cake state machine and params
+
+## Log
+- 2026-11-20 comment (claude-code): plan (triage): docs/states.md next to docs/stores.md: every status, who moves an item between them, what cake add creates without --task/--note (inbox), ready and review rules, with commands; done when: the user approved a short sample and it is committed.
