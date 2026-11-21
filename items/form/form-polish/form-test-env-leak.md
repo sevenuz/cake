@@ -1,11 +1,12 @@
 ---
 id: form-test-env-leak
-status: review
+status: done
 parent: "[[form-polish]]"
 created: 2026-11-14T22:49:48+01:00
 by: claude-code
 commits: [1ba1b77]
 sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac, 1ed9be18-ebbd-4e14-8abc-cf08798df82d]
+closed: 2026-11-21T13:35:08+01:00
 assignee: ai
 owner: sevenuz
 time:
