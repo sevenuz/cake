@@ -1,6 +1,6 @@
 ---
 id: rule-read
-status: task
+status: doing
 parent: "[[rule-notes]]"
 created: 2026-10-27T14:51:01+01:00
 by: claude-code
@@ -10,6 +10,7 @@ assignee: claude-code
 owner: sevenuz
 time:
   - 2026-11-20T23:07:41+01:00/2026-11-20T23:09:54+01:00
+  - 2026-11-21T01:39:42+01:00/
 tokens_in: 24
 tokens_out: 6456
 tokens_cache_read: 2223383
