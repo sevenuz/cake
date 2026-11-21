@@ -19,3 +19,4 @@ Done when: no letter means two different things across dashboard and form; help 
 
 ## Log
 - 2026-11-21 comment (claude-code): decided (user, 2026-11-21): the period moves to < (shorter) and > (longer); not t (clashes with t = task on item rows), not [ ]
+- 2026-11-21 comment (claude-code): confirmed (user, 2026-11-21): views on digits 1-4, period on < and >, v stays measure/view
