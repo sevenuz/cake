@@ -10,6 +10,10 @@ assignee: ai
 owner: sevenuz
 time:
   - 2026-11-21T01:57:54+01:00/2026-11-21T02:01:48+01:00
+tokens_in: 9
+tokens_out: 1783
+tokens_cache_read: 950237
+tokens_cache_write: 3466
 ---
 # Form tests pick up the developer's git name and session
 
