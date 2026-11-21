@@ -1,10 +1,11 @@
 ---
 id: skill-load
-status: review
+status: done
 parent: "[[agents]]"
 created: 2026-11-14T11:24:57+01:00
 by: sevenuz
 sessions: [eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657]
+closed: 2026-11-21T13:31:51+01:00
 assignee: ai
 owner: sevenuz
 ---
