@@ -1,12 +1,13 @@
 ---
 id: sync-errors
-status: review
+status: done
 tags: [git]
 parent: "[[sync]]"
 created: 2026-11-13T18:39:06+01:00
 by: claude-code
 commits: [0ea9fb0]
 sessions: [81954e9f-9185-4d55-a366-5581de2aacd6, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657, 1ed9be18-ebbd-4e14-8abc-cf08798df82d]
+closed: 2026-11-21T01:13:13+01:00
 assignee: claude-code
 owner: sevenuz
 time:
