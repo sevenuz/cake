@@ -32,3 +32,6 @@ Edge cases:
 Example: dashboard `/` `#paper @me late` `<cr>`: focus narrows to your late #paper items, tab line `/#paper @me late 2`; `<cr>` on a row opens `form mine --at draft --filter "#paper @me late"`, header `your tasks · repo · #paper @me late  2 of 5`; n/p walk the two; `<esc>` clears; h/l to answer shows "no match" instead of dropping the query.
 
 Open questions: the syntax above, or plain words + `#tag` only first? Does `/` narrow live (cost in big stores like phd)?
+
+## Log
+- 2026-11-21 comment (claude-code): decided (user, 2026-11-21): the full syntax as proposed (plain words, #tag, ~#tag, @who, is:status, p1-p3, due:7d, late); period keys are < and > (see tui-view-keys)
