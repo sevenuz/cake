@@ -1,12 +1,13 @@
 ---
 id: rule-read
 status: task
+tags: [discuss]
 parent: "[[rule-notes]]"
 created: 2026-10-27T14:51:01+01:00
 by: claude-code
 commits: [9fa6d3b]
 sessions: [69b1d969-f2c3-4f41-b58d-a996441f99e2, 81954e9f-9185-4d55-a366-5581de2aacd6, 1ed9be18-ebbd-4e14-8abc-cf08798df82d]
-assignee: claude-code
+assignee: sevenuz
 owner: sevenuz
 time:
   - 2026-11-20T23:07:41+01:00/2026-11-20T23:09:54+01:00
