@@ -1,6 +1,6 @@
 ---
 id: debug-git-cmds
-status: review
+status: task
 parent: "[[cli]]"
 created: 2026-11-19T11:45:33+01:00
 by: sevenuz
@@ -20,3 +20,4 @@ tokens_cache_write: 3626
 ## Log
 - 2026-11-20 comment (claude-code): plan (triage): with -d every git command cake runs is printed to stderr before it runs (program, args, working dir); done when: a test sees the command line on stderr with -d and nothing without.
 - 2026-11-20 changed: with -d every git command cake runs is printed to stderr as 'git -C <dir> <args>' before it runs; without -d nothing; try: cake -d add -m test
+- 2026-11-21 discuss (sevenuz): also check the code base where other useful log parameters should be shown, like which store and what an alias is doing and so on
