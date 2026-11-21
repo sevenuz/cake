@@ -1,11 +1,12 @@
 ---
 id: clippy-clean
-status: review
+status: done
 parent: "[[cli]]"
 created: 2026-11-21T02:18:13+01:00
 by: claude-code
 commits: [42f2f5e, e83b945]
 sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
+closed: 2026-11-21T13:34:47+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 1h
