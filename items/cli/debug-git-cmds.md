@@ -1,11 +1,12 @@
 ---
 id: debug-git-cmds
-status: review
+status: done
 parent: "[[cli]]"
 created: 2026-11-19T11:45:33+01:00
 by: sevenuz
 commits: [3975a81, 5d89cbf]
 sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
+closed: 2026-11-21T13:34:28+01:00
 assignee: claude-code
 owner: sevenuz
 time:
