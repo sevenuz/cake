@@ -1,11 +1,12 @@
 ---
 id: json-new-for
-status: review
+status: done
 parent: "[[agents]]"
 created: 2026-11-21T01:39:42+01:00
 by: claude-code
 commits: [caaaa80]
 sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
+closed: 2026-11-21T13:34:23+01:00
 assignee: claude-code
 owner: sevenuz
 estimate: 3h
