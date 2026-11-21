@@ -1,12 +1,14 @@
 ---
 id: form-test-env-leak
-status: task
+status: doing
 parent: "[[form-polish]]"
 created: 2026-11-14T22:49:48+01:00
 by: claude-code
-sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac]
+sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac, 1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 assignee: ai
 owner: sevenuz
+time:
+  - 2026-11-21T01:57:54+01:00/
 ---
 # Form tests pick up the developer's git name and session
 
