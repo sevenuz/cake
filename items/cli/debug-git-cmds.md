@@ -21,3 +21,4 @@ tokens_cache_write: 3626
 - 2026-11-20 comment (claude-code): plan (triage): with -d every git command cake runs is printed to stderr before it runs (program, args, working dir); done when: a test sees the command line on stderr with -d and nothing without.
 - 2026-11-20 changed: with -d every git command cake runs is printed to stderr as 'git -C <dir> <args>' before it runs; without -d nothing; try: cake -d add -m test
 - 2026-11-21 discuss (sevenuz): also check the code base where other useful log parameters should be shown, like which store and what an alias is doing and so on
+- 2026-11-21 comment (claude-code): chat 2026-11-21: also show with -d how the store was found and the scoped goal, alias expansion (also shell aliases), config files loaded, parsed selector and id prefix resolution; no hook or agent env output (cake stays unaware of AI)
