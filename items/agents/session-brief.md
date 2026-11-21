@@ -1,6 +1,6 @@
 ---
 id: session-brief
-status: task
+status: doing
 tags: [workflow]
 parent: "[[agents]]"
 blocked_by: ["[[skill-load-hooks]]"]
@@ -10,6 +10,8 @@ sessions: [69b1d969-f2c3-4f41-b58d-a996441f99e2, 81954e9f-9185-4d55-a366-5581de2
 assignee: claude-code
 owner: sevenuz
 priority: 1
+time:
+  - 2026-11-21T01:57:29+01:00/
 ---
 # Session start hook and brief
 
