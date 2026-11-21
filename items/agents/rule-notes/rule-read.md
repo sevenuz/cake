@@ -1,6 +1,6 @@
 ---
 id: rule-read
-status: review
+status: task
 parent: "[[rule-notes]]"
 created: 2026-10-27T14:51:01+01:00
 by: claude-code
@@ -30,3 +30,4 @@ tokens_cache_write: 12411
 
 ## Log
 - 2026-11-20 changed: new command cake rules [ID]: top-level rule notes, then on the way down to ID each goal note and the rule notes filed directly under each step; without ID the top-level rules and goals. The skill uses it in the agent run (step 2) and at session start; it notes that -t rule,goal means both tags (that is why agents found nothing). First real rule: rule-principles (from AGENTS.md). try: cake rules gantt-view; cake rules
+- 2026-11-21 discuss (sevenuz): do we really need a new command for it? what is the advantage over a alias?
