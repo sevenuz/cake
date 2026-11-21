@@ -1,11 +1,12 @@
 ---
 id: skill-load-hooks
-status: review
+status: done
 parent: "[[skill-load]]"
 created: 2026-11-14T22:57:07+01:00
 by: claude-code
 commits: [82398fc]
 sessions: [cce3e92b-a15e-4436-ae00-939981d6ff10, eb1412a2-56ac-4478-9717-6ebac99000ac, 0282881a-f64f-4b2f-ba4d-30f5d674e657, 1ed9be18-ebbd-4e14-8abc-cf08798df82d]
+closed: 2026-11-21T01:12:31+01:00
 assignee: ai
 owner: sevenuz
 ---

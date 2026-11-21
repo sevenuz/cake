@@ -1,6 +1,6 @@
 ---
 id: skill-load
-status: task
+status: review
 parent: "[[agents]]"
 created: 2026-11-14T11:24:57+01:00
 by: sevenuz
