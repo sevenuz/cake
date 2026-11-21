@@ -1,6 +1,6 @@
 ---
 id: json-new-for
-status: task
+status: doing
 parent: "[[agents]]"
 created: 2026-11-21T01:39:42+01:00
 by: claude-code
@@ -8,6 +8,8 @@ sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 assignee: claude-code
 owner: sevenuz
 estimate: 3h
+time:
+  - 2026-11-21T01:46:21+01:00/
 ---
 # JSON trimming and what is new for me, in cake
 
