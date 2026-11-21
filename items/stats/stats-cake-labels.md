@@ -10,6 +10,10 @@ assignee: ai
 owner: sevenuz
 time:
   - 2026-11-21T02:02:11+01:00/2026-11-21T02:03:51+01:00
+tokens_in: 10
+tokens_out: 1747
+tokens_cache_read: 1101239
+tokens_cache_write: 3354
 ---
 in the stats we have that field, cake baked and slices eaten. how is that defined and is it hard coded? i dont know if we need that. no one will understand it currently anyway
 
