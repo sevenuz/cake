@@ -13,6 +13,10 @@ owner: sevenuz
 priority: 1
 time:
   - 2026-11-21T01:57:29+01:00/2026-11-21T02:01:48+01:00
+tokens_in: 17
+tokens_out: 4609
+tokens_cache_read: 1772032
+tokens_cache_write: 8119
 ---
 # Session start hook and brief
 
