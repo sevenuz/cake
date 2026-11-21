@@ -1,6 +1,6 @@
 ---
 id: debug-git-cmds
-status: task
+status: doing
 parent: "[[cli]]"
 created: 2026-11-19T11:45:33+01:00
 by: sevenuz
@@ -10,6 +10,7 @@ assignee: claude-code
 owner: sevenuz
 time:
   - 2026-11-20T23:14:42+01:00/2026-11-20T23:16:02+01:00
+  - 2026-11-21T01:23:49+01:00/
 tokens_in: 8
 tokens_out: 1806
 tokens_cache_read: 921407
