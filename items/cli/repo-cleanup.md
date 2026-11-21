@@ -1,11 +1,12 @@
 ---
 id: repo-cleanup
-status: review
+status: done
 parent: "[[cli]]"
 created: 2026-11-19T10:12:26+01:00
 by: sevenuz
 commits: [b90fd35]
 sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
+closed: 2026-11-21T01:12:33+01:00
 assignee: ai
 owner: sevenuz
 time:
