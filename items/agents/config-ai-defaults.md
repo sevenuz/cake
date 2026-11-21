@@ -4,7 +4,7 @@ status: review
 parent: "[[agents]]"
 created: 2026-11-19T10:24:12+01:00
 by: sevenuz
-commits: [98e5da6]
+commits: [98e5da6, 0bbc375]
 sessions: [1ed9be18-ebbd-4e14-8abc-cf08798df82d]
 assignee: ai
 owner: sevenuz
