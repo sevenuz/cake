@@ -15,3 +15,6 @@ estimate: 24h
 Context: design in [[tui-filter-design]] (proposal, to confirm with the user first). Today :filter is dropped silently when a module has no match and header counts ignore it.
 Change: implement the confirmed design: one query with / everywhere, kept across modules and into the form, tokens, header chip and counts, 0-match state.
 Done when: the design's example works end to end; scenario tests for /, <esc>, h/l with 0 matches.
+
+## Log
+- 2026-11-21 comment (claude-code): design confirmed by the user 2026-11-21: full syntax, see tui-filter-design
