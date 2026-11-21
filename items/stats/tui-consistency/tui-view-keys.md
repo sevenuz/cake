@@ -16,3 +16,6 @@ Context: the same letter means different things: s stats vs timer, p pie vs prev
 Why: muscle memory from the form breaks in the dashboard and back.
 Change (proposal, confirm first): dashboard views on 1-4 (main, pie, stats, gantt), period on [ and ], v stays measure/view; then s/p/d/g mean what they mean in the form; news "stop agent" gets its own key or name.
 Done when: no letter means two different things across dashboard and form; help and footers show the new keys.
+
+## Log
+- 2026-11-21 comment (claude-code): decided (user, 2026-11-21): the period moves to < (shorter) and > (longer); not t (clashes with t = task on item rows), not [ ]
